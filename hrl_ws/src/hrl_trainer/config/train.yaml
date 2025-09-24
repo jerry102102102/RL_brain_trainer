@@ -1,0 +1,39 @@
+hrl_trainer:
+  ros__parameters:
+    training_mode: train
+    n_joints: 4
+    observation_dim: 16
+    control_rate: 20.0
+    command_interface: position
+    gamma: 0.99
+    batch_size: 64
+    replay_capacity: 50000
+    eps_start: 1.0
+    eps_end: 0.05
+    eps_decay_steps: 5000
+    lr: 0.0005
+    tau: 0.01
+    target_update: soft
+    target_update_interval: 1000
+    double_dqn: true
+    total_training_steps: 20000
+    warmup_steps: 1000
+    log_interval: 100
+    checkpoint_interval: 2000
+    gradient_updates_per_step: 1
+    goal_lower: [-2.0, -1.5, -1.5, -2.0]
+    goal_upper: [2.0, 1.5, 1.5, 2.0]
+    success_tolerance: 0.02
+    max_episode_steps: 400
+    option_names: [HOLD, SMALL_STEP, MEDIUM_STEP, LARGE_STEP, SETTLE]
+    option_fracs: [0.0, 0.25, 0.5, 0.75, 1.0]
+    option_taus: [0.3, 0.6, 0.8, 1.0, 1.2]
+    option_horizons: [4, 6, 8, 10, 12]
+    log_dir: logs
+    checkpoint_dir: checkpoints
+    option_debug_topic: /hrl/option_debug
+    use_tensorboard: true
+    summary_flush_interval: 50
+    summary_window: 200
+    seed: 1
+    reward_clip: 20.0
