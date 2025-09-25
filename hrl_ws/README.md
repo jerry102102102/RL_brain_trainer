@@ -19,7 +19,7 @@ hrl_ws/
 
 | 目錄 | 主要內容 | 說明 |
 |------|----------|------|
-| `hrl_control_bridge/config/bridge.yaml` | 桥接節點的 ROS 參數 | 控制頻率、關節限制、獎勵設計等皆在此定義。
+| `hrl_control_bridge/config/bridge.yaml` | 橋接節點的 ROS 參數 | 控制頻率、關節限制、獎勵設計等皆在此定義。
 | `hrl_control_bridge/nodes/hrl_control_bridge.py` | 橋接節點實作 | 將關節狀態轉換為強化學習觀測，並發布控制命令與獎勵。
 | `hrl_gazebo/launch/sim_bringup.launch.py` | Gazebo 啟動檔 | 生成機器人、載入 `ros2_control`，並啟動控制器。
 | `hrl_gazebo/urdf/` | 機械手 URDF 與控制設定 | `manipulator.urdf.xacro` 描述機械手，`ros2_control.yaml` 定義控制器與硬體介面。
