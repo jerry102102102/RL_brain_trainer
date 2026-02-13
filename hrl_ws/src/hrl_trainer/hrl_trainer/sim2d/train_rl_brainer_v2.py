@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from .env import Sim2DEnv
 from .planner import HighLevelHeuristicPlannerV2
 
 
-def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 0.7) -> np.ndarray:
+def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 0.7, option_id: str = "APPROACH") -> np.ndarray:
     x, y, yaw, v, omega = obs[:5]
     dx, dy = float(subgoal_xy[0] - x), float(subgoal_xy[1] - y)
     desired_heading = float(np.arctan2(dy, dx))
@@ -24,7 +24,19 @@ def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 
     dist = float(np.hypot(dx, dy))
 
     v_target = np.clip(speed_hint * dist, 0.0, 1.2)
-    omega_target = np.clip(1.5 * heading_err, -1.6, 1.6)
+    omega_target = np.clip(1.5 * heading_err, -1.8, 1.8)
+
+    # Docking specialization
+    if option_id == "DOCK_ALIGN":
+        v_target = 0.02 * dist
+        omega_target = np.clip(2.0 * heading_err, -1.8, 1.8)
+    elif option_id == "DOCK_APPROACH":
+        if abs(heading_err) > 0.2:
+            v_target *= 0.25
+        else:
+            v_target *= 0.6
+        omega_target = np.clip(1.2 * heading_err, -1.2, 1.2)
+
     return np.array([v_target, omega_target], dtype=np.float32)
 
 
@@ -64,6 +76,21 @@ def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
     return np.clip(np.array([a_lin, a_ang], dtype=np.float32), -1.0, 1.0)
 
 
+def _retrieve_memory_action(memory_bank: deque[tuple[np.ndarray, np.ndarray]], obs: np.ndarray, k: int = 5) -> tuple[np.ndarray | None, float | None]:
+    if not memory_bank:
+        return None, None
+    key = obs[:5]
+    keys = np.stack([m[0] for m in memory_bank], axis=0)
+    d2 = np.sum((keys - key[None, :]) ** 2, axis=1)
+    k = max(1, min(k, len(memory_bank)))
+    idxs = np.argpartition(d2, k - 1)[:k]
+    weights = 1.0 / (np.sqrt(d2[idxs]) + 1e-6)
+    weights = weights / np.sum(weights)
+    acts = np.stack([memory_bank[i][1] for i in idxs], axis=0)
+    act = np.sum(acts * weights[:, None], axis=0).astype(np.float32)
+    return act, float(np.mean(np.sqrt(d2[idxs])))
+
+
 def _build_feature(obs: np.ndarray, packet: dict, mem_action: np.ndarray | None) -> np.ndarray:
     # base obs (10 dims currently) + subgoal delta(2) + speed_hint(1) + memory action(2)
     dx = packet["subgoal_xy"][0] - obs[0]
@@ -88,9 +115,12 @@ def train_and_eval(cfg: dict) -> dict:
     # ====== Stage 1: collect oracle-supervised dataset ======
     collect_eps = int(cfg.get("collect_episodes", 120))
     max_steps = int(env_cfg.get("max_steps", 250))
+    memory_k = int(cfg.get("memory_k", 5))
 
     memory_bank: deque[tuple[np.ndarray, np.ndarray]] = deque(maxlen=6000)  # (obs_key, desired_vo)
     dataset: list[Sample] = []
+    option_counter = Counter()
+    retrieval_dists = []
 
     for ep in range(collect_eps):
         env = Sim2DEnv(seed=seed + ep, max_steps=max_steps, level=str(env_cfg.get("disturbance_level", "medium")), obstacle_count=int(env_cfg.get("obstacle_count", 0)))
@@ -99,18 +129,15 @@ def train_and_eval(cfg: dict) -> dict:
 
         for _ in range(max_steps):
             packet = planner.plan(obs)
-            # memory retrieval: nearest by first 5 dims
-            mem_action = None
-            if memory_bank:
-                key = obs[:5]
-                keys = np.stack([k for k, _ in memory_bank], axis=0)
-                idx = int(np.argmin(np.sum((keys - key[None, :]) ** 2, axis=1)))
-                mem_action = memory_bank[idx][1]
+            option_counter[packet["option_id"]] += 1
+            mem_action, md = _retrieve_memory_action(memory_bank, obs, k=memory_k)
+            if md is not None:
+                retrieval_dists.append(md)
 
             feat = _build_feature(obs, packet, mem_action)
             hist.append(feat)
             if len(hist) < seq_len:
-                desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
+                desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
                 memory_bank.append((obs[:5].copy(), desired.copy()))
                 action = _rbf_controller(obs, desired)
                 obs, _, done, _ = env.step(action)
@@ -118,7 +145,7 @@ def train_and_eval(cfg: dict) -> dict:
                     break
                 continue
 
-            desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
+            desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
             dataset.append(Sample(seq=np.stack(list(hist), axis=0), target=desired))
             memory_bank.append((obs[:5].copy(), desired.copy()))
 
@@ -163,6 +190,7 @@ def train_and_eval(cfg: dict) -> dict:
     rmse = []
     rec = []
     effort = []
+    done_reasons = Counter()
 
     for ep in range(eval_eps):
         env = Sim2DEnv(seed=seed + 5000 + ep, max_steps=max_steps, level=str(env_cfg.get("disturbance_level_eval", env_cfg.get("disturbance_level", "medium"))), obstacle_count=int(env_cfg.get("obstacle_count", 0)))
@@ -175,17 +203,14 @@ def train_and_eval(cfg: dict) -> dict:
 
         for t in range(max_steps):
             packet = planner.plan(obs)
-            mem_action = None
-            if memory_bank:
-                key = obs[:5]
-                keys = np.stack([k for k, _ in memory_bank], axis=0)
-                idx = int(np.argmin(np.sum((keys - key[None, :]) ** 2, axis=1)))
-                mem_action = memory_bank[idx][1]
+            mem_action, md = _retrieve_memory_action(memory_bank, obs, k=memory_k)
+            if md is not None:
+                retrieval_dists.append(md)
 
             feat = _build_feature(obs, packet, mem_action)
             hist.append(feat)
             if len(hist) < seq_len:
-                desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
+                desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
             else:
                 seq = torch.tensor(np.stack(list(hist), axis=0)[None, ...], dtype=torch.float32, device=device)
                 with torch.no_grad():
@@ -206,6 +231,11 @@ def train_and_eval(cfg: dict) -> dict:
                 if info.get("success", False):
                     success += 1
                     conv.append(t + 1)
+                    done_reasons["success"] += 1
+                elif info.get("collided", False):
+                    done_reasons["collision"] += 1
+                else:
+                    done_reasons["timeout"] += 1
                 break
 
         rmse.append(float(np.sqrt(np.mean(np.square(dist_hist)))) if dist_hist else 0.0)
@@ -216,8 +246,12 @@ def train_and_eval(cfg: dict) -> dict:
     return {
         "device": str(device),
         "dataset_size": len(dataset),
+        "memory_bank_size": len(memory_bank),
+        "mean_memory_retrieval_distance": float(np.mean(retrieval_dists)) if retrieval_dists else None,
+        "option_counts": dict(option_counter),
         "mean_loss": float(np.mean(losses)) if losses else None,
         "success_rate": success / max(eval_eps, 1),
+        "done_reasons": dict(done_reasons),
         "time_to_convergence": float(np.mean(conv)) if conv else None,
         "tracking_rmse": float(np.mean(rmse)) if rmse else None,
         "recovery_time": float(np.mean(rec)) if rec else None,
