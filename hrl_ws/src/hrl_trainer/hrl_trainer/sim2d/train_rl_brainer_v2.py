@@ -16,6 +16,9 @@ from .env import Sim2DEnv
 from .planner import HighLevelHeuristicPlannerV2
 
 
+SKILL_TO_IDX = {"NAV_SKILL": 0, "DOCK_SKILL": 1}
+
+
 def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 0.7, option_id: str = "APPROACH") -> np.ndarray:
     x, y, yaw, v, omega = obs[:5]
     dx, dy = float(subgoal_xy[0] - x), float(subgoal_xy[1] - y)
@@ -27,15 +30,13 @@ def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 
     omega_target = np.clip(1.5 * heading_err, -1.8, 1.8)
 
     # Docking specialization
-    if option_id == "DOCK_ALIGN":
-        v_target = 0.02 * dist
-        omega_target = np.clip(2.0 * heading_err, -1.8, 1.8)
-    elif option_id == "DOCK_APPROACH":
+    if option_id == "DOCK":
         if abs(heading_err) > 0.2:
-            v_target *= 0.25
+            v_target *= 0.22
+            omega_target = np.clip(1.6 * heading_err, -1.4, 1.4)
         else:
-            v_target *= 0.6
-        omega_target = np.clip(1.2 * heading_err, -1.2, 1.2)
+            v_target *= 0.55
+            omega_target = np.clip(1.15 * heading_err, -1.0, 1.0)
 
     return np.array([v_target, omega_target], dtype=np.float32)
 
@@ -44,23 +45,31 @@ class MemoryLSTMPolicy(nn.Module):
     def __init__(self, in_dim: int, hid: int = 128):
         super().__init__()
         self.lstm = nn.LSTM(in_dim, hid, num_layers=1, batch_first=True)
-        self.head = nn.Sequential(nn.Linear(hid, hid), nn.ReLU(), nn.Linear(hid, 2))
+        self.backbone = nn.Sequential(nn.Linear(hid, hid), nn.ReLU())
+        self.nav_head = nn.Linear(hid, 2)
+        self.dock_head = nn.Linear(hid, 2)
 
-    def forward(self, seq: torch.Tensor) -> torch.Tensor:
-        # seq: [B, T, D]
+    def forward(self, seq: torch.Tensor, skill_idx: torch.Tensor | None = None) -> torch.Tensor:
+        # seq: [B, T, D], skill_idx: [B] with 0:NAV, 1:DOCK
         out, _ = self.lstm(seq)
-        h = out[:, -1, :]
-        return self.head(h)
+        h = self.backbone(out[:, -1, :])
+        nav = self.nav_head(h)
+        dock = self.dock_head(h)
+        if skill_idx is None:
+            return nav
+        skill_idx = skill_idx.long().view(-1, 1)
+        return torch.where(skill_idx == 1, dock, nav)
 
 
 @dataclass
 class Sample:
     seq: np.ndarray  # [T, D]
     target: np.ndarray  # [2] desired v, omega
+    skill_idx: int
 
 
-def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
-    """Low-level RBF-style controller: feature basis over tracking errors."""
+def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray, skill_id: str = "NAV_SKILL") -> np.ndarray:
+    """Low-level RBF-style controller with skill-dependent gain schedule."""
     v, omega = float(obs[3]), float(obs[4])
     ev = float(desired_vo[0] - v)
     ew = float(desired_vo[1] - omega)
@@ -70,9 +79,14 @@ def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
     e = np.array([ev, ew])[None, :]
     phi = np.exp(-widths * np.sum((e - centers) ** 2, axis=1))
 
-    # Hand-tuned blend: linear term + RBF compensation
-    a_lin = 1.25 * ev + 0.25 * (phi[1] - phi[2])
-    a_ang = 1.35 * ew + 0.20 * (phi[3] - phi[4])
+    # Skill-dependent blend: NAV is faster, DOCK is softer and more angularly precise.
+    if skill_id == "DOCK_SKILL":
+        kv, kw, rv, rw = 0.95, 1.55, 0.18, 0.24
+    else:
+        kv, kw, rv, rw = 1.25, 1.35, 0.25, 0.20
+
+    a_lin = kv * ev + rv * (phi[1] - phi[2])
+    a_ang = kw * ew + rw * (phi[3] - phi[4])
     return np.clip(np.array([a_lin, a_ang], dtype=np.float32), -1.0, 1.0)
 
 
@@ -120,6 +134,7 @@ def train_and_eval(cfg: dict) -> dict:
     memory_bank: deque[tuple[np.ndarray, np.ndarray]] = deque(maxlen=6000)  # (obs_key, desired_vo)
     dataset: list[Sample] = []
     option_counter = Counter()
+    skill_counter = Counter()
     retrieval_dists = []
 
     for ep in range(collect_eps):
@@ -130,6 +145,7 @@ def train_and_eval(cfg: dict) -> dict:
         for _ in range(max_steps):
             packet = planner.plan(obs)
             option_counter[packet["option_id"]] += 1
+            skill_counter[packet.get("skill_id", "NAV_SKILL")] += 1
             mem_action, md = _retrieve_memory_action(memory_bank, obs, k=memory_k)
             if md is not None:
                 retrieval_dists.append(md)
@@ -139,17 +155,18 @@ def train_and_eval(cfg: dict) -> dict:
             if len(hist) < seq_len:
                 desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
                 memory_bank.append((obs[:5].copy(), desired.copy()))
-                action = _rbf_controller(obs, desired)
+                action = _rbf_controller(obs, desired, packet.get("skill_id", "NAV_SKILL"))
                 obs, _, done, _ = env.step(action)
                 if done:
                     break
                 continue
 
             desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
-            dataset.append(Sample(seq=np.stack(list(hist), axis=0), target=desired))
+            skill_idx = SKILL_TO_IDX.get(packet.get("skill_id", "NAV_SKILL"), 0)
+            dataset.append(Sample(seq=np.stack(list(hist), axis=0), target=desired, skill_idx=skill_idx))
             memory_bank.append((obs[:5].copy(), desired.copy()))
 
-            action = _rbf_controller(obs, desired)
+            action = _rbf_controller(obs, desired, packet.get("skill_id", "NAV_SKILL"))
             obs, _, done, _ = env.step(action)
             if done:
                 break
@@ -169,13 +186,14 @@ def train_and_eval(cfg: dict) -> dict:
 
     seqs = torch.tensor(np.stack([s.seq for s in dataset], axis=0), dtype=torch.float32, device=device)
     tgts = torch.tensor(np.stack([s.target for s in dataset], axis=0), dtype=torch.float32, device=device)
+    skills = torch.tensor(np.array([s.skill_idx for s in dataset]), dtype=torch.long, device=device)
 
     n = seqs.shape[0]
     for _ in range(epochs):
         idx = torch.randperm(n, device=device)
         for i in range(0, n, batch_size):
             b = idx[i : i + batch_size]
-            pred = model(seqs[b])
+            pred = model(seqs[b], skills[b])
             loss = mse(pred, tgts[b])
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -213,10 +231,12 @@ def train_and_eval(cfg: dict) -> dict:
                 desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7), packet.get("option_id", "APPROACH"))
             else:
                 seq = torch.tensor(np.stack(list(hist), axis=0)[None, ...], dtype=torch.float32, device=device)
+                skill_idx = SKILL_TO_IDX.get(packet.get("skill_id", "NAV_SKILL"), 0)
+                skill_t = torch.tensor([skill_idx], dtype=torch.long, device=device)
                 with torch.no_grad():
-                    desired = model(seq).squeeze(0).cpu().numpy().astype(np.float32)
+                    desired = model(seq, skill_t).squeeze(0).cpu().numpy().astype(np.float32)
 
-            action = _rbf_controller(obs, desired)
+            action = _rbf_controller(obs, desired, packet.get("skill_id", "NAV_SKILL"))
             obs, _, done, info = env.step(action)
             dcur = float(info["distance"])
             dist_hist.append(dcur)
@@ -249,6 +269,7 @@ def train_and_eval(cfg: dict) -> dict:
         "memory_bank_size": len(memory_bank),
         "mean_memory_retrieval_distance": float(np.mean(retrieval_dists)) if retrieval_dists else None,
         "option_counts": dict(option_counter),
+        "skill_counts": dict(skill_counter),
         "mean_loss": float(np.mean(losses)) if losses else None,
         "success_rate": success / max(eval_eps, 1),
         "done_reasons": dict(done_reasons),

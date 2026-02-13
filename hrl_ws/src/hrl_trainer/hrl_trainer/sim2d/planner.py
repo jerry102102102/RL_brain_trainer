@@ -38,7 +38,11 @@ class HighLevelHeuristicPlanner:
 
 
 class HighLevelHeuristicPlannerV2(HighLevelHeuristicPlanner):
-    """Richer strategic layer for RL-brainer v2 with docking-specialized options."""
+    """Richer strategic layer for RL-brainer v2.
+
+    Output includes `skill_id` so upper layer can route to different tactical/
+    low-level skill stacks.
+    """
 
     def plan(self, obs: np.ndarray) -> dict:
         base = obs[:7]
@@ -48,40 +52,31 @@ class HighLevelHeuristicPlannerV2(HighLevelHeuristicPlanner):
         target_heading = float(np.arctan2(dy, dx))
         heading_err = float((target_heading - yaw + np.pi) % (2 * np.pi) - np.pi)
 
-        # Docking-specialized policy: split final phase into align and approach.
-        if dist <= 0.35:
-            if abs(heading_err) > 0.28:
-                option_id = "DOCK_ALIGN"
-                scale = 0.65
-                speed_hint = 0.10
-                constraints = ["stable_heading", "minimal_forward_speed"]
-            else:
-                option_id = "DOCK_APPROACH"
-                scale = 1.0
-                speed_hint = 0.18
-                constraints = ["smooth_control", "soft_landing"]
-        elif dist > 1.0:
+        if dist > 1.0:
             option_id = "CRUISE"
             scale = 0.40
-            speed_hint = 0.90
-            constraints = ["smooth_control"]
+            speed_hint = 0.9
         elif abs(heading_err) > 0.7:
             option_id = "TURN_ALIGN"
             scale = 0.25
             speed_hint = 0.45
-            constraints = ["bounded_turn_rate", "stable_heading"]
-        else:
+        elif dist > 0.25:
             option_id = "APPROACH"
             scale = 0.55
             speed_hint = 0.65
-            constraints = ["smooth_control", "bounded_turn_rate"]
+        else:
+            option_id = "DOCK"
+            scale = 1.0
+            speed_hint = 0.25
 
+        skill_id = "DOCK_SKILL" if option_id == "DOCK" else "NAV_SKILL"
         local_goal = np.array([x + scale * dx, y + scale * dy], dtype=np.float32)
         return {
             "option_id": option_id,
+            "skill_id": skill_id,
             "subgoal_xy": local_goal,
             "speed_hint": speed_hint,
             "heading_err": heading_err,
             "termination": {"metric": "distance", "threshold": 0.08, "stable_steps": 4},
-            "constraints": constraints,
+            "constraints": ["smooth_control", "bounded_turn_rate", "stable_heading"],
         }
