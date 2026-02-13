@@ -178,6 +178,7 @@ status: normal|degraded|fail
 1. 完成三層介面定義（A/B/C）
 2. 跑 A0、A1 兩組對比
 3. 輸出第一版圖表（成功率、收斂時間）
+4. 完成 2D acceleration+steering 擾動實驗框架（見 `docs/EXPERIMENT_FRAMEWORK_2D_V2.md`）
 
 ### 30 分鐘啟動動作（今天就能做）
 - 在 repo 建立 `config/exp_v2_a0.yaml` 與 `config/exp_v2_a1.yaml`
