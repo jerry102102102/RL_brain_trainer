@@ -11,10 +11,8 @@ dependencies = [
     "tensorboard>=2.12",
     "qpsolvers>=3.4",
     "osqp>=0.6",
+    "pyyaml>=6.0",
 ]
 
 [tool.uv]
 package = true
-
-[tool.uv.sources]
-torch = { index = "https://download.pytorch.org/whl/cpu" }
