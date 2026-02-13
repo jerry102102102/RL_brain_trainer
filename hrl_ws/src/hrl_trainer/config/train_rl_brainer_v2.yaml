@@ -1,0 +1,14 @@
+seed: 11
+waypoint_scale: 0.35
+seq_len: 8
+hidden_dim: 128
+collect_episodes: 160
+epochs: 24
+batch_size: 256
+lr: 0.0002
+eval_episodes: 50
+env:
+  max_steps: 250
+  disturbance_level: medium
+  disturbance_level_eval: medium
+  obstacle_count: 0
