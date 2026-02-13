@@ -1,3 +1,5 @@
-"""ROS 2 nodes orchestrating hierarchical RL training."""
+"""HRL trainer package.
 
-from .config import TrainerConfig  # noqa: F401
+Note: avoid importing ROS-dependent modules at package import time so
+standalone utilities (e.g., sim2d experiments) can run without rclpy.
+"""

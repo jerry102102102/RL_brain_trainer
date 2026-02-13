@@ -1,0 +1,15 @@
+name: exp_2d_a0
+seed: 0
+episodes: 40
+max_steps: 250
+disturbance_level: medium
+waypoint_scale: 0.35
+notes: "A0 baseline: heuristic high-level + no memory module"
+logging:
+  save_metrics: true
+  required_fields:
+    - success_rate
+    - time_to_convergence
+    - tracking_rmse
+    - recovery_time
+    - control_effort

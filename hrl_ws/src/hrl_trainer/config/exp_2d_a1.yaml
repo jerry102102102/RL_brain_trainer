@@ -1,0 +1,19 @@
+name: exp_2d_a1
+seed: 0
+episodes: 40
+max_steps: 250
+disturbance_level: medium
+waypoint_scale: 0.35
+memory_module:
+  enabled: true
+  type: episodic_stub
+  history_window: 8
+notes: "A1: reserve memory fields for tactical layer integration"
+logging:
+  save_metrics: true
+  required_fields:
+    - success_rate
+    - time_to_convergence
+    - tracking_rmse
+    - recovery_time
+    - control_effort
