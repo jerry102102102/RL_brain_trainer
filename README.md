@@ -10,6 +10,7 @@
 ## 目錄 / Table of Contents
 
 > Project roadmap note: v0 final-project architecture plan is tracked in `docs/V0_ARCHITECTURE.md`.
+> Research-mode upgrade: three-layer v2 design spec is tracked in `docs/THREE_LAYER_ARCH_V2.md`.
 
 1. [模組一：整體架構說明 / Module 1: Overall Architecture](#模組一整體架構說明--module-1-overall-architecture)
 
