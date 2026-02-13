@@ -38,10 +38,10 @@ class HighLevelHeuristicPlanner:
 
 
 class HighLevelHeuristicPlannerV2(HighLevelHeuristicPlanner):
-    """Richer strategic layer for RL-brainer v2.
+    """Slightly richer strategic layer for RL-brainer v2.
 
-    Output includes `skill_id` so upper layer can route to different tactical/
-    low-level skill stacks.
+    Adds heading-awareness and speed-phase hints to better mimic a high-level
+    planner that reasons over progress + stability.
     """
 
     def plan(self, obs: np.ndarray) -> dict:
@@ -69,14 +69,11 @@ class HighLevelHeuristicPlannerV2(HighLevelHeuristicPlanner):
             scale = 1.0
             speed_hint = 0.25
 
-        skill_id = "DOCK_SKILL" if option_id == "DOCK" else "NAV_SKILL"
         local_goal = np.array([x + scale * dx, y + scale * dy], dtype=np.float32)
         return {
             "option_id": option_id,
-            "skill_id": skill_id,
             "subgoal_xy": local_goal,
             "speed_hint": speed_hint,
-            "heading_err": heading_err,
-            "termination": {"metric": "distance", "threshold": 0.08, "stable_steps": 4},
+            "termination": {"metric": "distance", "threshold": 0.08},
             "constraints": ["smooth_control", "bounded_turn_rate", "stable_heading"],
         }
