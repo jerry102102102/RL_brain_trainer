@@ -32,6 +32,11 @@ class Sim2DEnv:
         self._delay_buffer: list[np.ndarray] = []
         self.level = level
         self.disturbance = self._build_disturbance(level)
+        # Collision checks approximate a regular pentagon footprint by its circumscribed radius.
+        self.robot_sides = 5
+        self.robot_apothem = 0.09
+        self.robot_circ_radius = float(self.robot_apothem / math.cos(math.pi / self.robot_sides))
+        self.world_half_extent = 1.6
         self.state = np.zeros(7, dtype=np.float32)
         self.steps = 0
         self.obstacle_count = int(obstacle_count)
@@ -96,12 +101,18 @@ class Sim2DEnv:
 
         dist = float(np.linalg.norm(np.array([gx - x, gy - y], dtype=np.float32)))
 
-        collided = False
+        obstacle_contact = False
         for ox, oy, rr in self.obstacles:
-            if (x - ox) ** 2 + (y - oy) ** 2 <= rr ** 2:
-                collided = True
+            contact_r = float(rr + self.robot_circ_radius)
+            if (x - ox) ** 2 + (y - oy) ** 2 <= contact_r ** 2:
+                obstacle_contact = True
                 break
 
+        wall_contact = bool(
+            abs(float(x)) >= (self.world_half_extent - self.robot_circ_radius)
+            or abs(float(y)) >= (self.world_half_extent - self.robot_circ_radius)
+        )
+        collided = bool(obstacle_contact or wall_contact)
         done = bool(dist < 0.08 or self.steps >= self.max_steps or collided)
         success = bool(dist < 0.08 and not collided)
 
@@ -117,6 +128,8 @@ class Sim2DEnv:
             "distance": dist,
             "success": success,
             "collided": collided,
+            "obstacle_contact": bool(obstacle_contact),
+            "wall_contact": bool(wall_contact),
             "control_effort": float(np.linalg.norm(action)),
         }
         return obs, reward, done, info
@@ -128,7 +141,8 @@ class Sim2DEnv:
         attempts = 0
         while len(obs) < self.obstacle_count and attempts < 100:
             attempts += 1
-            ox, oy = self.rng.uniform(-1.4, 1.4, size=2)
+            pad = self.robot_circ_radius + 0.05
+            ox, oy = self.rng.uniform(-(self.world_half_extent - pad), (self.world_half_extent - pad), size=2)
             rr = float(self.rng.uniform(0.12, 0.22))
             if (ox - sx) ** 2 + (oy - sy) ** 2 < (rr + 0.25) ** 2:
                 continue
@@ -144,7 +158,7 @@ class Sim2DEnv:
         best_d = 1e9
         for ox, oy, rr in self.obstacles:
             dx, dy = ox - x, oy - y
-            d = math.hypot(dx, dy) - rr
+            d = math.hypot(dx, dy) - rr - self.robot_circ_radius
             if d < best_d:
                 best_d = d
                 best = (dx, dy, d)

@@ -1,0 +1,23 @@
+train_mode: l2_deterministic_plus_memory
+seed: 11
+waypoint_scale: 0.35
+core_heading_gain: 1.5
+memory_k: 7
+memory_bucket_quota: 2200
+memory_residual_clip: 0.15
+memory_residual_gain: 0.8
+memory_progress_eps: 0.0001
+memory_quality_progress_scale: 1.0
+memory_quality_success_bonus: 0.5
+memory_quality_min: 0.05
+memory_success_segment_len: 8
+train_episodes: 120
+eval_episodes: 40
+timeout_bins:
+  near: 0.25
+  mid: 0.75
+env:
+  max_steps: 250
+  disturbance_level: medium
+  disturbance_level_eval: medium
+  obstacle_count: 0
