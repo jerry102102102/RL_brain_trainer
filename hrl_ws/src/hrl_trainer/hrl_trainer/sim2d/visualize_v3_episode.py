@@ -101,7 +101,14 @@ def draw_and_save(env, states, packets, infos, out_path: Path, fps: int = 12):
 
     ax.add_patch(patches.Circle((goal_xy[0], goal_xy[1]), 0.06, color="limegreen", alpha=0.9, label="goal"))
 
-    robot_patch = patches.Circle((states[0][0], states[0][1]), env.robot_circ_radius, color="royalblue", alpha=0.9)
+    robot_patch = patches.RegularPolygon(
+        (states[0][0], states[0][1]),
+        numVertices=5,
+        radius=env.robot_circ_radius,
+        orientation=float(states[0][2]),
+        color="royalblue",
+        alpha=0.9,
+    )
     ax.add_patch(robot_patch)
     path_line, = ax.plot([], [], color="navy", lw=2, alpha=0.7, label="trajectory")
     subgoal_dot, = ax.plot([], [], "o", color="orange", ms=5, label="subgoal")
@@ -117,10 +124,11 @@ def draw_and_save(env, states, packets, infos, out_path: Path, fps: int = 12):
 
     for i in range(len(states) - 1):
         s = states[i + 1]
-        x, y = float(s[0]), float(s[1])
+        x, y, yaw = float(s[0]), float(s[1]), float(s[2])
         xs.append(x)
         ys.append(y)
-        robot_patch.center = (x, y)
+        robot_patch.xy = (x, y)
+        robot_patch.orientation = yaw
         path_line.set_data(xs, ys)
 
         if i < len(packets):
