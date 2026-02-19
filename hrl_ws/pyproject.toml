@@ -12,6 +12,8 @@ dependencies = [
     "qpsolvers>=3.4",
     "osqp>=0.6",
     "pyyaml>=6.0",
+    "matplotlib>=3.8",
+    "imageio>=2.34",
 ]
 
 [tool.uv]
