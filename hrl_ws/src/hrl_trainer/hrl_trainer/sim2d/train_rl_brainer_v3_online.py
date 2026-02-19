@@ -129,20 +129,19 @@ class OnlineTacticalBaseline(nn.Module):
 
 
 def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
-    """Low-level RBF-style controller: feature basis over tracking errors."""
+    """L3 follower outputs velocity commands [v_cmd, omega_cmd]."""
     v, omega = float(obs[3]), float(obs[4])
-    ev = float(desired_vo[0] - v)
-    ew = float(desired_vo[1] - omega)
+    dv = float(desired_vo[0] - v)
+    dw = float(desired_vo[1] - omega)
 
-    centers = np.array([[0.0, 0.0], [0.3, 0.0], [-0.3, 0.0], [0.0, 0.3], [0.0, -0.3], [0.3, 0.3], [-0.3, -0.3]])
-    widths = 8.0
-    e = np.array([ev, ew])[None, :]
+    centers = np.array([[0.0, 0.0], [0.25, 0.0], [-0.25, 0.0], [0.0, 0.25], [0.0, -0.25]], dtype=np.float32)
+    widths = 10.0
+    e = np.array([dv, dw], dtype=np.float32)[None, :]
     phi = np.exp(-widths * np.sum((e - centers) ** 2, axis=1))
 
-    # Hand-tuned blend: linear term + RBF compensation
-    a_lin = 1.25 * ev + 0.25 * (phi[1] - phi[2])
-    a_ang = 1.35 * ew + 0.20 * (phi[3] - phi[4])
-    return np.clip(np.array([a_lin, a_ang], dtype=np.float32), -1.0, 1.0)
+    v_cmd = v + 0.55 * dv + 0.05 * (phi[1] - phi[2])
+    o_cmd = omega + 0.6 * dw + 0.05 * (phi[3] - phi[4])
+    return np.array([np.clip(v_cmd, 0.0, 1.2), np.clip(o_cmd, -1.6, 1.6)], dtype=np.float32)
 
 
 def _build_feature(obs: np.ndarray, packet: dict, mem_action: np.ndarray | None) -> np.ndarray:
@@ -479,6 +478,10 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level", "medium")),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
+            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
+            min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
+            corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
         )
         obs = env.reset()
         hist: deque[np.ndarray] = deque(maxlen=seq_len)
@@ -584,6 +587,10 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level_eval", env_cfg.get("disturbance_level", "medium"))),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
+            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
+            min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
+            corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
         )
         obs = env.reset()
         hist: deque[np.ndarray] = deque(maxlen=seq_len)
@@ -718,6 +725,10 @@ def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> di
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level", "medium")),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
+            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
+            min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
+            corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
         )
         obs = env.reset()
         ep_return = 0.0
@@ -858,6 +869,10 @@ def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> di
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level_eval", env_cfg.get("disturbance_level", "medium"))),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
+            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
+            min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
+            corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
         )
         obs = env.reset()
         dist_hist = []
