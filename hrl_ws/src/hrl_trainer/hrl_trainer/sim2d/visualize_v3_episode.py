@@ -13,13 +13,14 @@ from .train_rl_brainer_v3_online import (
     OnlineRecurrentPolicy,
     _build_feature,
     _clip_desired,
+    _deterministic_core_mapping,
     _oracle_action,
     _rbf_controller,
     _retrieve_memory_action,
 )
 
 
-def run_episode(seed: int, level: str, obstacle_count: int, max_steps: int, waypoint_scale: float, model_path: str | None):
+def run_episode(seed: int, level: str, obstacle_count: int, max_steps: int, waypoint_scale: float, model_path: str | None, mode: str = "l2"):
     env = Sim2DEnv(seed=seed, max_steps=max_steps, level=level, obstacle_count=obstacle_count)
     planner = HighLevelHeuristicPlannerV2(waypoint_scale=waypoint_scale)
 
@@ -47,6 +48,13 @@ def run_episode(seed: int, level: str, obstacle_count: int, max_steps: int, wayp
 
     for _ in range(max_steps):
         packet = planner.plan(obs)
+        if mode == "l3_only":
+            # bypass local-L2 style subgoaling: hand goal directly to deterministic core
+            packet = {
+                "subgoal_xy": np.array([obs[5], obs[6]], dtype=np.float32),
+                "speed_hint": 0.7,
+            }
+
         mem_action = _retrieve_memory_action(obs, memory_bank, memory_k=5)
         feat = _build_feature(obs, packet, mem_action)
         hist.append(feat)
@@ -55,7 +63,9 @@ def run_episode(seed: int, level: str, obstacle_count: int, max_steps: int, wayp
 
         desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
 
-        if model is not None and len(hist) == seq_len:
+        if mode == "l3_only":
+            desired = _deterministic_core_mapping(obs, packet)
+        elif model is not None and len(hist) == seq_len:
             import torch
 
             seq = torch.tensor(np.stack(hist, axis=0)[None, ...], dtype=torch.float32)
@@ -167,6 +177,7 @@ def main():
     ap.add_argument("--max-steps", type=int, default=220)
     ap.add_argument("--waypoint-scale", type=float, default=0.35)
     ap.add_argument("--model", type=str, default=None, help="Optional .pt state_dict for OnlineRecurrentPolicy")
+    ap.add_argument("--mode", type=str, default="l2", choices=["l2", "l3_only"], help="l2=planner/local rollout, l3_only=direct goal handoff")
     ap.add_argument("--out", type=str, default="/tmp/v3_episode.gif")
     ap.add_argument("--fps", type=int, default=12)
     args = ap.parse_args()
@@ -178,6 +189,7 @@ def main():
         max_steps=args.max_steps,
         waypoint_scale=args.waypoint_scale,
         model_path=args.model,
+        mode=args.mode,
     )
     draw_and_save(env, states, packets, infos, Path(args.out), fps=args.fps)
 
