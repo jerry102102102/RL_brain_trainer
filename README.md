@@ -35,6 +35,8 @@
 
 ## 目錄（V3 相關）
 
+> 舊版規劃/實驗草稿已整理到 `docs/archive/legacy/`，避免干擾目前主線。
+
 ### 核心訓練/實驗程式
 - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/run_v3_hierarchy_meaning_ablation.py`
