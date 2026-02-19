@@ -49,6 +49,7 @@
 - `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v3_level5_pentagon_ablation.yaml`
 
 ### 實驗文件
+- `docs/QUICKSTART.md`（10 分鐘上手）
 - `docs/V3_GUIDE.md`（建議先讀）
 - `docs/V3_ONLINE_MEMORY_LSTM_PLAN.md`
 - `docs/V3_PROGRESS_BOARD.md`
