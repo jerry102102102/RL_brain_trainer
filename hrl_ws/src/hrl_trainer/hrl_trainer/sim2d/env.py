@@ -127,8 +127,10 @@ class Sim2DEnv:
 
         if self.control_mode == "velocity":
             # command is [v_cmd, omega_cmd]
+            # v_cmd now supports reverse motion via symmetric absolute bound.
+            # omega_cmd is left unconstrained to allow free turning.
             action = np.asarray(action, dtype=np.float32)
-            action = np.array([np.clip(action[0], 0.0, 1.2), np.clip(action[1], -1.6, 1.6)], dtype=np.float32)
+            action = np.array([np.clip(action[0], -1.2, 1.2), float(action[1])], dtype=np.float32)
         else:
             # legacy acceleration mode
             action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
@@ -143,8 +145,7 @@ class Sim2DEnv:
         if self.control_mode == "velocity":
             cmd_v = float(action[0] + self.rng.normal(0.0, self.disturbance.command_noise_std_v))
             cmd_o = float(action[1] + self.rng.normal(0.0, self.disturbance.command_noise_std_omega))
-            cmd_v = float(np.clip(cmd_v, 0.0, 1.2))
-            cmd_o = float(np.clip(cmd_o, -1.6, 1.6))
+            cmd_v = float(np.clip(cmd_v, -1.2, 1.2))
 
             if self._gust_cooldown > 0:
                 self._gust_cooldown -= 1
@@ -153,8 +154,7 @@ class Sim2DEnv:
                 cmd_o += float(self.rng.normal(0.0, self.disturbance.gust_scale_omega))
                 self._gust_cooldown = int(self.disturbance.gust_cooldown_steps)
 
-            cmd_v = float(np.clip(cmd_v, 0.0, 1.2))
-            cmd_o = float(np.clip(cmd_o, -1.6, 1.6))
+            cmd_v = float(np.clip(cmd_v, -1.2, 1.2))
 
             # first-order velocity tracking + drag
             alpha_v = 0.38

@@ -23,8 +23,8 @@ def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 
     heading_err = (desired_heading - yaw + np.pi) % (2 * np.pi) - np.pi
     dist = float(np.hypot(dx, dy))
 
-    v_target = np.clip(speed_hint * dist, 0.0, 1.2)
-    omega_target = np.clip(1.5 * heading_err, -1.6, 1.6)
+    v_target = np.clip(speed_hint * dist, -1.2, 1.2)
+    omega_target = 1.5 * heading_err
     return np.array([v_target, omega_target], dtype=np.float32)
 
 
@@ -145,12 +145,11 @@ def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
     # linear channel keeps accel-style tracking
     a_lin = 1.20 * ev + 0.20 * (phi[1] - phi[2])
 
-    # angular channel: direct direction command from desired omega sign/magnitude
-    # desired omega in [-1.6, 1.6] -> normalized action in [-1, 1]
-    direct_turn = float(np.clip(desired_vo[1] / 1.6, -1.0, 1.0))
-    # keep a small stabilizer to avoid oscillation when already aligned
-    align_term = -0.15 * np.clip(omega / 1.6, -1.0, 1.0)
-    a_ang = np.clip(direct_turn + align_term, -1.0, 1.0)
+    # angular channel: pass desired turn rate through (no angle-rate clamp)
+    # keep a small damping term to reduce oscillation when already aligned
+    direct_turn = float(desired_vo[1])
+    align_term = -0.15 * float(omega)
+    a_ang = direct_turn + align_term
 
     return np.array([np.clip(a_lin, -1.0, 1.0), a_ang], dtype=np.float32)
 
@@ -255,7 +254,8 @@ def _score_stats(scores: list[float]) -> dict:
 
 
 def _clip_desired(desired: np.ndarray) -> np.ndarray:
-    return np.array([np.clip(desired[0], 0.0, 1.2), np.clip(desired[1], -1.6, 1.6)], dtype=np.float32)
+    # symmetric velocity bound allows reverse motion; omega left unconstrained.
+    return np.array([np.clip(desired[0], -1.2, 1.2), float(desired[1])], dtype=np.float32)
 
 
 def _deterministic_core_mapping(obs: np.ndarray, packet: dict, heading_gain: float = 1.5) -> np.ndarray:
