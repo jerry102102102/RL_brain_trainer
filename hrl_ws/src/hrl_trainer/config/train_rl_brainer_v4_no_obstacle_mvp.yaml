@@ -1,0 +1,29 @@
+train_mode: online_v3
+seed: 7
+waypoint_scale: 0.35
+seq_len: 10
+hidden_dim: 128
+memory_k: 7
+memory_bucket_quota: 1800
+batch_size: 128
+lr: 0.00012
+gamma: 0.985
+train_episodes: 220
+eval_episodes: 120
+update_every_steps: 16
+grad_updates_per_step: 2
+warmup_steps: 128
+explore_noise_std: 0.03
+l2_residual_mode: true
+l2_delta_clip: 0.45
+l2_heading_gain: 2.2
+save_model_path: /tmp/v4_no_obstacle_mvp_recurrent.pt
+env:
+  max_steps: 240
+  disturbance_level: easy
+  disturbance_level_eval: easy
+  obstacle_count: 0
+  control_mode: velocity
+  min_start_goal_dist: 0.35
+  min_obstacle_spacing: 0.24
+  corridor_clearance: 0.16

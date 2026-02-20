@@ -11,6 +11,7 @@ from .env import Sim2DEnv
 from .planner import HighLevelHeuristicPlannerV2
 from .train_rl_brainer_v3_online import (
     OnlineRecurrentPolicy,
+    _bounded_delta,
     _build_feature,
     _clip_desired,
     _deterministic_core_mapping,
@@ -29,13 +30,14 @@ def run_episode(
     model_path: str | None,
     mode: str = "l2",
     min_start_goal_dist: float = 1.1,
+    control_mode: str = "velocity",
 ):
     env = Sim2DEnv(
         seed=seed,
         max_steps=max_steps,
         level=level,
         obstacle_count=obstacle_count,
-        control_mode="velocity",
+        control_mode=control_mode,
         min_start_goal_dist=min_start_goal_dist,
     )
     planner = HighLevelHeuristicPlannerV2(waypoint_scale=waypoint_scale)
@@ -47,7 +49,7 @@ def run_episode(
     infos = []
 
     memory_bank = []
-    seq_len = 8
+    seq_len = 10
     hist = []
 
     model = None
@@ -77,17 +79,19 @@ def run_episode(
         if len(hist) > seq_len:
             hist.pop(0)
 
+        core_desired = _deterministic_core_mapping(obs, packet)
         desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
 
         if mode == "l3_only":
-            desired = _deterministic_core_mapping(obs, packet)
+            desired = core_desired
         elif model is not None and len(hist) == seq_len:
             import torch
 
             seq = torch.tensor(np.stack(hist, axis=0)[None, ...], dtype=torch.float32)
             with torch.no_grad():
                 pred_action, _ = model(seq)
-            desired = _clip_desired(pred_action.squeeze(0).numpy().astype(np.float32))
+            pred = pred_action.squeeze(0).numpy().astype(np.float32)
+            desired = _clip_desired(core_desired + _bounded_delta(pred, 0.45))
 
         action = _rbf_controller(obs, desired)
         next_obs, _, done, info = env.step(action)
@@ -195,6 +199,7 @@ def main():
     ap.add_argument("--model", type=str, default=None, help="Optional .pt state_dict for OnlineRecurrentPolicy")
     ap.add_argument("--mode", type=str, default="l2", choices=["l2", "l3_only"], help="l2=planner/local rollout, l3_only=direct goal handoff")
     ap.add_argument("--min-start-goal-dist", type=float, default=1.1)
+    ap.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "acceleration"])
     ap.add_argument("--out", type=str, default="/tmp/v3_episode.gif")
     ap.add_argument("--fps", type=int, default=12)
     args = ap.parse_args()
@@ -208,6 +213,7 @@ def main():
         model_path=args.model,
         mode=args.mode,
         min_start_goal_dist=args.min_start_goal_dist,
+        control_mode=args.control_mode,
     )
     draw_and_save(env, states, packets, infos, Path(args.out), fps=args.fps)
 

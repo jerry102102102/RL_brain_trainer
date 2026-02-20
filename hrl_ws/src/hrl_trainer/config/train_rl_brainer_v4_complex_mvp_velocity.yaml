@@ -1,0 +1,38 @@
+train_mode: online_v3
+seed: 11
+waypoint_scale: 0.35
+seq_len: 10
+hidden_dim: 128
+memory_k: 7
+memory_bucket_quota: 2600
+batch_size: 128
+lr: 0.00015
+gamma: 0.985
+train_episodes: 900
+eval_episodes: 180
+update_every_steps: 16
+grad_updates_per_step: 2
+warmup_steps: 256
+explore_noise_std: 0.015
+l2_residual_mode: true
+l2_delta_clip: 0.45
+l2_heading_gain: 2.2
+progress_log_every_episodes: 25
+progress_log_path: /tmp/v4_complex_mvp_velocity_progress.jsonl
+save_model_path: /tmp/v4_complex_mvp_velocity_recurrent.pt
+env:
+  max_steps: 260
+  disturbance_level: medium
+  disturbance_level_eval: medium
+  obstacle_count: 4
+  obstacle_curriculum:
+    - until_frac: 0.35
+      obstacle_count: 1
+    - until_frac: 0.70
+      obstacle_count: 2
+    - until_frac: 1.0
+      obstacle_count: 4
+  control_mode: velocity
+  min_start_goal_dist: 1.2
+  min_obstacle_spacing: 0.24
+  corridor_clearance: 0.16

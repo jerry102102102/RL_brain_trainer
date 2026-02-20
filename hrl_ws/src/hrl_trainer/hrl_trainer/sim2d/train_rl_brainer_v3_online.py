@@ -23,8 +23,8 @@ def _oracle_action(obs: np.ndarray, subgoal_xy: np.ndarray, speed_hint: float = 
     heading_err = (desired_heading - yaw + np.pi) % (2 * np.pi) - np.pi
     dist = float(np.hypot(dx, dy))
 
-    v_target = np.clip(speed_hint * dist, 0.0, 1.2)
-    omega_target = np.clip(1.5 * heading_err, -1.6, 1.6)
+    v_target = np.clip(speed_hint * dist, -1.2, 1.2)
+    omega_target = 1.5 * heading_err
     return np.array([v_target, omega_target], dtype=np.float32)
 
 
@@ -129,19 +129,29 @@ class OnlineTacticalBaseline(nn.Module):
 
 
 def _rbf_controller(obs: np.ndarray, desired_vo: np.ndarray) -> np.ndarray:
-    """L3 follower outputs velocity commands [v_cmd, omega_cmd]."""
-    v, omega = float(obs[3]), float(obs[4])
-    dv = float(desired_vo[0] - v)
-    dw = float(desired_vo[1] - omega)
+    """Low-level controller.
 
-    centers = np.array([[0.0, 0.0], [0.25, 0.0], [-0.25, 0.0], [0.0, 0.25], [0.0, -0.25]], dtype=np.float32)
-    widths = 10.0
-    e = np.array([dv, dw], dtype=np.float32)[None, :]
+    Patch note (2026-02-19): angular channel uses direct direction command
+    instead of pure angular-acceleration residual, to reduce under-turn wall hits.
+    """
+    v, omega = float(obs[3]), float(obs[4])
+    ev = float(desired_vo[0] - v)
+
+    centers = np.array([[0.0], [0.3], [-0.3]])
+    widths = 8.0
+    e = np.array([ev])[None, :]
     phi = np.exp(-widths * np.sum((e - centers) ** 2, axis=1))
 
-    v_cmd = v + 0.55 * dv + 0.05 * (phi[1] - phi[2])
-    o_cmd = omega + 0.6 * dw + 0.05 * (phi[3] - phi[4])
-    return np.array([np.clip(v_cmd, 0.0, 1.2), np.clip(o_cmd, -1.6, 1.6)], dtype=np.float32)
+    # linear channel keeps accel-style tracking
+    a_lin = 1.20 * ev + 0.20 * (phi[1] - phi[2])
+
+    # angular channel: pass desired turn rate through (no angle-rate clamp)
+    # keep a small damping term to reduce oscillation when already aligned
+    direct_turn = float(desired_vo[1])
+    align_term = -0.15 * float(omega)
+    a_ang = direct_turn + align_term
+
+    return np.array([np.clip(a_lin, -1.0, 1.0), a_ang], dtype=np.float32)
 
 
 def _build_feature(obs: np.ndarray, packet: dict, mem_action: np.ndarray | None) -> np.ndarray:
@@ -244,7 +254,8 @@ def _score_stats(scores: list[float]) -> dict:
 
 
 def _clip_desired(desired: np.ndarray) -> np.ndarray:
-    return np.array([np.clip(desired[0], 0.0, 1.2), np.clip(desired[1], -1.6, 1.6)], dtype=np.float32)
+    # symmetric velocity bound allows reverse motion; omega bounded to ±360 deg/s.
+    return np.array([np.clip(desired[0], -1.2, 1.2), np.clip(desired[1], -2.0 * np.pi, 2.0 * np.pi)], dtype=np.float32)
 
 
 def _deterministic_core_mapping(obs: np.ndarray, packet: dict, heading_gain: float = 1.5) -> np.ndarray:
@@ -270,6 +281,19 @@ def _done_reason(info: dict) -> str:
     if bool(info.get("collided", False)):
         return "collision"
     return "timeout"
+
+
+def _curriculum_obstacle_count(ep_idx: int, train_eps: int, env_cfg: dict) -> int:
+    plan = env_cfg.get("obstacle_curriculum", [])
+    if not plan:
+        return int(env_cfg.get("obstacle_count", 0))
+
+    # plan items: {"until_frac": 0.3, "obstacle_count": 0}
+    frac = (ep_idx + 1) / max(int(train_eps), 1)
+    for stage in plan:
+        if frac <= float(stage.get("until_frac", 1.0)):
+            return int(stage.get("obstacle_count", env_cfg.get("obstacle_count", 0)))
+    return int(plan[-1].get("obstacle_count", env_cfg.get("obstacle_count", 0)))
 
 
 def _timeout_bin(distance: float, near_thresh: float, mid_thresh: float) -> str:
@@ -459,6 +483,12 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
     noise_std = float(cfg.get("explore_noise_std", 0.05))
     actor_coef = float(cfg.get("actor_loss_coef", 1.0))
     critic_coef = float(cfg.get("critic_loss_coef", 0.25))
+    l2_residual_mode = bool(cfg.get("l2_residual_mode", True))
+    l2_delta_clip = float(cfg.get("l2_delta_clip", 0.45))
+    l2_heading_gain = float(cfg.get("l2_heading_gain", 2.2))
+    progress_every_eps = int(cfg.get("progress_log_every_episodes", 25))
+    progress_log_path = str(cfg.get("progress_log_path", "")).strip()
+    progress_rows: list[dict] = []
 
     in_dim = 10 + 2 + 1 + 2
     model = OnlineRecurrentPolicy(in_dim=in_dim, hid=int(cfg.get("hidden_dim", 128))).to(device)
@@ -473,12 +503,13 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
     train_done_reasons: Counter[str] = Counter()
 
     for ep in range(train_eps):
+        obs_count = _curriculum_obstacle_count(ep, train_eps, env_cfg)
         env = Sim2DEnv(
             seed=seed + ep,
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level", "medium")),
-            obstacle_count=int(env_cfg.get("obstacle_count", 0)),
-            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            obstacle_count=obs_count,
+            control_mode=str(env_cfg.get("control_mode", "acceleration")),
             min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
             min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
             corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
@@ -486,6 +517,8 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         obs = env.reset()
         hist: deque[np.ndarray] = deque(maxlen=seq_len)
         ep_return = 0.0
+        ep_steps = 0
+        ep_reason = "timeout"
 
         for _ in range(max_steps):
             packet = planner.plan(obs)
@@ -493,15 +526,25 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             feat = _build_feature(obs, packet, mem_action)
             hist.append(feat)
 
+            core_desired = _deterministic_core_mapping(obs, packet, heading_gain=l2_heading_gain)
             oracle_desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
-            desired = oracle_desired
+            target_action = (
+                _bounded_delta(oracle_desired - core_desired, l2_delta_clip)
+                if l2_residual_mode
+                else oracle_desired.copy()
+            )
+            desired = core_desired.copy()
             seq_arr = None
             if len(hist) == seq_len:
                 seq_arr = np.stack(list(hist), axis=0).astype(np.float32)
                 seq = torch.tensor(seq_arr[None, ...], dtype=torch.float32, device=device)
                 with torch.no_grad():
                     pred_action, _ = model(seq)
-                desired = pred_action.squeeze(0).cpu().numpy().astype(np.float32)
+                pred = pred_action.squeeze(0).cpu().numpy().astype(np.float32)
+                if l2_residual_mode:
+                    desired = _clip_desired(core_desired + _bounded_delta(pred, l2_delta_clip))
+                else:
+                    desired = _clip_desired(pred)
                 desired += np.random.normal(0.0, noise_std, size=2).astype(np.float32)
                 desired = _clip_desired(desired)
 
@@ -510,6 +553,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             next_obs, reward, done, info = env.step(action)
             ep_return += float(reward)
             global_steps += 1
+            ep_steps += 1
 
             memory_bank.append((obs[:5].copy(), oracle_desired.copy()))
 
@@ -524,7 +568,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
                     Transition(
                         seq=seq_arr,
                         next_seq=next_seq_arr,
-                        target=oracle_desired.copy(),
+                        target=target_action.copy(),
                         reward=float(reward),
                         done=float(done),
                     )
@@ -561,10 +605,32 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
 
             obs = next_obs
             if done:
-                train_done_reasons[_done_reason(info)] += 1
+                ep_reason = _done_reason(info)
+                train_done_reasons[ep_reason] += 1
                 break
 
         episode_returns.append(ep_return)
+        row = {
+            "episode": int(ep + 1),
+            "train_episodes": int(train_eps),
+            "global_steps": int(global_steps),
+            "episode_steps": int(ep_steps),
+            "episode_return": float(ep_return),
+            "done_reason": ep_reason,
+            "memory_size": int(len(memory_bank)),
+            "replay_size": int(len(replay)),
+            "online_updates": int(update_count),
+        }
+        progress_rows.append(row)
+        if progress_every_eps > 0 and ((ep + 1) % progress_every_eps == 0 or (ep + 1) == train_eps):
+            succ = int(train_done_reasons.get("success", 0))
+            coll = int(train_done_reasons.get("collision", 0))
+            tout = int(train_done_reasons.get("timeout", 0))
+            train_sr = succ / max((ep + 1), 1)
+            print(
+                f"[train] ep {ep + 1}/{train_eps} | sr={train_sr:.3f} succ={succ} coll={coll} timeout={tout} "
+                f"mem={len(memory_bank)} replay={len(replay)} updates={update_count}"
+            )
 
     timeout_bins_cfg = cfg.get("timeout_bins", {})
     near_thresh = float(timeout_bins_cfg.get("near", 0.25))
@@ -587,7 +653,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level_eval", env_cfg.get("disturbance_level", "medium"))),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
-            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            control_mode=str(env_cfg.get("control_mode", "acceleration")),
             min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
             min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
             corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
@@ -605,13 +671,18 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             feat = _build_feature(obs, packet, mem_action)
             hist.append(feat)
 
+            core_desired = _deterministic_core_mapping(obs, packet, heading_gain=l2_heading_gain)
             if len(hist) < seq_len:
-                desired = _oracle_action(obs, packet["subgoal_xy"], packet.get("speed_hint", 0.7))
+                desired = core_desired.copy()
             else:
                 seq = torch.tensor(np.stack(list(hist), axis=0)[None, ...], dtype=torch.float32, device=device)
                 with torch.no_grad():
                     pred_action, _ = model(seq)
-                desired = _clip_desired(pred_action.squeeze(0).cpu().numpy().astype(np.float32))
+                pred = pred_action.squeeze(0).cpu().numpy().astype(np.float32)
+                if l2_residual_mode:
+                    desired = _clip_desired(core_desired + _bounded_delta(pred, l2_delta_clip))
+                else:
+                    desired = _clip_desired(pred)
 
             action = _rbf_controller(obs, desired)
             obs, _, done, info = env.step(action)
@@ -639,6 +710,21 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         if recover is not None:
             rec.append(recover)
 
+    checkpoint_path = None
+    save_model_path = str(cfg.get("save_model_path", "")).strip()
+    if save_model_path:
+        p = Path(save_model_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), p)
+        checkpoint_path = str(p)
+
+    if progress_log_path:
+        pp = Path(progress_log_path)
+        pp.parent.mkdir(parents=True, exist_ok=True)
+        with pp.open("w", encoding="utf-8") as f:
+            for row in progress_rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
     return {
         "device": str(device),
         "train_episodes": train_eps,
@@ -658,6 +744,8 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         "tracking_rmse": float(np.mean(rmse)) if rmse else None,
         "recovery_time": float(np.mean(rec)) if rec else None,
         "control_effort": float(np.mean(effort)) if effort else None,
+        "model_checkpoint": checkpoint_path,
+        "progress_log_path": progress_log_path if progress_log_path else None,
     }
 
 
@@ -725,7 +813,7 @@ def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> di
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level", "medium")),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
-            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            control_mode=str(env_cfg.get("control_mode", "acceleration")),
             min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
             min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
             corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
@@ -869,7 +957,7 @@ def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> di
             max_steps=max_steps,
             level=str(env_cfg.get("disturbance_level_eval", env_cfg.get("disturbance_level", "medium"))),
             obstacle_count=int(env_cfg.get("obstacle_count", 0)),
-            control_mode=str(env_cfg.get("control_mode", "velocity")),
+            control_mode=str(env_cfg.get("control_mode", "acceleration")),
             min_start_goal_dist=float(env_cfg.get("min_start_goal_dist", 1.1)),
             min_obstacle_spacing=float(env_cfg.get("min_obstacle_spacing", 0.22)),
             corridor_clearance=float(env_cfg.get("corridor_clearance", 0.14)),
