@@ -39,6 +39,13 @@
   - 歸檔筆記：`docs/literature/MEMORY-R1-2508.19828.md`
   - 優先級：⭐⭐⭐⭐
 
+### B5. RL backbone 選型基準（task ↔ architecture 對照）
+- `1d22097a-9f22-4bde-af51-fadbf6df84fe.pdf`
+  - Title: **RLBenchNet: The Right Network for the Right Reinforcement Learning Task**
+  - 用途：提供「任務型態→模型架構」選型規則與計算成本對照（SPS / latency / GPU memory），可直接用來定義 L2 planner 的分級實驗路線。
+  - 歸檔筆記：`docs/literature/RLBENCHNET-2505.15040.md`
+  - 優先級：⭐⭐⭐⭐
+
 ## C. L3（低層 follower / 穩定執行）與機器人實驗證據
 
 ### C1. Robotics empirical/control paper（待精讀）
