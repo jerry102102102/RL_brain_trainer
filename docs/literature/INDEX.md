@@ -56,10 +56,16 @@
 
 ## D. 安全與約束學習（橫跨 L2/L3）
 
-> 目前你已指定方向：CPO、Lyapunov/CMDP（尚未看到對應 PDF 檔在 inbound，需後續補）。
+### D1. Lyapunov-stable actor-critic（LAC）
+- `78f52902-f3d2-4a81-a0e1-0eec28e7fb26.pdf`
+  - Title: **Actor-Critic Reinforcement Learning for Control with Stability Guarantee**
+  - 用途：提供可 sample 驗證的 Lyapunov stability 條件與 actor-critic 約束訓練框架，可直接映射到 L2 的 safety-critic / constraint loss 設計。
+  - 歸檔筆記：`docs/literature/LAC-STABILITY-ACTOR-CRITIC-2020.md`
+  - 優先級：⭐⭐⭐⭐⭐
 
+### D2. 待補主線
+- CPO / CMDP 經典論文（尚待補齊 PDF 與實作對照）
 - 已在記憶中列為主線：`memory/2026-02-17.md`
-- 待補：CPO / Lyapunov 經典論文 PDF 與實作參考
 
 ## E. 非研究論文（不列入架構證據）
 
