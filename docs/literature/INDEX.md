@@ -32,6 +32,13 @@
   - 歸檔筆記：`docs/literature/MEM-ALPHA-2509.25911.md`
   - 優先級：⭐⭐⭐⭐
 
+### B4. Memory management + usage via RL（Memory-R1）
+- `4c8c4f49-118e-4740-a142-3302245834ec.pdf`
+  - Title: **Memory-R1: Enhancing Large Language Model Agents to Manage and Utilize Memories via Reinforcement Learning**
+  - 用途：把 memory manager（ADD/UPDATE/DELETE/NOOP）與 answer-time memory distillation 都納入 RL，提供「可審計記憶操作 + outcome-driven reward」設計模板。
+  - 歸檔筆記：`docs/literature/MEMORY-R1-2508.19828.md`
+  - 優先級：⭐⭐⭐⭐
+
 ## C. L3（低層 follower / 穩定執行）與機器人實驗證據
 
 ### C1. Robotics empirical/control paper（待精讀）
