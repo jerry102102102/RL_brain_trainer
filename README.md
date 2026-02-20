@@ -1,86 +1,129 @@
-# RL_brain_trainer (V3)
+# RL_brain_trainer (V4 Mainline)
 
-本 repo 目前以 **V3 三層分工架構**為主線，目標是把機器人任務拆成可驗證的層級因果，並用系統化消融實驗確認每層的貢獻。
-
-## V3 架構（目前主版）
-
-- **L1（語意/全域理解）**：輸出可被規劃器消化的意圖與約束表徵（不是控制量）
-- **L2（局部規劃/技能）**：根據 L1 表徵產生可執行局部計畫（含 memory/LSTM 可選）
-- **L3（deterministic follower）**：固定追蹤控制，負責精度與穩定
-
-> 核心契約：**把「理解」和「技能」分開，把「技能」和「精度」分開**。
+本 repo 目前主線是 **V4（sim2d）**：
+以「可驗證、可重跑、可逐步升級到手臂場景」為目標，先把移動任務中的層級決策與控制約束打穩，再往 V5 manipulation 擴展。
 
 ---
 
-## 重要實驗結論（V3）
+## 1) 架構總覽（L1 / L2 / L3）
 
-### 1) Hierarchy Meaning Ablation（3 seeds）
-文件：`docs/V3_HIERARCHY_MEANING_ABLATION.md`
+- **L1（語意/全域意圖）**  
+  產生任務意圖與約束，不直接輸出控制量。
+- **L2（局部規劃 / policy）**  
+  根據狀態與目標產生局部決策（可含記憶/殘差策略）。
+- **L3（deterministic follower）**  
+  把 L2 指令轉成可執行控制，負責可追蹤性與穩定性。
 
-- low：A 0.889, B 1.000, C 1.000
-- medium：A 0.856, B 0.967, C 0.944
-- high：A 0.600, B 0.811, C 0.833
+核心契約：
+> 把「理解」和「技能」分開，把「技能」和「精度」分開。
 
-結論：修正層級語義契約後，L2/L3 分工價值明顯。
-
-### 2) Level-5 Pentagon Benchmark（5 seeds）
-文件：`docs/V3_LEVEL5_PENTAGON_ABLATION.md`
-
-- Level1~4：L2（B/C）明顯優於 A
-- Level5：A/B/C 接近失效區（~0.15 success）
-
-結論：高難度下進入飽和區，下一步應優先補強「可行性表徵 + 約束規劃骨架」，而非單純堆 memory/LSTM。
+介面細節請看：`docs/V4_INTERFACE_SPEC.md`
 
 ---
 
-## 目錄（V3 相關）
+## 2) V4 關鍵機制（本次更新）
 
-> 舊版規劃/實驗草稿已整理到 `docs/archive/legacy/`，避免干擾目前主線。
+### 控制約束（Control Constraints）
+- 線速度：`v ∈ [-1.2, 1.2]`（允許倒車）
+- 角速度：`ω ∈ [-2π, 2π]`（±360 deg/s）
 
-### 核心訓練/實驗程式
+設計意圖：
+- 保留反向修正能力（避免只能前進導致局部幾何卡死）
+- 維持轉向方向連續性，同時避免無界角速造成訓練/執行不穩
+
+### Reward（目前實作）
+由以下項目構成（詳見 `sim2d/env.py` 實作）：
+- 距離/進度相關項
+- 控制 effort 懲罰
+- 成功獎勵（success bonus）
+- 碰撞懲罰（collision penalty）
+
+備註：目前 online_v3/v4 路徑沒有獨立命名為 backtracking loss 的顯式項，主要為 actor/critic 目標與其組合。
+
+---
+
+## 3) 實驗方法（V4）
+
+### 訓練設定（代表性）
+- no-obstacle MVP：`hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
+- complex MVP：`hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
+- complex + velocity constraints：`hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
+
+### 執行方式
+在 `hrl_ws` 內啟動（依對應 YAML）：
+
+```bash
+cd hrl_ws
+uv sync
+source .venv/bin/activate
+
+python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
+  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
+```
+
+### 評估與可視化
+- 以 success/collision/timeout 為主
+- 保留 checkpoint 與 rollout（GIF/影片）作為行為驗證
+- 建議同步保存 JSON metrics + progress log 便於對照
+
+---
+
+## 4) 最新結果（V4）
+
+### No-obstacle MVP
+- success rate：**95.83%**（115/120）
+
+### Complex + Velocity Constraints（rerun）
+- success rate：**95.56%**（172/180）
+- collisions：**8**
+- timeout：**0**
+
+結論（目前）：
+- 在開放倒車 + 有界角速度條件下，complex 場景仍維持高成功率。
+- 目前主要優化方向轉向：
+  1) 大 heading error 時的速度調度（更明確「先轉再走」）
+  2) progress/backtracking 相關 shaping
+  3) V5 手臂場景的狀態/動作介面遷移
+
+---
+
+## 5) 參考文獻（與實作對齊）
+
+完整索引：`docs/literature/INDEX.md`  
+建議閱讀路徑：`docs/literature/PIPELINE_GUIDE.md`
+
+目前已歸檔且直接相關：
+- **RoBridge**: Hierarchical cognition-execution 架構參考
+- **Mem-α**: 記憶建構 policy 學習
+- **Memory-R1**: 記憶管理 + RL 對齊
+- **RLBenchNet**: 任務對應架構選型基準
+- **LAC (Lyapunov Actor-Critic)**: 約束/穩定性導向 RL 設計
+
+---
+
+## 6) 目錄與重點檔案
+
+### 主要程式
+- `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/env.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
-- `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/run_v3_hierarchy_meaning_ablation.py`
-- `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/diag_l0_rbf_straight.py`
-- `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/diag_l1_planner_straight.py`
 
-### 主要設定檔
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v3_online_quick.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v3_hierarchy_meaning_ablation.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v3_level5_pentagon_ablation.yaml`
+### 主要設定
+- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
+- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
+- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
 
-### 實驗文件
-- `docs/QUICKSTART.md`（10 分鐘上手）
-- `docs/V3_GUIDE.md`（建議先讀）
-- `docs/V3_L2_IO_SPEC.md`（L2 輸入/輸出結構規範）
-- `docs/V3_ONLINE_MEMORY_LSTM_PLAN.md`
-
-### 文獻入口
-- `docs/literature/INDEX.md`（已收錄論文分類）
-- `docs/literature/PIPELINE_GUIDE.md`（按 L1/L2/L3 環節讀）
+### 文件
+- `docs/V4_INTERFACE_SPEC.md`
+- `docs/V3_VELOCITY_PATCH_REPORT.md`
+- `docs/V3_GUIDE.md`（V3 歷史主線）
 - `docs/V3_PROGRESS_BOARD.md`
-- `docs/L2_MEMORY_ABLATION.md`
-- `docs/L2_DETERMINISTIC_PLUS_MEMORY.md`
-- `docs/V3_THREE_LAYER_LSTM_ABLATION.md`
-- `docs/V3_COMPLEXITY_ABLATION.md`
-- `docs/V3_HIERARCHY_MEANING_ABLATION.md`
-- `docs/V3_LEVEL5_PENTAGON_ABLATION.md`
 
 ---
 
-## 執行（快速）
+## 7) Branch 策略
 
-> 以 repo 內 `hrl_ws` 為工作目錄，依照各 yaml 啟動對應實驗。
+- `main`：目前對齊 **V4 主線**
+- `v3-online-memory`：保留 V3 階段成果
+- `v2`：歷史基線
 
-1. 先跑層級診斷（L0/L1）
-2. 再跑 hierarchy meaning ablation
-3. 最後跑 level5 pentagon 壓力測試
-
-結果請同步寫入對應 `docs/*.md` 與 JSON artifact（例如 `/tmp/v3_*`）。
-
----
-
-## 目前狀態
-
-- 主線分支：`v3-online-memory`
-- 本 repo 的 `main` 應對齊此 V3 主線內容
-- 舊版（早期單檔概念敘述）已退場，不再作為主說明
+下一階段：**V5 模擬手臂場景（manipulation）**。
