@@ -486,6 +486,9 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
     l2_residual_mode = bool(cfg.get("l2_residual_mode", True))
     l2_delta_clip = float(cfg.get("l2_delta_clip", 0.45))
     l2_heading_gain = float(cfg.get("l2_heading_gain", 2.2))
+    progress_every_eps = int(cfg.get("progress_log_every_episodes", 25))
+    progress_log_path = str(cfg.get("progress_log_path", "")).strip()
+    progress_rows: list[dict] = []
 
     in_dim = 10 + 2 + 1 + 2
     model = OnlineRecurrentPolicy(in_dim=in_dim, hid=int(cfg.get("hidden_dim", 128))).to(device)
@@ -514,6 +517,8 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         obs = env.reset()
         hist: deque[np.ndarray] = deque(maxlen=seq_len)
         ep_return = 0.0
+        ep_steps = 0
+        ep_reason = "timeout"
 
         for _ in range(max_steps):
             packet = planner.plan(obs)
@@ -548,6 +553,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
             next_obs, reward, done, info = env.step(action)
             ep_return += float(reward)
             global_steps += 1
+            ep_steps += 1
 
             memory_bank.append((obs[:5].copy(), oracle_desired.copy()))
 
@@ -599,10 +605,32 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
 
             obs = next_obs
             if done:
-                train_done_reasons[_done_reason(info)] += 1
+                ep_reason = _done_reason(info)
+                train_done_reasons[ep_reason] += 1
                 break
 
         episode_returns.append(ep_return)
+        row = {
+            "episode": int(ep + 1),
+            "train_episodes": int(train_eps),
+            "global_steps": int(global_steps),
+            "episode_steps": int(ep_steps),
+            "episode_return": float(ep_return),
+            "done_reason": ep_reason,
+            "memory_size": int(len(memory_bank)),
+            "replay_size": int(len(replay)),
+            "online_updates": int(update_count),
+        }
+        progress_rows.append(row)
+        if progress_every_eps > 0 and ((ep + 1) % progress_every_eps == 0 or (ep + 1) == train_eps):
+            succ = int(train_done_reasons.get("success", 0))
+            coll = int(train_done_reasons.get("collision", 0))
+            tout = int(train_done_reasons.get("timeout", 0))
+            train_sr = succ / max((ep + 1), 1)
+            print(
+                f"[train] ep {ep + 1}/{train_eps} | sr={train_sr:.3f} succ={succ} coll={coll} timeout={tout} "
+                f"mem={len(memory_bank)} replay={len(replay)} updates={update_count}"
+            )
 
     timeout_bins_cfg = cfg.get("timeout_bins", {})
     near_thresh = float(timeout_bins_cfg.get("near", 0.25))
@@ -690,6 +718,13 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         torch.save(model.state_dict(), p)
         checkpoint_path = str(p)
 
+    if progress_log_path:
+        pp = Path(progress_log_path)
+        pp.parent.mkdir(parents=True, exist_ok=True)
+        with pp.open("w", encoding="utf-8") as f:
+            for row in progress_rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
     return {
         "device": str(device),
         "train_episodes": train_eps,
@@ -710,6 +745,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
         "recovery_time": float(np.mean(rec)) if rec else None,
         "control_effort": float(np.mean(effort)) if effort else None,
         "model_checkpoint": checkpoint_path,
+        "progress_log_path": progress_log_path if progress_log_path else None,
     }
 
 
