@@ -254,8 +254,8 @@ def _score_stats(scores: list[float]) -> dict:
 
 
 def _clip_desired(desired: np.ndarray) -> np.ndarray:
-    # symmetric velocity bound allows reverse motion; omega left unconstrained.
-    return np.array([np.clip(desired[0], -1.2, 1.2), float(desired[1])], dtype=np.float32)
+    # symmetric velocity bound allows reverse motion; omega bounded to ±360 deg/s.
+    return np.array([np.clip(desired[0], -1.2, 1.2), np.clip(desired[1], -2.0 * np.pi, 2.0 * np.pi)], dtype=np.float32)
 
 
 def _deterministic_core_mapping(obs: np.ndarray, packet: dict, heading_gain: float = 1.5) -> np.ndarray:
