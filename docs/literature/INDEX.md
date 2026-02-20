@@ -25,6 +25,13 @@
   - 用途：補 L2 constrained planner 的數學化與優化框架。
   - 優先級：⭐⭐⭐
 
+### B3. Memory policy learning（RL 記憶建構）
+- `a4a27341-4a4b-4b09-867a-c555ea5021e6.pdf`
+  - Title: **Mem-α: Learning Memory Construction via Reinforcement Learning**
+  - 用途：把「記憶何時介入/怎麼寫入」從 heuristic 變成可學習 policy（可映射到 L2 memory gating）。
+  - 歸檔筆記：`docs/literature/MEM-ALPHA-2509.25911.md`
+  - 優先級：⭐⭐⭐⭐
+
 ## C. L3（低層 follower / 穩定執行）與機器人實驗證據
 
 ### C1. Robotics empirical/control paper（待精讀）
