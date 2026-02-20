@@ -1,0 +1,53 @@
+# Literature Index for RL_brain_trainer (V3)
+
+> 目的：把目前已收錄 PDF 依「架構環節」分門別類，方便快速找到可用論文。
+> 範圍：`/home/jerry/.openclaw/media/inbound/*.pdf` 中與研究有關者。
+
+## A. L1（高層語意/認知規劃）
+
+### A1. Cognition → execution 分層架構
+- `160f9154-ea6e-4e4c-8952-bd4fe027235a.pdf`
+  - Title: **RoBridge: A Hierarchical Architecture Bridging Cognition and Execution for General Robotic Manipulation**
+  - 用途：可直接對照我們的 L1/L2/L3 分層合理性與接口設計。
+  - 優先級：⭐⭐⭐⭐⭐
+
+## B. L2（局部規劃 + 記憶 + 受限行動）
+
+### B1. Memory-based constrained action selection
+- `dee63f08-7672-497a-8d7c-3840e9166c60.pdf`
+  - First-page topic: **Using Memory-Based Learning to Solve Tasks with State-Action Constraints**
+  - 用途：定義 memory 檢索/門控/替換策略，避免 L2 盲目修正。
+  - 優先級：⭐⭐⭐⭐⭐
+
+### B2. Control/optimization under constraints（待精讀）
+- `d0072133-43f3-4a58-bf54-1f57e7511e1a.pdf`
+  - First-page source: *International Journal of Optimization and Control*
+  - 用途：補 L2 constrained planner 的數學化與優化框架。
+  - 優先級：⭐⭐⭐
+
+## C. L3（低層 follower / 穩定執行）與機器人實驗證據
+
+### C1. Robotics empirical/control paper（待精讀）
+- `d2fa8f71-741b-49f4-b3f3-4f0c3080ccf4.pdf`
+  - First-page source: *Frontiers in Robotics and AI (2025)*
+  - 用途：補低層執行/robustness 實驗設計與評估指標。
+  - 優先級：⭐⭐⭐
+
+## D. 安全與約束學習（橫跨 L2/L3）
+
+> 目前你已指定方向：CPO、Lyapunov/CMDP（尚未看到對應 PDF 檔在 inbound，需後續補）。
+
+- 已在記憶中列為主線：`memory/2026-02-17.md`
+- 待補：CPO / Lyapunov 經典論文 PDF 與實作參考
+
+## E. 非研究論文（不列入架構證據）
+
+以下文件保留但不作為研究證據源：
+- 履歷/cover letter 類：`1a5d...`, `2e66...`, `a729...`, `d501...`, `d503...`
+- 作業說明/課內文件：`ba1e...`
+- OpenClaw 協議與個人規劃：`1b6e...`, `3999...`, `5662...`, `ce57...`
+
+## 使用方式（入口）
+1) 先看 `docs/literature/PIPELINE_GUIDE.md`（按環節找文獻）
+2) 針對當前改版只選 1~2 篇主文獻做實作對齊
+3) 每次實驗報告要標註「此改動對齊哪篇文獻」

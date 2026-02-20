@@ -51,7 +51,12 @@
 ### 實驗文件
 - `docs/QUICKSTART.md`（10 分鐘上手）
 - `docs/V3_GUIDE.md`（建議先讀）
+- `docs/V3_L2_IO_SPEC.md`（L2 輸入/輸出結構規範）
 - `docs/V3_ONLINE_MEMORY_LSTM_PLAN.md`
+
+### 文獻入口
+- `docs/literature/INDEX.md`（已收錄論文分類）
+- `docs/literature/PIPELINE_GUIDE.md`（按 L1/L2/L3 環節讀）
 - `docs/V3_PROGRESS_BOARD.md`
 - `docs/L2_MEMORY_ABLATION.md`
 - `docs/L2_DETERMINISTIC_PLUS_MEMORY.md`
