@@ -1,8 +1,8 @@
 # L2 Deterministic Core + Memory Residual (Fixed L1/L3, No LSTM)
 
 ## Setup
-- Branch: `v3-online-memory`
-- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
+- Branch: `main` (V4-only)
+- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
 - Config mode: `l2_deterministic_plus_memory`
 - Modes: `core_only` vs `core_plus_memory_residual`
 - Deterministic core mapping: heading+distance to desired `[v, omega]`

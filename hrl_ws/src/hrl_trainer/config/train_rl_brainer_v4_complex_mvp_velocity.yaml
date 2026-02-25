@@ -1,4 +1,4 @@
-train_mode: online_v3
+train_mode: online_v4
 seed: 11
 waypoint_scale: 0.35
 seq_len: 10

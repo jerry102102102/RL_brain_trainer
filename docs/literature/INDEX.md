@@ -1,4 +1,4 @@
-# Literature Index for RL_brain_trainer (V3)
+# Literature Index for RL_brain_trainer (V4)
 
 > 目的：把目前已收錄 PDF 依「架構環節」分門別類，方便快速找到可用論文。
 > 範圍：`/home/jerry/.openclaw/media/inbound/*.pdf` 中與研究有關者。

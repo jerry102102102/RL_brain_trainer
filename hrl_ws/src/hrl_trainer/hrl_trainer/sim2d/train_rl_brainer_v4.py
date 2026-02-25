@@ -455,8 +455,8 @@ def train_and_eval_offline_legacy(cfg: dict) -> dict:
     }
 
 
-def train_and_eval_online_v3(cfg: dict) -> dict:
-    """V3 online loop: act -> step -> store -> periodic update."""
+def train_and_eval_online_v4(cfg: dict) -> dict:
+    """V4 online loop: act -> step -> store -> periodic update."""
     seed = int(cfg.get("seed", 0))
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -749,7 +749,7 @@ def train_and_eval_online_v3(cfg: dict) -> dict:
     }
 
 
-def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> dict:
+def train_and_eval_online_v4_ff(cfg: dict, memory_mode: str = "memory_on") -> dict:
     """L2 isolation run: fixed planner/RBF, non-recurrent tactical baseline."""
     seed = int(cfg.get("seed", 0))
     np.random.seed(seed)
@@ -1034,7 +1034,7 @@ def train_and_eval_online_v3_ff(cfg: dict, memory_mode: str = "memory_on") -> di
 
 def run_l2_memory_ablation(cfg: dict) -> dict:
     modes = ["memory_off", "memory_on"]
-    results = {mode: train_and_eval_online_v3_ff(cfg, memory_mode=mode) for mode in modes}
+    results = {mode: train_and_eval_online_v4_ff(cfg, memory_mode=mode) for mode in modes}
     off = results["memory_off"]
     on = results["memory_on"]
     return {
@@ -1242,8 +1242,8 @@ def _write_l2_deterministic_report(report: dict, report_path: Path) -> None:
         "# L2 Deterministic Core + Memory Residual (Fixed L1/L3, No LSTM)",
         "",
         "## Setup",
-        f"- Branch: `v3-online-memory`",
-        f"- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`",
+        f"- Branch: `main` (V4-only)",
+        f"- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`",
         f"- Config mode: `l2_deterministic_plus_memory`",
         f"- Modes: `core_only` vs `core_plus_memory_residual`",
         f"- Deterministic core mapping: heading+distance to desired `[v, omega]`",
@@ -1571,7 +1571,7 @@ def _aggregate_three_layer_by_seed(seed_results: dict[str, list[dict]]) -> dict:
 
 
 def _print_three_layer_key_table(aggregated: dict) -> None:
-    print("V3 three-layer ablation (seed mean±std)")
+    print("V4 three-layer ablation (seed mean±std)")
     print("| mode | success_rate | avg_return | tracking_rmse | control_effort | timeout near/mid/far |")
     print("|---|---:|---:|---:|---:|---:|")
     for mode in ("core_only", "core_plus_memory_residual", "core_plus_lstm_memory_residual"):
@@ -1596,10 +1596,10 @@ def _write_three_layer_lstm_report(report: dict, report_path: Path) -> None:
     b = modes["core_plus_memory_residual"]
     l = modes["core_plus_lstm_memory_residual"]
     lines = [
-        "# V3 Three-Layer LSTM Ablation",
+        "# V4 Three-Layer LSTM Ablation",
         "",
         "## Setup",
-        "- Branch: `v3-online-memory`",
+        "- Branch: `main` (V4-only)",
         "- L1 planner fixed: `HighLevelHeuristicPlannerV2`",
         "- L3 controller fixed: `rbf_controller`",
         "- L2 deterministic core fixed: heading+distance mapping to desired `[v, omega]`",
@@ -1654,7 +1654,7 @@ def _write_three_layer_lstm_report(report: dict, report_path: Path) -> None:
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def run_v3_three_layer_lstm_ablation(cfg: dict, report_path: Path | None = None) -> dict:
+def run_v4_three_layer_lstm_ablation(cfg: dict, report_path: Path | None = None) -> dict:
     seeds = cfg.get("seeds")
     if seeds is None:
         base = int(cfg.get("seed", 11))
@@ -2232,7 +2232,7 @@ def _aggregate_hierarchy_seed_rows(rows: list[dict]) -> dict:
 
 
 def _print_hierarchy_matrix(aggregated: dict, tier_order: list[str]) -> None:
-    print("V3 hierarchy-meaning ablation (seed mean±std)")
+    print("V4 hierarchy-meaning ablation (seed mean±std)")
     print("| tier | mode | success_rate | timeout near/mid/far | path_eff | wp_rmse | control_effort |")
     print("|---|---|---:|---:|---:|---:|---:|")
     mode_order = ("no_l2_shortcut", "l2_no_memory", "l2_memory_lstm")
@@ -2252,7 +2252,7 @@ def _print_hierarchy_matrix(aggregated: dict, tier_order: list[str]) -> None:
             )
 
 
-def run_v3_hierarchy_meaning_ablation(cfg: dict) -> dict:
+def run_v4_hierarchy_meaning_ablation(cfg: dict) -> dict:
     """Validate L2 meaning under strict hierarchy contract with tiered benchmark."""
     min_seed_count = int(cfg.get("min_seed_count", 3))
     seeds = [int(s) for s in cfg.get("seeds", [11, 29, 47])]
@@ -2353,32 +2353,32 @@ def _resolve_three_layer_report_path() -> Path:
     here = Path(__file__).resolve()
     for p in [here] + list(here.parents):
         if (p / "docs").exists():
-            return p / "docs" / "V3_THREE_LAYER_LSTM_ABLATION.md"
-    return Path("docs/V3_THREE_LAYER_LSTM_ABLATION.md")
+            return p / "docs" / "V4_THREE_LAYER_LSTM_ABLATION.md"
+    return Path("docs/V4_THREE_LAYER_LSTM_ABLATION.md")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train RL-brainer v3 (online-memory, WIP)")
+    parser = argparse.ArgumentParser(description="Train RL-brainer v4 (online-memory)")
     parser.add_argument("--config", required=True)
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    mode = str(cfg.get("train_mode", "online_v3"))
+    mode = str(cfg.get("train_mode", "online_v4"))
     if mode == "offline_legacy":
         out = train_and_eval_offline_legacy(cfg)
-    elif mode == "online_v3_ff":
-        out = train_and_eval_online_v3_ff(cfg, memory_mode=str(cfg.get("memory_mode", "memory_on")))
+    elif mode == "online_v4_ff":
+        out = train_and_eval_online_v4_ff(cfg, memory_mode=str(cfg.get("memory_mode", "memory_on")))
     elif mode == "l2_memory_ablation":
         out = run_l2_memory_ablation(cfg)
     elif mode == "l2_deterministic_plus_memory":
         out = run_l2_deterministic_plus_memory(cfg, report_path=_resolve_report_path())
     elif mode == "three_layer_lstm_ablation":
-        out = run_v3_three_layer_lstm_ablation(cfg, report_path=_resolve_three_layer_report_path())
+        out = run_v4_three_layer_lstm_ablation(cfg, report_path=_resolve_three_layer_report_path())
     elif mode == "hierarchy_meaning_ablation":
-        out = run_v3_hierarchy_meaning_ablation(cfg)
+        out = run_v4_hierarchy_meaning_ablation(cfg)
     else:
-        out = train_and_eval_online_v3(cfg)
+        out = train_and_eval_online_v4(cfg)
     print(json.dumps(out, indent=2))
     if args.out:
         p = Path(args.out)

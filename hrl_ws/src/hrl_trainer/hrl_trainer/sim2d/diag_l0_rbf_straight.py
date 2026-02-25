@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from .env import DisturbanceConfig, Sim2DEnv
-from .train_rl_brainer_v3_online import _rbf_controller
+from .train_rl_brainer_v4 import _rbf_controller
 
 
 def run_diag_l0() -> dict:

@@ -1,15 +1,15 @@
 # PAPER_MEMORY_MAPPING
 
 ## Scope
-- Branch: `v3-online-memory`
-- Target path: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
+- Branch: `main` (V4-only)
+- Target path: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
 - Target mode: `train_mode: l2_memory_ablation` (`memory_off` vs `memory_on`)
 - Reference file: `/home/jerry/.openclaw/media/inbound/dee63f08-7672-497a-8d7c-3840e9166c60.pdf`
 
 ## Paper -> Implementation Mapping
 1. Gate-in memory write
 - Paper intent: write only useful experiences (progress/success).
-- Implementation: in `train_and_eval_online_v3_ff`, writes are accepted only when:
+- Implementation: in `train_and_eval_online_v4_ff`, writes are accepted only when:
   - `progress_delta > memory_progress_eps`, or
   - current step is terminal success (`done && info["success"]`).
 - Additional successful-segment handling: on successful episode end, last `memory_success_segment_len` step candidates are written with success bonus.

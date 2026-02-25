@@ -9,7 +9,7 @@ from matplotlib import patches
 
 from .env import Sim2DEnv
 from .planner import HighLevelHeuristicPlannerV2
-from .train_rl_brainer_v3_online import (
+from .train_rl_brainer_v4 import (
     OnlineRecurrentPolicy,
     _bounded_delta,
     _build_feature,
@@ -124,7 +124,7 @@ def draw_and_save(env, states, packets, infos, out_path: Path, fps: int = 12):
     ax.set_ylim(-world, world)
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.2)
-    ax.set_title("V3 Sim2D rollout")
+    ax.set_title("V4 Sim2D rollout")
 
     for ox, oy, rr in env.obstacles:
         ax.add_patch(patches.Circle((ox, oy), rr, color="tomato", alpha=0.5))
@@ -200,7 +200,7 @@ def main():
     ap.add_argument("--mode", type=str, default="l2", choices=["l2", "l3_only"], help="l2=planner/local rollout, l3_only=direct goal handoff")
     ap.add_argument("--min-start-goal-dist", type=float, default=1.1)
     ap.add_argument("--control-mode", type=str, default="velocity", choices=["velocity", "acceleration"])
-    ap.add_argument("--out", type=str, default="/tmp/v3_episode.gif")
+    ap.add_argument("--out", type=str, default="/tmp/v4_episode.gif")
     ap.add_argument("--fps", type=int, default=12)
     args = ap.parse_args()
 

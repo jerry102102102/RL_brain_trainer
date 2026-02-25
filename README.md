@@ -24,7 +24,7 @@
 - 成功獎勵（success bonus）
 - 碰撞懲罰（collision penalty）
 
-備註：目前 online_v3/v4 路徑沒有獨立命名為 backtracking loss 的顯式項。
+備註：目前 V4 訓練路徑沒有獨立命名為 backtracking loss 的顯式項。
 
 ### 3) 實驗方法（V4）
 **代表性訓練設定**
@@ -38,7 +38,7 @@ cd hrl_ws
 uv sync
 source .venv/bin/activate
 
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
+python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
   --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
 ```
 
@@ -54,18 +54,16 @@ python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
 ### 6) 目錄重點
 - 程式：
   - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/env.py`
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
 - 文件：
   - `docs/V4_INTERFACE_SPEC.md`
-  - `docs/V3_VELOCITY_PATCH_REPORT.md`
-  - `docs/V3_GUIDE.md`
-  - `docs/V3_PROGRESS_BOARD.md`
+  - `docs/archive/v3_legacy/V3_VELOCITY_PATCH_REPORT.md`
+  - `docs/archive/v3_legacy/V3_GUIDE.md`
+  - `docs/archive/v3_legacy/V3_PROGRESS_BOARD.md`
 
 ### 7) Branch 策略
 - `main`：V4 主線
-- `v3-online-memory`：V3 階段成果
-- `v2`：歷史基線
-
+- `
 下一階段：**V5 模擬手臂場景（manipulation）**。
 
 ---
@@ -94,7 +92,7 @@ Interface details: `docs/V4_INTERFACE_SPEC.md`
 - success bonus
 - collision penalty
 
-Note: there is no explicitly named “backtracking loss” term in the current online_v3/v4 path.
+Note: there is no explicitly named “backtracking loss” term in the current online_v4 path.
 
 ### 3) Experimental Method (V4)
 **Representative configs**
@@ -108,7 +106,7 @@ cd hrl_ws
 uv sync
 source .venv/bin/activate
 
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
+python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
   --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
 ```
 
@@ -124,16 +122,16 @@ python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
 ### 6) Important Files
 - Code:
   - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/env.py`
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
 - Docs:
   - `docs/V4_INTERFACE_SPEC.md`
-  - `docs/V3_VELOCITY_PATCH_REPORT.md`
-  - `docs/V3_GUIDE.md`
-  - `docs/V3_PROGRESS_BOARD.md`
+  - `docs/archive/v3_legacy/V3_VELOCITY_PATCH_REPORT.md`
+  - `docs/archive/v3_legacy/V3_GUIDE.md`
+  - `docs/archive/v3_legacy/V3_PROGRESS_BOARD.md`
 
 ### 7) Branch Strategy
-- `main`: V4 mainline
-- `v3-online-memory`: V3 milestone branch
-- `v2`: historical baseline
+- `main`: V4 mainline (only)
+
+V2/V3 materials are archived under `docs/archive/v3_legacy/` and are no longer part of the active path.
 
 Next stage: **V5 robot-arm simulation (manipulation)**.

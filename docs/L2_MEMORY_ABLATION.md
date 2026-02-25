@@ -1,11 +1,11 @@
 # L2 Memory Isolation Ablation (Fixed L1/L3, No LSTM)
 
 ## Setup
-- Branch: `v3-online-memory`
-- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py`
-- Config: `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v3_l2_ablation_quick.yaml`
+- Branch: `main` (V4-only)
+- Script: `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
+- Config: `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
 - Run command:
-  - `cd hrl_ws && UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src/hrl_trainer uv run python -m hrl_trainer.sim2d.train_rl_brainer_v3_online --config src/hrl_trainer/config/train_rl_brainer_v3_l2_ablation_quick.yaml --out /tmp/l2_memory_ablation.json`
+  - `cd hrl_ws && UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src/hrl_trainer uv run python -m hrl_trainer.sim2d.train_rl_brainer_v4 --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml --out /tmp/l2_memory_ablation.json`
 
 ## Controlled Conditions
 - High-level planner fixed: `HighLevelHeuristicPlannerV2`
