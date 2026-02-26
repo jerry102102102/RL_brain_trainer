@@ -1,0 +1,64 @@
+wp0:
+  window_sec: 60.0
+  world_frame: world
+
+  thresholds:
+    state_latency_p95_ms: 80.0
+    image_latency_p95_ms: 120.0
+    replay_image_latency_p95_ms: 120.0
+    pose_jitter_std_m: 0.003
+    id_switch_rate_max: 0.01
+    id_missing_warn_rate: 0.05
+    approx_sync_slop_ms: 50.0
+    approx_sync_success_rate_min: 0.95
+
+  cameras:
+    overhead:
+      image_topic: /v5/cam/overhead/rgb
+      camera_info_topic: /v5/cam/overhead/camera_info
+      expected_fps: 10.0
+      tf_target_frame: cam_overhead_optical_frame
+    side:
+      image_topic: /v5/cam/side/rgb
+      camera_info_topic: /v5/cam/side/camera_info
+      expected_fps: 10.0
+      tf_target_frame: cam_side_optical_frame
+
+  tf_checks:
+    required_pairs:
+      - source: world
+        target: cam_overhead_optical_frame
+      - source: world
+        target: cam_side_optical_frame
+
+  state_topics:
+    - name: joint_states
+      topic: /joint_states
+      type: sensor_msgs/msg/JointState
+      header_field: header
+    # Add arm controller state topics here if needed.
+    # - name: arm_state
+    #   topic: /arm_controller/state
+    #   type: control_msgs/msg/JointTrajectoryControllerState
+    #   header_field: header
+
+  pose_jitter:
+    topic: /tray1/pose
+    type: geometry_msgs/msg/PoseStamped
+    pose_field: pose
+    header_field: header
+    required_frame_id: world
+
+  id_switch:
+    # `jsonl` mode is default because object pose message type is repo-specific.
+    # JSONL rows should contain at least object_id and valid, one row per frame.
+    mode: jsonl
+    jsonl_path: /tmp/v5_object_id_frames.jsonl
+    jsonl_id_field: object_id
+    jsonl_valid_field: valid
+
+    # Optional live ROS mode (set mode: ros and update type/id_field as appropriate).
+    topic: /v5/perception/object_pose_est
+    type: std_msgs/msg/String
+    id_field: data
+    valid_field:
