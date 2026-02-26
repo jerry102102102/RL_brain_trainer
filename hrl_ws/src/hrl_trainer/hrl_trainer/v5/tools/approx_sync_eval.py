@@ -23,6 +23,7 @@ def main() -> int:
     duration_sec = float(args.duration_sec or wp0.get("window_sec", 60.0))
     slop_ms = float(thresholds["approx_sync_slop_ms"])
     pass_rate = float(thresholds["approx_sync_success_rate_min"])
+    queue_size = int(wp0.get("approx_sync", {}).get("queue_size", 10))
 
     overhead_topic = wp0["cameras"]["overhead"]["image_topic"]
     side_topic = wp0["cameras"]["side"]["image_topic"]
@@ -36,8 +37,8 @@ def main() -> int:
 
             self.stamps: dict[str, list[int]] = defaultdict(list)
             self.subs = [
-                self.create_subscription(Image, overhead_topic, self._cb(overhead_topic), 10),
-                self.create_subscription(Image, side_topic, self._cb(side_topic), 10),
+                self.create_subscription(Image, overhead_topic, self._cb(overhead_topic), queue_size),
+                self.create_subscription(Image, side_topic, self._cb(side_topic), queue_size),
             ]
 
         def _cb(self, topic: str):
@@ -59,6 +60,7 @@ def main() -> int:
         metrics = greedy_approx_sync_pairs_ns(node.stamps.get(overhead_topic, []), node.stamps.get(side_topic, []), slop_ms=slop_ms)
         metrics["topics"] = {"overhead": overhead_topic, "side": side_topic}
         metrics["window_sec"] = duration_sec
+        metrics["queue_size"] = queue_size
         metrics["gate"] = {
             "success_rate_min": pass_rate,
             "pass": bool(metrics["success_rate"] > pass_rate),

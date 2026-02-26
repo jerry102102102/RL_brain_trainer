@@ -1,0 +1,77 @@
+wp0:
+  use_sim_time: true
+  window_sec: 60.0
+  world_frame: world
+
+  thresholds:
+    state_latency_p95_ms: 80.0
+    image_latency_p95_ms: 120.0
+    replay_image_latency_p95_ms: 120.0
+    pose_jitter_std_m: 0.003
+    id_switch_rate_max: 0.01
+    id_missing_warn_rate: 0.05
+    approx_sync_slop_ms: 50.0
+    approx_sync_success_rate_min: 0.95
+
+  cameras:
+    overhead:
+      image_topic: /v5/cam/overhead/rgb
+      image_type: sensor_msgs/msg/Image
+      camera_info_topic: /v5/cam/overhead/camera_info
+      camera_info_type: sensor_msgs/msg/CameraInfo
+      expected_fps: 10.0
+      encoding: rgb8
+      width: 640
+      height: 480
+      tf_target_frame: cam_overhead_optical_frame
+    side:
+      image_topic: /v5/cam/side/rgb
+      image_type: sensor_msgs/msg/Image
+      camera_info_topic: /v5/cam/side/camera_info
+      camera_info_type: sensor_msgs/msg/CameraInfo
+      expected_fps: 10.0
+      encoding: rgb8
+      width: 640
+      height: 480
+      tf_target_frame: cam_side_optical_frame
+
+  approx_sync:
+    left_camera: overhead
+    right_camera: side
+    queue_size: 10
+    slop_ms: 50.0
+
+  tf_checks:
+    required_pairs:
+      - source: world
+        target: cam_overhead_optical_frame
+      - source: world
+        target: cam_side_optical_frame
+
+  state_topics:
+    - name: joint_states
+      topic: /joint_states
+      type: sensor_msgs/msg/JointState
+      header_field: header
+
+  pose_jitter:
+    topic: /tray1/pose
+    type: geometry_msgs/msg/PoseStamped
+    pose_field: pose
+    header_field: header
+    required_frame_id: world
+
+  id_switch:
+    mode: jsonl
+    jsonl_path: /tmp/v5_object_id_frames.jsonl
+    jsonl_id_field: object_id
+    jsonl_valid_field: valid
+    topic: /v5/perception/object_pose_est
+    type: std_msgs/msg/String
+    id_field: data
+    valid_field:
+
+  rosbag:
+    default_bag_path: /tmp/v5_wp0_capture
+    replay_requires_clock: true
+

@@ -13,6 +13,9 @@ from .metrics_core import summarize_image_health
 class ImageSample:
     recv_ns: int
     header_ns: int | None
+    width: int | None = None
+    height: int | None = None
+    encoding: str | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +44,7 @@ def main() -> int:
             super().__init__("v5_wp0_image_health_diag")
             self.samples: dict[str, list[ImageSample]] = defaultdict(list)
             self.camera_info_seen: dict[str, int] = defaultdict(int)
+            self.image_contract_obs: dict[str, dict[str, Any]] = {}
             self.subs = []
             for cam_name, cam in image_cfgs.items():
                 img_topic = cam["image_topic"]
@@ -59,7 +63,31 @@ def main() -> int:
                     header_ns = stamp_to_ns(msg.header.stamp)
                 except Exception:
                     header_ns = None
-                self.samples[topic].append(ImageSample(recv_ns=recv_ns, header_ns=header_ns))
+                width = None
+                height = None
+                encoding = None
+                try:
+                    width = int(getattr(msg, "width"))
+                    height = int(getattr(msg, "height"))
+                    encoding = str(getattr(msg, "encoding"))
+                except Exception:
+                    pass
+                if topic not in self.image_contract_obs:
+                    self.image_contract_obs[topic] = {
+                        "message_type": "sensor_msgs/msg/Image",
+                        "width": width,
+                        "height": height,
+                        "encoding": encoding,
+                    }
+                self.samples[topic].append(
+                    ImageSample(
+                        recv_ns=recv_ns,
+                        header_ns=header_ns,
+                        width=width,
+                        height=height,
+                        encoding=encoding,
+                    )
+                )
 
             return cb
 
@@ -92,6 +120,7 @@ def main() -> int:
             metrics["camera_info_topic"] = cam.get("camera_info_topic")
             if cam.get("camera_info_topic"):
                 metrics["camera_info_seen"] = int(node.camera_info_seen.get(cam["camera_info_topic"], 0))
+            metrics["observed_contract"] = node.image_contract_obs.get(topic)
             per_topic[topic] = metrics
             gate = metrics.get("latency", {}).get("gate", {})
             topic_to_ok.append(bool(gate.get("pass", False)))
