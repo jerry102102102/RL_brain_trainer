@@ -319,8 +319,10 @@ Deliverables:
 - stable arm control path
 - stable multi-camera streams
 - rosbag record/replay pipeline
+- explicit local dependency bridge to ENPM662 kitchen scene repo (no duplicated large assets)
 
 Tasks:
+- [ ] scene bridge script validated (`scripts/v5/bridge_kitchen_scene.sh`)
 - [ ] camera SDF/launch integration verified in scene
 - [ ] `/v5/cam/*/rgb` + `/camera_info` publishing
 - [ ] TF check script (`view_frames` / `tf2_echo`) passes

@@ -9,39 +9,51 @@ ART=artifacts/wp0
 mkdir -p "$ART"
 ```
 
-## 1) Launch sim / stack (example placeholder)
+## 1) Bridge ENPM662 kitchen scene dependency (required)
 ```bash
-# Replace with your actual sim + publishers launch command for this branch/workspace.
-# Requirement: topics in $CONFIG must be live and use sim time.
-ros2 launch <your_pkg> <your_launch>.launch.py use_sim_time:=true
+scripts/v5/bridge_kitchen_scene.sh \
+  --scene-repo /home/jerry/.openclaw/workspace/repos/personal/ENPM662_Group4_FinalProject
+```
+Expected output:
+- `OK: bridge created` (or `OK: bridge already configured`)
+
+## 2) Launch kitchen scene (required before live WP0)
+```bash
+# Auto-detect kitchen launch file, or pass --launch-cmd explicitly if needed.
+scripts/v5/launch_kitchen_scene.sh --dry-run
+scripts/v5/launch_kitchen_scene.sh
+```
+Expected output:
+- `Scene repo: .../external/kitchen_scene`
+- `Launch cmd: ros2 launch ... use_sim_time:=true`
+
+## 3) Unified healthcheck (dry run, produces valid BLOCKED-capable report)
+```bash
+scripts/v5/run_wp0_healthcheck.sh --dry-run
+scripts/v5/run_wp0_healthcheck.sh || true
 ```
 
-## 2) Unified healthcheck (dry run, produces valid BLOCKED-capable report)
+## 4) Unified healthcheck (live metrics)
 ```bash
-python3 -m hrl_trainer.v5.tools.wp0_healthcheck --config "$CONFIG" --artifacts-dir "$ART" --output "$ART/wp0_report.json" || true
+scripts/v5/run_wp0_healthcheck.sh --live
 ```
 
-## 3) Unified healthcheck (live metrics)
-```bash
-python3 -m hrl_trainer.v5.tools.wp0_healthcheck --live --config "$CONFIG" --artifacts-dir "$ART" --output "$ART/wp0_report.json"
-```
-
-## 4) Manual rosbag record
+## 5) Manual rosbag record
 ```bash
 python3 -m hrl_trainer.v5.tools.rosbag2_helper --config "$CONFIG" record --bag /tmp/v5_wp0_capture
 ```
 
-## 5) Replay bag + replay latency check in one command
+## 6) Replay bag + replay latency check in one command
 ```bash
-python3 -m hrl_trainer.v5.tools.wp0_healthcheck --live --replay-bag /tmp/v5_wp0_capture --config "$CONFIG" --artifacts-dir "$ART" --output "$ART/wp0_report.json"
+scripts/v5/run_wp0_healthcheck.sh --live --replay-bag /tmp/v5_wp0_capture
 ```
 
-## 6) Optional: print rosbag commands only
+## 7) Optional: print rosbag commands only
 ```bash
 python3 -m hrl_trainer.v5.tools.rosbag2_helper --config "$CONFIG" print-commands
 ```
 
-## 7) Inspect result quickly
+## 8) Inspect result quickly
 ```bash
 python3 - <<'PY'
 import json
@@ -53,4 +65,3 @@ for k,v in r["sections"].items():
     print(f"{k}: {v['status']}")
 PY
 ```
-

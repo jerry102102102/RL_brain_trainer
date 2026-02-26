@@ -2,6 +2,13 @@
 
 This file mirrors the non-negotiable WP0 checklist and maps each item to evidence fields/paths produced by `artifacts/wp0/wp0_report.json`.
 
+## Prerequisite (blocking)
+- WP0 runtime depends on the ENPM662 kitchen scene repository:
+  - expected source repo: `/home/jerry/.openclaw/workspace/repos/personal/ENPM662_Group4_FinalProject`
+  - bridge command: `scripts/v5/bridge_kitchen_scene.sh --scene-repo <path>`
+  - launch command: `scripts/v5/launch_kitchen_scene.sh`
+- If the scene repo is missing, bridge setup must fail and WP0 live checks are considered blocked.
+
 ## 1. Camera contract topic/type/encoding/res/fps
 - Status: `sections.camera_contract.status`
 - Expected config lock:
@@ -72,4 +79,3 @@ This file mirrors the non-negotiable WP0 checklist and maps each item to evidenc
 - Overall PASS/FAIL: `overall.result`
 - Section counts: `overall.counts`
 - Reasons + fixes: `issues[]`
-

@@ -73,6 +73,10 @@ python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
 This repository currently tracks the **V4 (sim2d) mainline**.
 The goal is to build a verifiable and reproducible hierarchy for navigation first, then extend it to **V5 manipulation (robot arm simulation)**.
 
+### V5 WP0 Dependency Note
+- WP0 runtime for V5 kitchen work depends on the ENPM662 kitchen scene repo.
+- Integration/launch/healthcheck workflow is documented in `docs/V5_SCENE_DEPENDENCY.md` and `docs/wp0_run.md`.
+
 ### 1) Architecture Overview (L1 / L2 / L3)
 - **L1 (semantic/global intent):** outputs task intent and constraints, not low-level controls.
 - **L2 (local planning/policy):** generates local decisions from state/goal (optionally memory/residual policy).
