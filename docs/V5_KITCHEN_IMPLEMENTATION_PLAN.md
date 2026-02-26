@@ -1,327 +1,405 @@
-# V5 Kitchen Manipulation — Three-Layer RL Implementation Plan
+# V5 Kitchen Manipulation — Three-Layer RL Execution Plan
 
-Status: Draft v1 (execution-ready)
+Status: Draft v2 (critique-integrated)
 Owner: Jerry + Assistant
 Branch: `v5`
 Repo: `repos/personal/RL_brain_trainer`
 
 ---
 
-## 1) Goal (What we are building)
+## 1) Goal
 
-Build a deployable V5 pipeline that uses the RL brainer three-layer structure as the **primary control architecture** for kitchen manipulation.
+Build a deployable V5 pipeline where the three-layer RL brainer is the **primary architecture** for kitchen manipulation.
 
-User-level command is intentionally minimal:
-- `MOVE_PLATE(source, target)`
+User command stays minimal:
+- `MOVE_PLATE(source_slot, target_slot)`
 
-System must autonomously handle:
+System handles all downstream work:
 - perception
-- high-level subtask decomposition
-- local skill decisions
-- low-level arm control and safety
+- high-level decomposition
+- local skill decision
+- low-level arm execution + safety
 
 ---
 
-## 2) Success Criteria (Definition of Done)
+## 2) Critical Design Decision (fixing ambiguity)
 
-A V5 build is considered done when all below are true:
+We explicitly split into two phases:
 
-1. **End-to-end execution works**
-   - Given `MOVE_PLATE(A,B)`, system completes pick-and-place in Gazebo kitchen scene.
+### Phase-0: GT-chain validation (control chain validation)
+Purpose:
+- validate L1/L2/L3 contract and execution stability quickly.
 
-2. **Three-layer contract is enforced**
-   - L1 does not output low-level control.
-   - L2 outputs skill-level commands only.
-   - L3 alone outputs executable arm trajectories.
+Policy-visible:
+- robot state
+- task/stage flags
+- **GT-derived object estimate proxy allowed only in this phase**
 
-3. **Metrics are reproducible**
-   - Fixed config + seed can reproduce core metrics (success, collision, timeout, completion time).
+Policy-hidden:
+- raw tray GT stream remains hidden as direct training target.
 
-4. **Safety is observable**
-   - Safety intervention and failure reasons are logged per episode.
+### Phase-1: Vision-first validation (target V5)
+Purpose:
+- validate three-layer framework in realistic observation setting.
 
-5. **Ablation results exist**
-   - Rule-L2 baseline vs RL-L2 comparison on same tasks.
+Policy-visible:
+- camera streams + robot state + stage flags
+- optional perception output topic `/v5/perception/object_pose_est`
+
+Policy-hidden:
+- `/tray_tracking/pose_stream` and tray GT derivatives (reward/eval only)
+
+> V5 completion is judged on **Phase-1**, not only Phase-0.
 
 ---
 
-## 3) System Architecture (V5 mapping)
+## 3) Success Criteria (DoD)
 
-## 3.1 L1 — Perception + High-Level Task Reasoning
-Input:
-- scene state stream (`/tray_tracking/pose_stream` + robot state)
-- user command (`MOVE_PLATE`)
+1. End-to-end `MOVE_PLATE(A,B)` works in kitchen scene.
+2. Three-layer boundaries remain clean:
+   - L1 no low-level control output.
+   - L2 no trajectory points/spline chunks.
+   - L3 exclusively owns executable trajectory output.
+3. Reproducible metrics under fixed config + seed.
+4. Safety interventions and fail reasons are structured and queryable.
+5. Rule-L2 vs RL-L2 ablation report exists in same benchmark suite.
+6. Phase-1 vision-first experiment passes minimum acceptance gates.
+
+---
+
+## 4) System Architecture (V5 mapping)
+
+## 4.1 L1 — Perception + High-Level Reasoning
+Input (Phase-1 target):
+- camera streams (`/v5/cam/overhead/rgb`, `/v5/cam/side/rgb`, optional wrist)
+- robot state
+- task command + stage flags
+- perception module output `/v5/perception/object_pose_est` (policy-visible pose estimate)
 
 Output (`IntentPacket`):
 - `object_id`
 - `pick_pose`
 - `place_pose`
 - `constraints` (clearance, speed caps, timeout)
-- `subtask_graph`:
-  - approach_pick
-  - grasp
-  - lift
-  - transfer
-  - place
-  - retreat
+- `subtask_graph` = approach/grasp/lift/transfer/place/retreat
 
 Rules:
-- no direct joint trajectory output
-- only semantic/task-level outputs
+- no direct control output
+- no direct use of GT pose stream in Phase-1
 
-## 3.2 L2 — Skill Policy / Local Planner (learning core)
+## 4.2 L2 — Skill Policy / Local Planner
 Input:
 - `IntentPacket`
-- local arm/object state
+- robot state + perception estimate
 
-Output (`SkillCommand`):
-- `ee_target_pose` or trajectory chunk
-- `gripper_cmd`
-- current skill mode
+Output (`SkillCommand`) — **strict schema**:
+- `skill_mode` ∈ {APPROACH, GRASP, LIFT, TRANSFER, PLACE, RETREAT}
+- `ee_target_pose` **or** `delta_pose`
+- `gripper_cmd` ∈ {OPEN, CLOSE, HOLD}
+- `speed_profile_id` ∈ {SLOW, NORMAL}
+- `guard`:
+  - `keep_level`
+  - `max_tilt`
+  - `min_clearance`
 
-Rules:
-- can use memory/retrieval
-- cannot bypass L3 safety layer
+Hard prohibition:
+- no time-parameterized trajectory chunk
+- no spline points
+- no direct `JointTrajectory` output
 
-## 3.3 L3 — Deterministic Controller + Safety Shield
+## 4.3 L3 — Deterministic Controller + Safety Shield
 Input:
 - `SkillCommand`
 - controller feedback
 
 Output:
 - `/arm_controller/joint_trajectory`
-- execution status + fail reason
-
-Safety:
-- joint limit check
-- collision projection / stop-on-risk
-- fallback (slowdown / halt / retreat)
+- `execution_status`
+- `intervention_log`
 
 ---
 
-## 4) Interface Contracts (concrete)
+## 5) Interface Contracts
 
-## 4.1 Topic / message contract (V5 minimum)
-- `L1_out`: `/v5/intent_packet` (JSON/msg)
+## 5.1 Topic contract (minimum)
+- `L1_out`: `/v5/intent_packet`
 - `L2_out`: `/v5/skill_command`
 - `L3_out`: `/arm_controller/joint_trajectory`
-- `Camera streams (policy-visible)`:
-  - `/v5/cam/overhead/rgb`
-  - `/v5/cam/side/rgb`
-  - (optional next) wrist cam `/v5/cam/wrist/rgb`
-- `Robot state (policy-visible)`:
-  - `/joint_states`
-  - arm controller state topics
-- `Object GT stream (reward/eval only)`:
-  - `/tray_tracking/pose_stream`
-  - `(to add) /tray1/pose` extracted single-object topic
+- `Perception_out`: `/v5/perception/object_pose_est` (policy-visible estimate)
 
-## 4.2 Frame / sync contract
-- Single canonical world frame for planning
-- Fixed update rates:
+Policy-visible streams:
+- `/v5/cam/overhead/rgb`
+- `/v5/cam/side/rgb`
+- `/joint_states`
+- arm controller state topics
+
+Policy-hidden streams:
+- `/tray_tracking/pose_stream`
+- `/tray1/pose` (if derived from GT)
+
+GT-only usage:
+- reward
+- terminal success/fail judgment
+- offline eval and diagnostics
+
+## 5.2 Camera Contract (hard spec)
+- Message type: `sensor_msgs/msg/Image`
+- Encoding: `rgb8` (fixed)
+- Resolution: `640x480` (fixed in v1)
+- FPS target:
+  - overhead: 10 Hz
+  - side: 10 Hz
+  - optional wrist: 15 Hz
+- Time base: sim time
+- Sync strategy:
+  - Phase-0: single-cam or async allowed
+  - Phase-1: approximate sync (`overhead + side`)
+- Camera info required:
+  - `/v5/cam/overhead/camera_info`
+  - `/v5/cam/side/camera_info`
+- Frame contract:
+  - `world -> cam_*_link -> cam_*_optical_frame` must exist in TF
+- Latency budget:
+  - image pipeline P95 < 120 ms
+
+## 5.3 Frame / rate contract
+- Canonical world frame for planning
+- update rates:
   - L1: 1–2 Hz
   - L2: 10–20 Hz
   - L3: 50–200 Hz
-- Timestamp validity check before command application
+- stale timestamp guard before execution
 
 ---
 
-## 5) Implementation Work Packages
+## 6) Observation Pipeline (policy-visible)
 
-## WP0 — Environment and data path hardening
+Image preprocessing contract:
+- resize: `224x224` (default)
+- normalization: `[0,1]` then channel-wise norm
+- frame stack: `N=2` (default)
+
+Encoder contract:
+- Phase-0: lightweight CNN encoder allowed
+- Phase-1: frozen visual encoder preferred (CNN/ViT) with latent output
+
+Policy observation vector:
+- `obs_latent` (e.g., 256-d)
+- `robot_state`
+- `stage_flag`
+- optional `object_pose_est` (from perception module, not GT)
+
+GT never enters policy tensor in Phase-1.
+
+---
+
+## 7) SlotMap Specification (for MOVE_PLATE)
+
+`SlotMap` schema:
+- `slot_id: str`
+- `region_world: {center_xyz, size_xyz, yaw}`
+- `approach_pose_candidates: [pose...]`
+- `place_pose_candidates: [pose...]`
+- `allowed_objects: [id...]`
+- `priority: int`
+
+Task resolution rules:
+- `MOVE_PLATE(A,B)` resolves through SlotMap only
+- ambiguity triggers `TASK_DISAMBIGUATION_REQUIRED`
+
+---
+
+## 8) Safety Semantics (structured)
+
+`InterventionType` enum:
+- `SLOWDOWN`
+- `HALT`
+- `RETREAT`
+- `PROJECTION_CLAMP`
+
+`FailReason` enum:
+- `IK_FAIL`
+- `COLLISION_PREDICT`
+- `CONTACT`
+- `OBJECT_LOST`
+- `GRASP_FAIL`
+- `PLACE_FAIL`
+- `TIMEOUT`
+- `SYNC_STALE`
+
+Each intervention must emit structured log:
+- timestamp
+- layer source
+- type
+- trigger metric
+- recovery action
+
+---
+
+## 9) Work Packages
+
+## WP0 — Scene/Perception infrastructure hardening
 Deliverables:
 - stable scene launch
-- stable arm topic/control path
-- multi-camera perception stream available
-- stable tray single-object pose topic
+- stable arm control path
+- stable multi-camera streams
+- rosbag record/replay pipeline
 
 Tasks:
-- [ ] convert `/tray_tracking/pose_stream` into filtered `/tray1/pose`
-- [ ] ensure deterministic naming and frame mapping
-- [ ] add diagnostics script for pose stream health
+- [ ] camera SDF/launch integration verified in scene
+- [ ] `/v5/cam/*/rgb` + `/camera_info` publishing
+- [ ] TF check script (`view_frames` / `tf2_echo`) passes
+- [ ] image health diagnostics (fps, dropped frame, latency)
+- [ ] rosbag2 record/replay script for camera+state topics
+- [ ] tray stream extraction (`/tray_tracking/pose_stream` -> `/tray1/pose` GT-only)
 
 Exit criteria:
-- 5-minute continuous stream without dropouts
-- one-command topic check script returns PASS
+- 5-min stable camera + state capture
+- replay reproduces same topic structure
 
-## WP1 — L1 task graph layer
+## WP1 — L1 layer (phase-aware)
 Deliverables:
-- command parser (`MOVE_PLATE`)
-- deterministic subtask graph generator
-- constraint packer
+- `MOVE_PLATE` parser
+- SlotMap resolver
+- IntentPacket generator
+- perception adapter output `/v5/perception/object_pose_est`
 
 Tasks:
-- [ ] implement `IntentPacket` schema
-- [ ] implement slot→pose lookup
-- [ ] implement failure path (`unreachable`, `missing object`)
+- [ ] IntentPacket schema
+- [ ] SlotMap implementation
+- [ ] Phase-0 GT proxy switch + Phase-1 vision-only switch
+- [ ] failure path (`unreachable`, `missing object`, `disambiguation required`)
 
 Exit criteria:
-- for 20 random tasks, valid intent packet generated with no low-level control fields
+- 20 random tasks produce valid intent packets with clean layer boundary
 
 ## WP2 — L2 baseline + RL slot
 Deliverables:
-- rule-based L2 baseline
-- RL-L2 pluggable interface
+- Rule-L2 baseline
+- RL-L2 pluggable module
 
 Tasks:
-- [ ] baseline policy for approach/grasp/place
-- [ ] RL adapter respecting same `SkillCommand` schema
-- [ ] memory hook (optional for phase-2)
+- [ ] SkillCommand strict schema enforcement
+- [ ] baseline skill policy (approach/grasp/place)
+- [ ] RL adapter consuming observation pipeline latent
+- [ ] memory hook (optional)
 
 Exit criteria:
-- rule baseline can complete task in easy scene
-- RL module can replace baseline without changing L1/L3
+- RL module can replace rule baseline without changing L1/L3 APIs
 
-## WP3 — L3 execution and safety shield
+## WP3 — L3 execution + safety
 Deliverables:
-- deterministic trajectory executor
-- safety shield and fallback
+- deterministic executor
+- safety shield
+- structured intervention/failure logs
 
 Tasks:
-- [ ] command projection (joint limits, velocity, acceleration)
-- [ ] collision-risk stop or slowdown
-- [ ] structured fail reason logging
+- [ ] projection to safe command space
+- [ ] intervention triggers + recovery policy
+- [ ] enum-based structured logs
 
 Exit criteria:
-- no unsafe command reaches arm controller in stress tests
+- no unsafe command reaches controller in stress scenarios
 
 ## WP4 — Evaluation harness
 Deliverables:
-- scenario suite (easy/medium/hard)
-- metric logger + summary report
+- benchmark suite (easy/medium/hard)
+- report generator
 
 Tasks:
-- [ ] benchmark scripts (`--seed`, `--episodes`)
-- [ ] metrics JSON + markdown summary
-- [ ] comparison tables: Rule-L2 vs RL-L2
+- [ ] reproducible benchmark CLI (`--seed --episodes`)
+- [ ] Rule-L2 vs RL-L2 report
+- [ ] Phase-0 vs Phase-1 comparison report
 
 Exit criteria:
-- one-command benchmark run produces reproducible report
+- one-command run outputs metrics + failure breakdown + artifacts
 
 ---
 
-## 6) Experiment Matrix
+## 10) Experiment Matrix
 
-E1. Integration baseline (Rule L2)
-- Purpose: verify end-to-end contract correctness
-- Metrics: success, collision, timeout
+E0 (Phase-0): GT-chain validation
+- objective: validate control chain and contracts
 
-E2. RL-L2 replacement
-- Purpose: show learning benefit over baseline
-- Metrics: success/time tradeoff
+E1 (Phase-1): Vision-only baseline
+- objective: validate perception-driven three-layer behavior
 
-E3. Complexity scaling
-- easy: clear scene
-- medium: mild clutter / varied start pose
-- hard: constrained workspace + distractor objects
+E2: RL-L2 vs Rule-L2
+- objective: quantify policy value
 
-E4. Robustness checks
-- perception noise injection
-- control latency injection
-- domain randomization
+E3: Complexity scaling
+- easy/medium/hard scene sets
+
+E4: Robustness
+- image noise, latency injection, domain randomization
 
 ---
 
-## 7) Metrics and Reporting Format
+## 11) Metrics
 
-Core metrics:
+Core:
 - `success_rate`
 - `collision_rate`
 - `timeout_rate`
 - `mean_completion_time`
 - `safety_intervention_rate`
-- `replan_count_l1/l2`
+- `replan_count_l1`
+- `replan_count_l2`
 
-Per-run artifacts:
+Per-run artifact:
 - config hash
-- git commit hash
-- seed list
-- result json path
-- failure case snapshots
-
-Report template (each run):
-1. Setup
-2. Metrics
-3. Failure breakdown
-4. One conclusion
-5. Next single change
+- commit hash
+- seeds
+- metrics json
+- replay bag path
+- failure snapshots
 
 ---
 
-## 8) Timeline (practical)
+## 12) Timeline (realistic)
 
-Sprint A (1–2 days): WP0 + WP1 skeleton
-- stable topic/data + intent packet
+### Phase-0 (GT-chain) — ~1 week
+- WP0 + WP1 minimal + WP3 baseline + E0
 
-Sprint B (2–3 days): WP2 + WP3 baseline
-- complete rule-L2 end-to-end execution with safety
+### Phase-1 (Vision-only) — +1 to 2 weeks
+- camera contract hardening
+- observation pipeline/encoder
+- RL-L2 training + E1/E2/E3/E4
 
-Sprint C (2–3 days): WP4 + RL-L2 swap
-- run benchmark and produce first comparison report
-
----
-
-## 9) Risks and Mitigations
-
-Risk: perception stream ambiguity (multi-object Pose_V)
-- Mitigation: explicit tray selector and single-topic extraction
-
-Risk: policy commands violate constraints
-- Mitigation: strict L3 projection and hard fail-safe
-
-Risk: hard to debug failures
-- Mitigation: typed fail reasons + replayable run logs
-
-Risk: overfitting to one layout
-- Mitigation: scene randomization + holdout test set
+> Previous 1–2 day sprint estimate is retained only for partial infra tasks, not full vision-first validation.
 
 ---
 
-## 10) Immediate Next Actions (today)
+## 13) Immediate Next Actions
 
-1. Finalize `/tray1/pose` extraction node from current pose stream.
-2. Implement `IntentPacket` schema and `MOVE_PLATE(A,B)` parser.
-3. Stub `SkillCommand` pipeline and connect L3 executor path.
-4. Run first end-to-end dry run with Rule-L2 in easy scene.
+1. Add `/camera_info` and TF verification scripts.
+2. Add `/v5/perception/object_pose_est` adapter stub.
+3. Enforce SkillCommand strict schema (remove trajectory chunk path).
+4. Implement SlotMap spec and 10-task smoke test.
+5. Add rosbag2 record/replay command set.
 
 ---
 
-## 11) File/Code Placement Plan
+## 14) File/Code Placement
 
-Suggested additions:
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/intent_layer.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/perception_adapter.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/skill_layer.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/control_layer.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/pipeline.py`
 - `hrl_ws/src/hrl_trainer/config/v5_kitchen_*.yaml`
-- `docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md` (this file)
 - `docs/V5_EXPERIMENT_LOG.md`
 
 ---
 
-## 11.1 Observation boundary policy (must-follow)
+## 15) Acceptance Gate
 
-Policy-visible (can be fed into L1/L2 model):
-- camera RGB streams (`/v5/cam/overhead/rgb`, `/v5/cam/side/rgb`)
-- robot state (`/joint_states`, arm controller state)
-- task command and stage flags
-
-Policy-hidden (must NOT be fed to policy):
-- tray ground-truth pose stream (`/tray_tracking/pose_stream`)
-- derived tray GT labels used for reward and success checks
-
-Use of tray GT is restricted to:
-- reward calculation
-- terminal success/failure judgment
-- offline evaluation/analysis
-
-## 12) Acceptance Gate for planning handoff
-
-Before writing the final formal proposal, confirm:
-- [ ] task contract accepted (`MOVE_PLATE` only)
-- [ ] three-layer boundaries accepted
-- [ ] metrics set accepted
+- [ ] Phase split accepted (Phase-0 GT / Phase-1 Vision)
+- [ ] L2 strict output boundary accepted
+- [ ] camera contract accepted
+- [ ] observation pipeline accepted
+- [ ] SlotMap spec accepted
+- [ ] safety enums/logging accepted
 - [ ] timeline accepted
-- [ ] first sprint scope accepted
 
-Once these are confirmed, this plan can be directly transformed into the final project plan/proposal.
+Once these are accepted, convert directly into final proposal/execution handbook.
