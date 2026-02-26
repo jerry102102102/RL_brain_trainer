@@ -27,11 +27,21 @@ def load_yaml(path: str | Path | None) -> dict[str, Any]:
 
 
 def write_json(data: dict[str, Any], output_path: str | None = None, pretty: bool = True) -> None:
-    payload = json.dumps(data, indent=2 if pretty else None, sort_keys=True)
+    payload = json.dumps(_sanitize_for_json(data), indent=2 if pretty else None, sort_keys=True)
     if output_path:
         Path(output_path).write_text(payload + "\n", encoding="utf-8")
     else:
         print(payload)
+
+
+def _sanitize_for_json(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, dict):
+        return {_sanitize_for_json(k): _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_for_json(v) for v in value]
+    return value
 
 
 def add_common_io_args(parser: argparse.ArgumentParser) -> None:

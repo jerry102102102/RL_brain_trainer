@@ -62,6 +62,14 @@ def main() -> int:
                 "latency_definition": "recv_time - msg.header.stamp (same ROS time basis)",
             }
         )
+        total_samples = int(metrics.get("overall", {}).get("count", 0) or 0)
+        if total_samples == 0:
+            subscribed_topics = [str(spec.get("topic", "")) for spec in state_topics]
+            metrics["diagnostics"] = {
+                "reason": "no_samples_received",
+                "subscribed_topics": subscribed_topics,
+                "hint": "No messages were received. Verify publishers are active, especially /joint_states if expected.",
+            }
         ok = bool(metrics.get("overall", {}).get("gate", {}).get("pass", False))
         out = tool_result("state_latency_eval", cfg, metrics, ok=ok)
         finalize_output(out, args)
