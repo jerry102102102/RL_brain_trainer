@@ -105,8 +105,16 @@ Safety:
 - `L1_out`: `/v5/intent_packet` (JSON/msg)
 - `L2_out`: `/v5/skill_command`
 - `L3_out`: `/arm_controller/joint_trajectory`
-- `Object stream`: `/tray_tracking/pose_stream` (existing)
-- `(to add)`: `/tray1/pose` extracted single-object topic
+- `Camera streams (policy-visible)`:
+  - `/v5/cam/overhead/rgb`
+  - `/v5/cam/side/rgb`
+  - (optional next) wrist cam `/v5/cam/wrist/rgb`
+- `Robot state (policy-visible)`:
+  - `/joint_states`
+  - arm controller state topics
+- `Object GT stream (reward/eval only)`:
+  - `/tray_tracking/pose_stream`
+  - `(to add) /tray1/pose` extracted single-object topic
 
 ## 4.2 Frame / sync contract
 - Single canonical world frame for planning
@@ -124,6 +132,7 @@ Safety:
 Deliverables:
 - stable scene launch
 - stable arm topic/control path
+- multi-camera perception stream available
 - stable tray single-object pose topic
 
 Tasks:
@@ -289,6 +298,22 @@ Suggested additions:
 - `docs/V5_EXPERIMENT_LOG.md`
 
 ---
+
+## 11.1 Observation boundary policy (must-follow)
+
+Policy-visible (can be fed into L1/L2 model):
+- camera RGB streams (`/v5/cam/overhead/rgb`, `/v5/cam/side/rgb`)
+- robot state (`/joint_states`, arm controller state)
+- task command and stage flags
+
+Policy-hidden (must NOT be fed to policy):
+- tray ground-truth pose stream (`/tray_tracking/pose_stream`)
+- derived tray GT labels used for reward and success checks
+
+Use of tray GT is restricted to:
+- reward calculation
+- terminal success/failure judgment
+- offline evaluation/analysis
 
 ## 12) Acceptance Gate for planning handoff
 
