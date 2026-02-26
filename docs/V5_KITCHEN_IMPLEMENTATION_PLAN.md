@@ -486,6 +486,51 @@ Per-run artifact:
 
 ---
 
+
+## 13.1 Practical risk-control refinements (latest)
+
+### R1. Perception adapter is the primary risk
+Observed risk:
+- identity switch / confidence oscillation / pose jitter can destabilize L1->L2->L3.
+
+Execution policy:
+1. Phase-0: GT proxy adapter for chain validation only.
+2. Phase-1a: simple estimator (bbox/coarse pose first, no over-optimized 6D requirement).
+3. Phase-1b: replace estimator with VLM/VLA adapter under the same `ObjectPoseArray` contract.
+
+Rule:
+- keep perception adapter pluggable; never couple policy code to one estimator implementation.
+
+### R2. Camera IO + rosbag throughput/latency
+Observed risk:
+- WSL2 + multi-RGB recording can break replay latency and sync constraints.
+
+Execution policy:
+- run throughput stress test before locking final camera spec.
+- if replay latency budget is violated, downgrade in this order:
+  1) lower FPS
+  2) lower resolution
+  3) switch to `CompressedImage`
+- every downgrade must update hard spec and benchmark config in versioned files.
+
+### R3. Safety threshold tuning will be iterative
+Observed risk:
+- trigger thresholds depend on distance backend/frame choice and latency noise.
+
+Execution policy:
+- all thresholds remain yaml-configurable.
+- each intervention log must include `trigger_metric_value` and `active_threshold`.
+- tune from conservative->relaxed only when safety KPIs remain stable.
+
+### R4. RL-L2 drift into reward-tuning game
+Observed risk:
+- RL may exploit reward/termination artifacts instead of improving architecture quality.
+
+Execution policy:
+- Rule-L2 baseline is mandatory and continuously evaluated.
+- single-variable change per experiment round (reward OR termination OR curriculum).
+- if RL-L2 fails to beat baseline on agreed KPI, treat as non-progress and rollback.
+
 ## 13) Immediate Next Actions
 
 1. Add `/camera_info` and TF verification scripts.
