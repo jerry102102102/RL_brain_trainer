@@ -78,10 +78,12 @@ Input (Phase-1 target):
 
 Output (`IntentPacket`):
 - `object_id`
-- `pick_pose`
-- `place_pose`
+- `pick_pose_candidates: [pose...]`
+- `place_pose_candidates: [pose...]`
 - `constraints` (clearance, speed caps, timeout)
-- `subtask_graph` = approach/grasp/lift/transfer/place/retreat
+- `reachability_hint`: `{ik_feasible, min_clearance_est, preferred_approach}`
+- `grasp_hint`: `{pregrasp_offset, approach_axis, wrist_yaw_range}`
+- `subtask_graph` (with recovery edges; see §4.4)
 
 Rules:
 - no direct control output
@@ -106,6 +108,7 @@ Hard prohibition:
 - no time-parameterized trajectory chunk
 - no spline points
 - no direct `JointTrajectory` output
+- no trajectory chunk / spline / time-parameterized command fields
 
 ## 4.3 L3 — Deterministic Controller + Safety Shield
 Input:
@@ -170,6 +173,26 @@ GT-only usage:
   - L3: 50–200 Hz
 - stale timestamp guard before execution
 
+## 5.4 SafetySpec (measurable)
+Inputs:
+- robot state (joint/vel/acc)
+- planning scene / collision geometry
+- object pose estimate + uncertainty
+- optional depth/occupancy cues
+
+Checks and triggers:
+- hard bounds violated (joint/vel/acc) -> `HALT`
+- collision distance `< d_stop` -> `HALT`
+- collision distance `< d_slow` -> `SLOWDOWN`
+- tilt `> max_tilt` -> `HALT + RETREAT`
+
+Outputs (structured):
+- `safety_intervention: {type, timestamp, reason, suggested_recover_action}`
+- `fail_reason` (typed enum in §8)
+
+Intervention counting rule:
+- count one intervention whenever `type` enters non-`NONE` state from previous control cycle.
+
 ---
 
 ## 6) Observation Pipeline (policy-visible)
@@ -206,6 +229,18 @@ GT never enters policy tensor in Phase-1.
 Task resolution rules:
 - `MOVE_PLATE(A,B)` resolves through SlotMap only
 - ambiguity triggers `TASK_DISAMBIGUATION_REQUIRED`
+
+## 7.1 Recovery / Retry policy
+Each subtask must define fail transitions:
+- `APPROACH` fail -> re-approach (adjust yaw/offset) or `RETREAT`
+- `GRASP` fail -> retry with updated grasp hint (within budget)
+- `TRANSFER` risk stop -> `RETREAT` then replan
+- `PLACE` fail -> micro-adjust then retry, else fallback pose
+
+Required fields:
+- `recovery_edges` in subtask graph
+- `retry_budget` per skill stage
+- `fallback_goal_pose` (safe hover/home)
 
 ---
 
@@ -255,6 +290,9 @@ Tasks:
 
 Exit criteria:
 - 5-min stable camera + state capture
+- timestamp latency P95 < 80 ms
+- static-scene pose jitter std < 3 mm
+- object-id switch rate < 1% (or deterministic selector documented)
 - replay reproduces same topic structure
 
 ## WP1 — L1 layer (phase-aware)
@@ -333,7 +371,42 @@ E3: Complexity scaling
 E4: Robustness
 - image noise, latency injection, domain randomization
 
+E5: Holdout generalization (hard requirement)
+- Holdout layouts: 2–3 unseen kitchen layouts
+- Holdout objects: variation in plate size/mass/friction/CoM
+- Holdout camera conditions: lighting/camera pose variants
+- Deliverables: `train_set.yaml`, `eval_set.yaml`, fixed seed lists
+
 ---
+
+## 10.1 RL-L2 training loop contract
+Observation (policy-visible):
+- image latent(s) from observation pipeline
+- robot state
+- stage flag
+- optional perception estimate (`/v5/perception/object_pose_est`)
+
+Action space (learned fields in SkillCommand):
+- `skill_mode` switch policy (optional staged)
+- `delta_pose` / `ee_target_pose` selection
+- `speed_profile_id`
+- guard parameter selection within bounded range
+
+Reward components:
+- success bonus
+- step/time penalty
+- collision proximity penalty
+- intervention penalty
+- placement quality bonus/penalty
+
+Termination:
+- success
+- hard safety failure
+- timeout
+- object lost (configurable recoverable terminal)
+
+Curriculum:
+- easy -> medium -> hard progression tied to success threshold
 
 ## 11) Metrics
 
