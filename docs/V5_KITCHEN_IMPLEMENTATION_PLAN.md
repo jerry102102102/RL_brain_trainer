@@ -77,9 +77,10 @@ Input (Phase-1 target):
 - perception module output `/v5/perception/object_pose_est` (policy-visible pose estimate)
 
 Output (`IntentPacket`):
+- `PoseCandidate = {pose, score, approach_axis, pregrasp_offset, pos_std, yaw_std}`
 - `object_id`
-- `pick_pose_candidates: [pose...]`
-- `place_pose_candidates: [pose...]`
+- `pick_pose_candidates: [PoseCandidate...]`
+- `place_pose_candidates: [PoseCandidate...]`
 - `constraints` (clearance, speed caps, timeout)
 - `reachability_hint`: `{ik_feasible, min_clearance_est, preferred_approach}`
 - `grasp_hint`: `{pregrasp_offset, approach_axis, wrist_yaw_range}`
@@ -128,7 +129,12 @@ Output:
 - `L1_out`: `/v5/intent_packet`
 - `L2_out`: `/v5/skill_command`
 - `L3_out`: `/arm_controller/joint_trajectory`
-- `Perception_out`: `/v5/perception/object_pose_est` (policy-visible estimate)
+- `Perception_out`: `/v5/perception/object_pose_est` (policy-visible estimate, `ObjectPoseArray`)
+
+ObjectPoseArray contract:
+- `header.frame_id = world` (fixed)
+- `objects[] = {object_id, pose, confidence, pos_std, yaw_std, stamp}`
+- confidence/staleness gate: if `confidence < tau_conf` or `now - stamp > dt_stale`, L1 must emit `missing object` path
 
 Policy-visible streams:
 - `/v5/cam/overhead/rgb`
@@ -185,6 +191,13 @@ Checks and triggers:
 - collision distance `< d_stop` -> `HALT`
 - collision distance `< d_slow` -> `SLOWDOWN`
 - tilt `> max_tilt` -> `HALT + RETREAT`
+- TTC `< ttc_halt` -> `HALT`
+
+Default trigger thresholds (v1):
+- `d_slow = 0.02 m`
+- `d_stop = 0.01 m`
+- `max_tilt = 5 deg`
+- `ttc_halt = 0.3 s`
 
 Outputs (structured):
 - `safety_intervention: {type, timestamp, reason, suggested_recover_action}`
@@ -205,6 +218,12 @@ Image preprocessing contract:
 Encoder contract:
 - Phase-0: lightweight CNN encoder allowed
 - Phase-1: frozen visual encoder preferred (CNN/ViT) with latent output
+
+Encoder lock (must be in run config):
+- `encoder_id` (e.g., `resnet18_v1`)
+- `weights_source` (`random_init` | `pretrained:<name>`)
+- `trainable` (`frozen` | `finetune`)
+- `latent_dim` (fixed, default `256`)
 
 Policy observation vector:
 - `obs_latent` (e.g., 256-d)
@@ -229,6 +248,27 @@ GT never enters policy tensor in Phase-1.
 Task resolution rules:
 - `MOVE_PLATE(A,B)` resolves through SlotMap only
 - ambiguity triggers `TASK_DISAMBIGUATION_REQUIRED`
+
+SlotMap YAML example (smoke-test):
+```yaml
+slots:
+  - slot_id: shelf_A1
+    region_world: {center_xyz: [0.90, -1.16, 1.22], size_xyz: [0.18, 0.18, 0.06], yaw: 0.0}
+    approach_pose_candidates:
+      - {xyz: [0.86, -1.10, 1.32], rpy: [3.14, 0.0, 0.0]}
+    place_pose_candidates:
+      - {xyz: [0.90, -1.16, 1.22], rpy: [3.14, 0.0, 0.0]}
+    allowed_objects: [tray1]
+    priority: 1
+  - slot_id: shelf_B1
+    region_world: {center_xyz: [-0.92, -1.16, 1.22], size_xyz: [0.18, 0.18, 0.06], yaw: 0.0}
+    approach_pose_candidates:
+      - {xyz: [-0.86, -1.10, 1.32], rpy: [3.14, 0.0, 3.14]}
+    place_pose_candidates:
+      - {xyz: [-0.92, -1.16, 1.22], rpy: [3.14, 0.0, 3.14]}
+    allowed_objects: [tray1]
+    priority: 1
+```
 
 ## 7.1 Recovery / Retry policy
 Each subtask must define fail transitions:
@@ -294,6 +334,8 @@ Exit criteria:
 - static-scene pose jitter std < 3 mm
 - object-id switch rate < 1% (or deterministic selector documented)
 - replay reproduces same topic structure
+- approx-sync success rate (overhead+side) > 95%
+- replay receive latency P95 < 120 ms
 
 ## WP1 — L1 layer (phase-aware)
 Deliverables:
@@ -334,6 +376,7 @@ Deliverables:
 Tasks:
 - [ ] projection to safe command space
 - [ ] intervention triggers + recovery policy
+- [ ] thresholds configurable in yaml + triggered metric logged
 - [ ] enum-based structured logs
 
 Exit criteria:
