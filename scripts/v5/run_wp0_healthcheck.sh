@@ -133,7 +133,13 @@ wait_for_topic() {
   return 1
 }
 
-require_topics() {
+wait_for_topic_sample() {
+  local topic="$1"
+  local timeout_sec="$2"
+  timeout "$timeout_sec" ros2 topic echo "$topic" --once >/dev/null 2>&1
+}
+
+require_topics_and_samples() {
   local timeout_sec="$1"
   local missing=0
   local required=(
@@ -146,9 +152,20 @@ require_topics() {
     if ! wait_for_topic "$topic" "$timeout_sec"; then
       echo "WARN: topic not ready: $topic" >&2
       missing=1
+      continue
+    fi
+    if ! wait_for_topic_sample "$topic" "$timeout_sec"; then
+      echo "WARN: topic has no sample yet: $topic" >&2
+      missing=1
     fi
   done
   return $missing
+}
+
+kill_scene_processes() {
+  pkill -f 'ros2 launch kitchen_robot_description gazebo.launch.py' >/dev/null 2>&1 || true
+  pkill -f '/opt/ros/jazzy/lib/ros_gz_bridge/parameter_bridge' >/dev/null 2>&1 || true
+  pkill -f 'gz sim' >/dev/null 2>&1 || true
 }
 
 SCENE_PID=""
@@ -208,19 +225,21 @@ if [[ "$LIVE" -eq 1 ]]; then
 
   bootstrap_scene_if_needed
 
-  if ! require_topics 6; then
-    if [[ "$AUTO_LAUNCH_SCENE" -eq 1 ]]; then
-      echo "INFO: required topics missing; auto-launching kitchen scene..."
-      "$REPO_ROOT/scripts/v5/launch_kitchen_scene.sh" >"$ART_DIR/scene_launch.log" 2>&1 &
-      SCENE_PID=$!
-      if ! require_topics "$SCENE_WAIT_SEC"; then
-        echo "ERROR: required topics still missing after auto-launch wait (${SCENE_WAIT_SEC}s)." >&2
-        echo "See: $ART_DIR/scene_launch.log" >&2
-        exit 3
-      fi
-      echo "INFO: required topics ready."
-    else
-      echo "ERROR: required live topics missing."
+  if [[ "$AUTO_LAUNCH_SCENE" -eq 1 ]]; then
+    echo "INFO: resetting previous scene/bridge processes..."
+    kill_scene_processes
+    echo "INFO: auto-launching kitchen scene..."
+    "$REPO_ROOT/scripts/v5/launch_kitchen_scene.sh" >"$ART_DIR/scene_launch.log" 2>&1 &
+    SCENE_PID=$!
+    if ! require_topics_and_samples "$SCENE_WAIT_SEC"; then
+      echo "ERROR: required topics/samples still missing after auto-launch wait (${SCENE_WAIT_SEC}s)." >&2
+      echo "See: $ART_DIR/scene_launch.log" >&2
+      exit 3
+    fi
+    echo "INFO: required topics with live samples ready."
+  else
+    if ! require_topics_and_samples 6; then
+      echo "ERROR: required live topics/samples missing."
       echo "Hint: manually run scripts/v5/launch_kitchen_scene.sh first, or rerun with --auto-launch-scene." >&2
       exit 3
     fi

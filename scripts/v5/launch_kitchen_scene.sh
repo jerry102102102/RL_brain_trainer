@@ -77,7 +77,7 @@ ERR
 
   PKG_DIR="$(basename "$(dirname "$(dirname "$CANDIDATE")")")"
   LAUNCH_FILE="$(basename "$CANDIDATE")"
-  LAUNCH_CMD="ros2 launch $PKG_DIR $LAUNCH_FILE use_sim_time:=true"
+  LAUNCH_CMD="ros2 launch $PKG_DIR $LAUNCH_FILE use_sim_time:=true headless:=true"
 fi
 
 echo "Scene repo: $SCENE_LINK"
