@@ -136,7 +136,12 @@ source_if_exists /opt/ros/jazzy/setup.bash
 source_if_exists "$REPO_ROOT/install/setup.bash"
 source_if_exists "$REPO_ROOT/external/ENPM662_Group4_FinalProject/install/setup.bash"
 
-CMD=(python3 -m hrl_trainer.v5.tools.wp0_healthcheck --config "$CONFIG" --artifacts-dir "$ART_DIR" --output "$OUTPUT")
+PY_RUN=(python3)
+if command -v uv >/dev/null 2>&1 && [[ -f "$REPO_ROOT/hrl_ws/pyproject.toml" ]]; then
+  PY_RUN=(uv run --project hrl_ws python)
+fi
+
+CMD=("${PY_RUN[@]}" -m hrl_trainer.v5.tools.wp0_healthcheck --config "$CONFIG" --artifacts-dir "$ART_DIR" --output "$OUTPUT")
 if [[ "$LIVE" -eq 1 ]]; then
   CMD+=(--live)
 fi

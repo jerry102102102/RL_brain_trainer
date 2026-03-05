@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DEFAULT_SCENE_LINK="$REPO_ROOT/external/kitchen_scene"
+DEFAULT_SCENE_LINK="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
 
 usage() {
   cat <<USAGE
@@ -61,9 +61,9 @@ fi
 
 if [[ -z "$LAUNCH_CMD" ]]; then
   if command -v rg >/dev/null 2>&1; then
-    CANDIDATE="$(rg --files "$SCENE_LINK" | rg 'launch/.*kitchen.*\.launch\.py$|kitchen.*\.launch\.py$' | head -n 1 || true)"
+    CANDIDATE="$(rg --files "$SCENE_LINK" | rg 'launch/.*(kitchen|gazebo).*\.launch\.py$|(kitchen|gazebo).*\.launch\.py$' | head -n 1 || true)"
   else
-    CANDIDATE="$(find "$SCENE_LINK" -type f -name '*kitchen*.launch.py' | head -n 1 || true)"
+    CANDIDATE="$(find "$SCENE_LINK" -type f \( -name '*kitchen*.launch.py' -o -name '*gazebo*.launch.py' \) | head -n 1 || true)"
   fi
 
   if [[ -z "$CANDIDATE" ]]; then
