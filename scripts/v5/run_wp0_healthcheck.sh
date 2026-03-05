@@ -166,8 +166,15 @@ source_if_exists "$REPO_ROOT/install/setup.bash"
 source_if_exists "$REPO_ROOT/external/ENPM662_Group4_FinalProject/install/setup.bash"
 
 PY_RUN=(python3)
-if command -v uv >/dev/null 2>&1 && [[ -f "$REPO_ROOT/hrl_ws/pyproject.toml" ]]; then
-  PY_RUN=(uv run --project hrl_ws python)
+if [[ "$LIVE" -eq 1 ]]; then
+  # ROS Jazzy on this machine is aligned with system Python 3.12 (not Homebrew 3.14).
+  if [[ -x /usr/bin/python3.12 ]]; then
+    PY_RUN=(/usr/bin/python3.12)
+  fi
+else
+  if command -v uv >/dev/null 2>&1 && [[ -f "$REPO_ROOT/hrl_ws/pyproject.toml" ]]; then
+    PY_RUN=(uv run --project hrl_ws python)
+  fi
 fi
 
 CMD=("${PY_RUN[@]}" -m hrl_trainer.v5.tools.wp0_healthcheck --config "$CONFIG" --artifacts-dir "$ART_DIR" --output "$OUTPUT")
@@ -222,5 +229,5 @@ fi
 
 (
   cd "$REPO_ROOT"
-  PYTHONPATH=hrl_ws/src/hrl_trainer "${CMD[@]}"
+  PYTHONPATH="hrl_ws/src/hrl_trainer:${PYTHONPATH:-}" "${CMD[@]}"
 )
