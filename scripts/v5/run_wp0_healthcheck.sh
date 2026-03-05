@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 usage() {
   cat <<USAGE
 Usage:
-  $(basename "$0") [--live] [--replay-bag PATH] [--output PATH] [--auto-launch-scene] [--scene-wait SEC] [--dry-run]
+  $(basename "$0") [--live] [--replay-bag PATH] [--output PATH] [--auto-launch-scene] [--bootstrap-scene] [--scene-wait SEC] [--dry-run]
 
 Purpose:
   Run V5 WP0 unified healthcheck with standard config/artifacts paths.
@@ -20,6 +20,7 @@ Options:
   --output PATH         Output report path.
                         Default: $REPO_ROOT/artifacts/wp0/wp0_report.json
   --auto-launch-scene   In --live mode, auto-launch kitchen scene if required topics are missing.
+  --bootstrap-scene     Build/source ENPM662 scene packages before checks (manual-flow parity).
   --scene-wait SEC      Wait timeout for required topics after launch.
                         Default: 40
   --dry-run             Print resolved command without execution.
@@ -32,6 +33,7 @@ REPLAY_BAG=""
 OUTPUT="$REPO_ROOT/artifacts/wp0/wp0_report.json"
 DRY_RUN=0
 AUTO_LAUNCH_SCENE=0
+BOOTSTRAP_SCENE=1
 SCENE_WAIT_SEC=40
 
 while [[ $# -gt 0 ]]; do
@@ -50,6 +52,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --auto-launch-scene)
       AUTO_LAUNCH_SCENE=1
+      shift
+      ;;
+    --bootstrap-scene)
+      BOOTSTRAP_SCENE=1
       shift
       ;;
     --scene-wait)
@@ -90,6 +96,29 @@ source_if_exists() {
       set -u
     fi
   fi
+}
+
+bootstrap_scene_if_needed() {
+  local scene_root="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
+  local scene_setup="$scene_root/install/setup.bash"
+
+  if [[ "$BOOTSTRAP_SCENE" -ne 1 ]]; then
+    return 0
+  fi
+  if [[ ! -d "$scene_root/src" ]]; then
+    echo "ERROR: scene workspace missing: $scene_root/src" >&2
+    return 2
+  fi
+
+  echo "INFO: bootstrap scene workspace (colcon build ENPM662 packages)"
+  colcon build \
+    --base-paths "$scene_root/src" \
+    --build-base "$scene_root/build" \
+    --install-base "$scene_root/install" \
+    --packages-select kitchen_robot_description kitchen_robot_controller \
+    --event-handlers console_direct+ >"$ART_DIR/scene_colcon_build.log" 2>&1
+
+  source_if_exists "$scene_setup"
 }
 
 wait_for_topic() {
@@ -153,6 +182,9 @@ echo "Command: PYTHONPATH=$REPO_ROOT/hrl_ws/src/hrl_trainer ${CMD[*]}"
 if [[ "$DRY_RUN" -eq 1 ]]; then
   if [[ "$LIVE" -eq 1 ]]; then
     echo "DRY-RUN: live mode topic precheck enabled"
+    if [[ "$BOOTSTRAP_SCENE" -eq 1 ]]; then
+      echo "DRY-RUN: would colcon build scene packages (kitchen_robot_description/kitchen_robot_controller)"
+    fi
     if [[ "$AUTO_LAUNCH_SCENE" -eq 1 ]]; then
       echo "DRY-RUN: would auto launch scene via scripts/v5/launch_kitchen_scene.sh"
     fi
@@ -166,6 +198,8 @@ if [[ "$LIVE" -eq 1 ]]; then
     echo "ERROR: ros2 not found in PATH. Source ROS 2 first (e.g. /opt/ros/jazzy/setup.bash)." >&2
     exit 2
   fi
+
+  bootstrap_scene_if_needed
 
   if ! require_topics 6; then
     if [[ "$AUTO_LAUNCH_SCENE" -eq 1 ]]; then
