@@ -92,6 +92,8 @@ def _run_tool_module(
     if extra_args:
         cmd.extend(extra_args)
     try:
+        if output_path.exists():
+            output_path.unlink()
         cp = subprocess.run(
             cmd,
             cwd=str(cwd) if cwd else None,
@@ -397,7 +399,10 @@ def evaluate_tf_contract(cfg: dict[str, Any], tf_tool: dict[str, Any] | None, fr
         return _blocked("TF contract config present; runtime TF validation unavailable.", "tf_check_helper not run", numeric_evidence=numeric, evidence=evidence, subchecks=subchecks)
 
     checks = _safe_get(tf_tool, "metrics", "checks") or []
-    evidence["tool"] = {"ok": tf_tool.get("ok"), "returncode": tf_tool.get("_runner", {}).get("returncode")}
+    runner = _safe_get(tf_tool, "_runner") if isinstance(tf_tool, dict) else None
+    returncode = runner.get("returncode") if isinstance(runner, dict) else None
+    stderr_tail = (runner.get("stderr_tail") if isinstance(runner, dict) else "") or ""
+    evidence["tool"] = {"ok": tf_tool.get("ok"), "returncode": returncode}
     evidence["checks"] = checks
     if checks:
         numeric["view_frames_success"] = 1 if bool(checks[0].get("success")) else 0
@@ -409,9 +414,13 @@ def evaluate_tf_contract(cfg: dict[str, Any], tf_tool: dict[str, Any] | None, fr
     else:
         subchecks["frames_pdf_generated"] = {"status": STATUS_BLOCKED, "reason": "view_frames not executed"}
     if not checks:
+        stderr_compact = " ".join(stderr_tail.strip().split())
+        stderr_summary = stderr_compact[-240:] if stderr_compact else "<empty>"
+        missing_reason = f"tf_check_helper produced no metrics.checks (returncode={returncode}, stderr_tail={stderr_summary})"
+        subchecks["tf_runtime"]["reason"] = missing_reason
         return _blocked(
             "TF runtime checks unavailable.",
-            "tf_check_helper did not produce checks (ROS/tf2 tools unavailable).",
+            missing_reason,
             numeric_evidence=numeric,
             evidence=evidence,
             subchecks=subchecks,
@@ -499,6 +508,8 @@ def evaluate_tray_stability(cfg: dict[str, Any], pose_tool: dict[str, Any] | Non
 
     pose_metrics = _safe_get(pose_tool, "metrics") if pose_tool else None
     id_metrics = _safe_get(id_tool, "metrics") if id_tool else None
+    id_status = id_tool.get("status") if isinstance(id_tool, dict) else None
+    id_blocked_reason = _safe_get(id_tool, "blocked_reason") if isinstance(id_tool, dict) else None
 
     if isinstance(pose_metrics, dict):
         std_xyz = pose_metrics.get("std_xyz_m") or []
@@ -511,7 +522,12 @@ def evaluate_tray_stability(cfg: dict[str, Any], pose_tool: dict[str, Any] | Non
     else:
         subchecks["tray_jitter_xyz_std_lt_3mm"] = {"status": STATUS_BLOCKED, "reason": "pose_jitter_eval not run"}
 
-    if isinstance(id_metrics, dict):
+    if id_status == STATUS_BLOCKED:
+        reason = str(id_blocked_reason or "id_switch_eval blocked")
+        subchecks["id_switch_lt_1pct"] = {"status": STATUS_BLOCKED, "reason": reason}
+        subchecks["missing_rate_reported"] = {"status": STATUS_BLOCKED, "reason": reason}
+        evidence["id_switch"] = id_metrics if isinstance(id_metrics, dict) else {"blocked_reason": reason}
+    elif isinstance(id_metrics, dict):
         numeric["id_switch_rate"] = id_metrics.get("switch_rate")
         numeric["missing_rate"] = id_metrics.get("missing_rate")
         switch_rate = id_metrics.get("switch_rate")
@@ -655,11 +671,9 @@ def evaluate_rosbag_replay(
 
 
 def attach_runner_metadata(tool_out: dict[str, Any] | None, run_res: ToolRunResult | None) -> dict[str, Any] | None:
-    if tool_out is None:
-        return None
     if run_res is None:
         return tool_out
-    out = dict(tool_out)
+    out = dict(tool_out) if isinstance(tool_out, dict) else {}
     out["_runner"] = {
         "command": run_res.command,
         "cwd": run_res.cwd,
@@ -778,13 +792,18 @@ def main() -> int:
     tool_outputs["rosbag_print"] = attach_runner_metadata(rosbag_print_run.json_output, rosbag_print_run)
 
     if args.live:
+        tf_pairs = wp0.get("tf_checks", {}).get("required_pairs", [])
+        tf_timeout_budget = max(
+            15.0,
+            5.0 + (len(tf_pairs) + 1) * float(args.tf_timeout_sec) + 5.0,
+        )
         tf_run = _run_tool_module(
             "hrl_trainer.v5.tools.tf_check_helper",
             config_path=config_path,
             output_path=artifacts_dir / "tf_check.json",
             extra_args=["--timeout-sec", str(args.tf_timeout_sec)],
             cwd=artifacts_dir,
-            timeout_sec=max(10.0, args.tf_timeout_sec * 4.0),
+            timeout_sec=tf_timeout_budget,
         )
         tool_outputs["tf"] = attach_runner_metadata(tf_run.json_output, tf_run)
 

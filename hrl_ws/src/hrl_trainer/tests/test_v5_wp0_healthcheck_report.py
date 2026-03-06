@@ -5,9 +5,12 @@ from hrl_trainer.v5.tools.wp0_healthcheck import (
     STATUS_BLOCKED,
     STATUS_FAIL,
     STATUS_PASS,
+    ToolRunResult,
+    attach_runner_metadata,
     build_report_skeleton,
     evaluate_approx_sync,
     evaluate_rosbag_replay,
+    evaluate_tf_contract,
     evaluate_tray_stability,
     finalize_report,
 )
@@ -89,7 +92,44 @@ class TestV5Wp0HealthcheckReport(unittest.TestCase):
         self.assertEqual(out["status"], STATUS_FAIL)
         self.assertEqual(out["subchecks"]["id_switch_lt_1pct"]["status"], STATUS_FAIL)
 
+    def test_evaluate_tray_stability_blocked_on_id_switch_blocked_status(self):
+        pose_tool = {"metrics": {"std_xyz_m": [0.001, 0.001, 0.001], "gate": {"pass": True}}}
+        id_tool = {
+            "status": STATUS_BLOCKED,
+            "blocked_reason": "jsonl source unavailable",
+            "metrics": {"source": {"mode": "jsonl", "path": "/tmp/v5_object_id_frames.jsonl"}},
+        }
+        out = evaluate_tray_stability(self.cfg, pose_tool, id_tool)
+        self.assertEqual(out["status"], STATUS_BLOCKED)
+        self.assertEqual(out["subchecks"]["id_switch_lt_1pct"]["status"], STATUS_BLOCKED)
+
+    def test_attach_runner_metadata_preserves_runner_when_tool_json_missing(self):
+        run = ToolRunResult(
+            command=["python3", "-m", "hrl_trainer.v5.tools.tf_check_helper"],
+            cwd="/tmp",
+            returncode=1,
+            stdout_tail="",
+            stderr_tail="tf2 tools unavailable",
+            json_output=None,
+            error=None,
+        )
+        out = attach_runner_metadata(None, run)
+        self.assertIsInstance(out, dict)
+        self.assertEqual(out["_runner"]["returncode"], 1)
+        self.assertEqual(out["_runner"]["stderr_tail"], "tf2 tools unavailable")
+
+    def test_evaluate_tf_contract_reports_runner_details_when_checks_missing(self):
+        tf_tool = {
+            "_runner": {
+                "returncode": 1,
+                "stderr_tail": "ros2: command not found",
+            }
+        }
+        out = evaluate_tf_contract(self.cfg, tf_tool, Path("/tmp/artifacts/wp0/frames.pdf"))
+        self.assertEqual(out["status"], STATUS_BLOCKED)
+        self.assertIn("returncode=1", out["blocked_reason"])
+        self.assertIn("stderr_tail=ros2: command not found", out["blocked_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
