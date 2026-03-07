@@ -44,8 +44,12 @@ wp0:
   tf_checks:
     required_pairs:
       - source: world
+        target: cam_overhead
+      - source: cam_overhead
         target: cam_overhead_optical_frame
       - source: world
+        target: cam_side
+      - source: cam_side
         target: cam_side_optical_frame
 
   state_topics:
@@ -55,11 +59,25 @@ wp0:
       header_field: header
 
   pose_jitter:
-    topic: /tray1/pose
+    topic: /tray4/pose
     type: geometry_msgs/msg/PoseStamped
+    # Jitter source is explicitly locked to /tray4/pose (PoseStamped, world frame).
+    excluded_topics:
+      - /tray_tracking/pose_stream
     pose_field: pose
     header_field: header
     required_frame_id: world
+    required_frame_id_candidates:
+      - empty
+    target_child_frame_patterns:
+      - tray4
+      - tray4*
+      - "*tray4*"
+    sources:
+      - topic: /tray4/pose
+        type: geometry_msgs/msg/PoseStamped
+        pose_field: pose
+        header_field: header
 
   id_switch:
     mode: jsonl
@@ -74,4 +92,3 @@ wp0:
   rosbag:
     default_bag_path: /tmp/v5_wp0_capture
     replay_requires_clock: true
-

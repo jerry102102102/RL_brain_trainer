@@ -8,6 +8,10 @@ from typing import Any
 
 from .common import add_common_io_args, finalize_output, load_yaml, tool_result
 
+FORCED_JITTER_TOPIC = "/tray4/pose"
+FORCED_JITTER_TYPE = "geometry_msgs/msg/PoseStamped"
+EXCLUDED_JITTER_TOPICS = {"/tray_tracking/pose_stream"}
+
 
 def _collect_topics(wp0: dict[str, Any]) -> list[str]:
     topics: list[str] = []
@@ -19,10 +23,21 @@ def _collect_topics(wp0: dict[str, Any]) -> list[str]:
     for spec in wp0.get("state_topics", []):
         if spec.get("topic"):
             topics.append(spec["topic"])
-    for sec in ("pose_jitter",):
-        topic = wp0.get(sec, {}).get("topic")
-        if topic:
-            topics.append(topic)
+    # Jitter capture is explicitly bound to /tray4/pose PoseStamped.
+    cfg_jitter = wp0.get("pose_jitter", {})
+    cfg_excluded = {str(x) for x in (cfg_jitter.get("excluded_topics") or []) if isinstance(x, str)}
+    excluded = EXCLUDED_JITTER_TOPICS.union(cfg_excluded)
+    if FORCED_JITTER_TOPIC not in excluded:
+        topics.append(FORCED_JITTER_TOPIC)
+    for src in cfg_jitter.get("sources", []) or []:
+        if not isinstance(src, dict):
+            continue
+        src_topic = str(src.get("topic", ""))
+        src_type = str(src.get("type", ""))
+        if src_topic in excluded:
+            continue
+        if src_topic == FORCED_JITTER_TOPIC and src_type in ("", FORCED_JITTER_TYPE):
+            topics.append(src_topic)
     id_topic = wp0.get("id_switch", {}).get("topic")
     if id_topic:
         topics.append(id_topic)
