@@ -77,6 +77,16 @@ ERR
 
   PKG_DIR="$(basename "$(dirname "$(dirname "$CANDIDATE")")")"
   LAUNCH_FILE="$(basename "$CANDIDATE")"
+
+  # Resolve real ROS package name from package.xml when folder name is not a valid package name.
+  PKG_XML="$(dirname "$(dirname "$CANDIDATE")")/package.xml"
+  if [[ -f "$PKG_XML" ]]; then
+    PKG_FROM_XML="$(grep -m1 -oP '(?<=<name>)[^<]+' "$PKG_XML" || true)"
+    if [[ -n "$PKG_FROM_XML" ]]; then
+      PKG_DIR="$PKG_FROM_XML"
+    fi
+  fi
+
   LAUNCH_CMD="ros2 launch $PKG_DIR $LAUNCH_FILE use_sim_time:=true headless:=true"
 fi
 
