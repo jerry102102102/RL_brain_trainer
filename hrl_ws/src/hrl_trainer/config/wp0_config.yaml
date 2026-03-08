@@ -59,9 +59,10 @@ wp0:
       header_field: header
 
   pose_jitter:
-    topic: /tray4/pose
+    topic: /tray1/pose
     type: geometry_msgs/msg/PoseStamped
-    # Jitter source is explicitly locked to /tray4/pose (PoseStamped, world frame).
+    settle_sec: 2.0
+    # Jitter source is explicitly locked to /tray1/pose (PoseStamped, world frame).
     excluded_topics:
       - /tray_tracking/pose_stream
     pose_field: pose

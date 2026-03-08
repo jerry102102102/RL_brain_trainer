@@ -8,7 +8,7 @@ from typing import Any
 
 from .common import add_common_io_args, finalize_output, load_yaml, tool_result
 
-FORCED_JITTER_TOPIC = "/tray4/pose"
+FORCED_JITTER_TOPIC = "/tray1/pose"
 FORCED_JITTER_TYPE = "geometry_msgs/msg/PoseStamped"
 EXCLUDED_JITTER_TOPICS = {"/tray_tracking/pose_stream"}
 
@@ -23,7 +23,7 @@ def _collect_topics(wp0: dict[str, Any]) -> list[str]:
     for spec in wp0.get("state_topics", []):
         if spec.get("topic"):
             topics.append(spec["topic"])
-    # Jitter capture is explicitly bound to /tray4/pose PoseStamped.
+    # Jitter capture is explicitly bound to /tray1/pose PoseStamped.
     cfg_jitter = wp0.get("pose_jitter", {})
     cfg_excluded = {str(x) for x in (cfg_jitter.get("excluded_topics") or []) if isinstance(x, str)}
     excluded = EXCLUDED_JITTER_TOPICS.union(cfg_excluded)

@@ -7,7 +7,7 @@ from typing import Any
 from .common import add_common_io_args, finalize_output, get_attr_path, load_msg_class, load_yaml, maybe_load_ros, tool_result
 from .metrics_core import summarize_pose_jitter
 
-FORCED_JITTER_TOPIC = "/tray4/pose"
+FORCED_JITTER_TOPIC = "/tray1/pose"
 FORCED_JITTER_TYPE = "geometry_msgs/msg/PoseStamped"
 FORCED_WORLD_FRAME = "world"
 EXCLUDED_JITTER_TOPICS = {"/tray_tracking/pose_stream"}
@@ -27,6 +27,7 @@ def main() -> int:
     pj = wp0["pose_jitter"]
     thresholds = wp0["thresholds"]
     duration_sec = float(args.duration_sec or wp0.get("window_sec", 60.0))
+    settle_sec = float(pj.get("settle_sec", 2.0))
     std_limit_m = float(thresholds["pose_jitter_std_m"])
 
     topic = FORCED_JITTER_TOPIC
@@ -41,7 +42,7 @@ def main() -> int:
     excluded_topics = sorted(EXCLUDED_JITTER_TOPICS.union(cfg_excluded))
     warnings: list[str] = []
     if str(pj.get("topic", "")) not in ("", FORCED_JITTER_TOPIC):
-        warnings.append("pose_jitter_topic_overridden_to_tray4_pose")
+        warnings.append("pose_jitter_topic_overridden_to_tray1_pose")
     if str(pj.get("type", "")) not in ("", FORCED_JITTER_TYPE):
         warnings.append("pose_jitter_type_overridden_to_posestamped")
     if str(pj.get("required_frame_id", "")) not in ("", FORCED_WORLD_FRAME):
@@ -58,8 +59,10 @@ def main() -> int:
                 )
             ])
             self.points: list[list[float]] = []
+            self.point_times: list[float] = []
             self.frame_mismatch = 0
             self.samples = 0
+            self.first_sample_time: float | None = None
             topic_types = {name: list(types) for name, types in self.get_topic_names_and_types()}
             self.selected_source = source_specs[0]
             self.selected_topic_types = topic_types.get(str(self.selected_source["topic"]), [])
@@ -78,6 +81,9 @@ def main() -> int:
 
         def cb(self, msg: Any) -> None:
             self.samples += 1
+            now = time.monotonic()
+            if self.first_sample_time is None:
+                self.first_sample_time = now
             try:
                 header = get_attr_path(msg, self.selected_header_field)
                 frame_id = getattr(header, "frame_id", None)
@@ -89,6 +95,7 @@ def main() -> int:
                 pose = get_attr_path(msg, self.selected_pose_field)
                 pos = pose.position
                 self.points.append([float(pos.x), float(pos.y), float(pos.z)])
+                self.point_times.append(now)
             except Exception:
                 pass
 
@@ -99,10 +106,21 @@ def main() -> int:
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.2)
 
-        metrics = summarize_pose_jitter(node.points, std_limit_m=std_limit_m)
+        points_eval = node.points
+        dropped = 0
+        if node.first_sample_time is not None and node.point_times:
+            threshold = node.first_sample_time + settle_sec
+            points_eval = [p for p, t in zip(node.points, node.point_times) if t >= threshold]
+            dropped = len(node.points) - len(points_eval)
+
+        metrics = summarize_pose_jitter(points_eval, std_limit_m=std_limit_m)
         metrics.update(
             {
                 "window_sec": duration_sec,
+                "settle_sec": settle_sec,
+                "samples_total": len(node.points),
+                "samples_used": len(points_eval),
+                "samples_dropped_settle": dropped,
                 "topic": node.selected_topic,
                 "topic_types": node.selected_topic_types,
                 "source_type": node.selected_type,

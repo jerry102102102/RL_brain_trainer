@@ -100,25 +100,29 @@ source_if_exists() {
 
 bootstrap_scene_if_needed() {
   local scene_root="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
-  local scene_setup="$scene_root/install/setup.bash"
+  local scene_ws="$scene_root/src"
+  local scene_setup_src="$scene_ws/install/setup.bash"
+  local scene_setup_legacy="$scene_root/install/setup.bash"
 
   if [[ "$BOOTSTRAP_SCENE" -ne 1 ]]; then
     return 0
   fi
-  if [[ ! -d "$scene_root/src" ]]; then
-    echo "ERROR: scene workspace missing: $scene_root/src" >&2
+  if [[ ! -d "$scene_ws" ]]; then
+    echo "ERROR: scene workspace missing: $scene_ws" >&2
     return 2
   fi
 
-  echo "INFO: bootstrap scene workspace (colcon build ENPM662 packages)"
-  colcon build \
-    --base-paths "$scene_root/src" \
-    --build-base "$scene_root/build" \
-    --install-base "$scene_root/install" \
-    --packages-select kitchen_robot_description kitchen_robot_controller \
-    --event-handlers console_direct+ >"$ART_DIR/scene_colcon_build.log" 2>&1
+  echo "INFO: bootstrap scene workspace (colcon build ENPM662 packages under $scene_ws)"
+  (
+    cd "$scene_ws"
+    PATH=/usr/bin:$PATH colcon build \
+      --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 \
+      --packages-select kitchen_robot_description kitchen_robot_controller \
+      --event-handlers console_direct+
+  ) >"$ART_DIR/scene_colcon_build.log" 2>&1
 
-  source_if_exists "$scene_setup"
+  source_if_exists "$scene_setup_src"
+  source_if_exists "$scene_setup_legacy"
 }
 
 wait_for_topic() {
@@ -180,6 +184,7 @@ trap cleanup EXIT
 # Align environment with manual startup flow.
 source_if_exists /opt/ros/jazzy/setup.bash
 source_if_exists "$REPO_ROOT/install/setup.bash"
+source_if_exists "$REPO_ROOT/external/ENPM662_Group4_FinalProject/src/install/setup.bash"
 source_if_exists "$REPO_ROOT/external/ENPM662_Group4_FinalProject/install/setup.bash"
 
 PY_RUN=(python3)
