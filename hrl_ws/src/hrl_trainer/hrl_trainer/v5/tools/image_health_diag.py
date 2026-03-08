@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from dataclasses import dataclass
+import time
 from typing import Any
 
 from .common import add_common_io_args, finalize_output, load_yaml, maybe_load_ros, stamp_to_ns, tool_result
@@ -42,6 +43,11 @@ def main() -> int:
     class ImgDiagNode(Node):
         def __init__(self) -> None:
             super().__init__("v5_wp0_image_health_diag")
+            self.set_parameters([
+                rclpy.parameter.Parameter(
+                    "use_sim_time", rclpy.parameter.Parameter.Type.BOOL, bool(wp0.get("use_sim_time", False))
+                )
+            ])
             self.samples: dict[str, list[ImageSample]] = defaultdict(list)
             self.camera_info_seen: dict[str, int] = defaultdict(int)
             self.image_contract_obs: dict[str, dict[str, Any]] = {}
@@ -57,12 +63,17 @@ def main() -> int:
 
         def _img_cb(self, topic: str):
             def cb(msg: Any) -> None:
-                recv_ns = self.get_clock().now().nanoseconds
+                ros_recv_ns = self.get_clock().now().nanoseconds
+                wall_recv_ns = time.time_ns()
                 header_ns = None
                 try:
                     header_ns = stamp_to_ns(msg.header.stamp)
                 except Exception:
                     header_ns = None
+                if header_ns is not None:
+                    recv_ns = ros_recv_ns if abs(ros_recv_ns - header_ns) <= abs(wall_recv_ns - header_ns) else wall_recv_ns
+                else:
+                    recv_ns = ros_recv_ns
                 width = None
                 height = None
                 encoding = None
@@ -100,8 +111,8 @@ def main() -> int:
     rclpy.init()
     node = ImgDiagNode()
     try:
-        end_time = node.get_clock().now().nanoseconds + int(duration_sec * 1e9)
-        while rclpy.ok() and node.get_clock().now().nanoseconds < end_time:
+        deadline = time.monotonic() + duration_sec
+        while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.2)
 
         per_topic: dict[str, Any] = {}
@@ -139,8 +150,15 @@ def main() -> int:
         finalize_output(out, args)
         return 0 if out.get("ok") else 1
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

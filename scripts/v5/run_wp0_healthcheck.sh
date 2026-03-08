@@ -81,6 +81,9 @@ done
 CONFIG="$REPO_ROOT/hrl_ws/src/hrl_trainer/config/wp0_config.yaml"
 ART_DIR="$REPO_ROOT/artifacts/wp0"
 mkdir -p "$ART_DIR"
+ROS_LOG_DIR="$ART_DIR/ros2_logs"
+mkdir -p "$ROS_LOG_DIR"
+export ROS_LOG_DIR
 
 source_if_exists() {
   local setup_file="$1"

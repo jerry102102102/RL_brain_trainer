@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import time
 from typing import Any
 
 from .common import add_common_io_args, finalize_output, get_attr_path, load_msg_class, load_yaml, maybe_load_ros, stamp_to_ns, tool_result
@@ -28,6 +29,11 @@ def main() -> int:
     class LatNode(Node):
         def __init__(self) -> None:
             super().__init__("v5_wp0_state_latency_eval")
+            self.set_parameters([
+                rclpy.parameter.Parameter(
+                    "use_sim_time", rclpy.parameter.Parameter.Type.BOOL, bool(wp0.get("use_sim_time", False))
+                )
+            ])
             self.lats: dict[str, list[float]] = defaultdict(list)
             self.subs = []
             for spec in state_topics:
@@ -39,12 +45,14 @@ def main() -> int:
             header_field = spec.get("header_field", "header")
 
             def cb(msg: Any) -> None:
-                recv_ns = self.get_clock().now().nanoseconds
+                ros_recv_ns = self.get_clock().now().nanoseconds
+                wall_recv_ns = time.time_ns()
                 try:
                     header = get_attr_path(msg, header_field)
                     msg_ns = stamp_to_ns(header.stamp)
                 except Exception:
                     return
+                recv_ns = ros_recv_ns if abs(ros_recv_ns - msg_ns) <= abs(wall_recv_ns - msg_ns) else wall_recv_ns
                 self.lats[topic].append((recv_ns - msg_ns) / 1e6)
 
             return cb
@@ -52,8 +60,8 @@ def main() -> int:
     rclpy.init()
     node = LatNode()
     try:
-        end_time = node.get_clock().now().nanoseconds + int(duration_sec * 1e9)
-        while rclpy.ok() and node.get_clock().now().nanoseconds < end_time:
+        deadline = time.monotonic() + duration_sec
+        while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.2)
         metrics = summarize_state_topic_latency_by_topic(node.lats, p95_limit_ms=p95_limit_ms)
         metrics.update(
@@ -75,8 +83,15 @@ def main() -> int:
         finalize_output(out, args)
         return 0 if ok else 1
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

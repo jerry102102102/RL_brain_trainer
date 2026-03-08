@@ -262,6 +262,20 @@ def generate_launch_description():
         output='screen'
     )
 
+    object_id_publisher = Node(
+        package='kitchen_robot_controller',
+        executable='object_id_publisher_node',
+        name='object_id_publisher',
+        parameters=[{
+            'use_sim_time': True,
+            'input_topic': '/tray1/pose',
+            'output_topic': '/v5/perception/object_pose_est',
+            'id_value': 'tray1',
+            'publish_rate_hz': 10.0,
+        }],
+        output='screen'
+    )
+
     static_tf_world_cam_overhead = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -326,6 +340,22 @@ def generate_launch_description():
         output='screen'
     )
 
+    bridge_cam_overhead_info = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/cam_overhead/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo'],
+        remappings=[('/cam_overhead/camera_info', '/v5/cam/overhead/camera_info')],
+        output='screen'
+    )
+
+    bridge_cam_side_info = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/cam_side/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo'],
+        remappings=[('/cam_side/camera_info', '/v5/cam/side/camera_info')],
+        output='screen'
+    )
+
     return LaunchDescription([
         declare_headless,
         declare_use_software_renderer,
@@ -349,6 +379,9 @@ def generate_launch_description():
         static_tf_cam_side_optical,
         bridge_world_pose_info,
         tray_pose_adapter,
+        object_id_publisher,
         bridge_cam_overhead,
         bridge_cam_side,
+        bridge_cam_overhead_info,
+        bridge_cam_side_info,
     ])
