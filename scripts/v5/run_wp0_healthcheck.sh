@@ -167,9 +167,16 @@ require_topics_and_samples() {
 }
 
 kill_scene_processes() {
+  # Kill launch umbrella + known child executables to avoid duplicate-node contamination.
   pkill -f 'ros2 launch kitchen_robot_description gazebo.launch.py' >/dev/null 2>&1 || true
+  pkill -f 'ros_gz_sim create' >/dev/null 2>&1 || true
   pkill -f '/opt/ros/jazzy/lib/ros_gz_bridge/parameter_bridge' >/dev/null 2>&1 || true
+  pkill -f 'tray_pose_adapter_node' >/dev/null 2>&1 || true
+  pkill -f 'object_id_publisher_node' >/dev/null 2>&1 || true
+  pkill -f 'static_transform_publisher' >/dev/null 2>&1 || true
+  pkill -f 'robot_state_publisher' >/dev/null 2>&1 || true
   pkill -f 'gz sim' >/dev/null 2>&1 || true
+  sleep 2
 }
 
 SCENE_PID=""
