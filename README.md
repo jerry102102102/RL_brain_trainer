@@ -76,6 +76,7 @@ The goal is to build a verifiable and reproducible hierarchy for navigation firs
 ### V5 WP0 Dependency Note
 - WP0 runtime for V5 kitchen work depends on the ENPM662 kitchen scene repo.
 - Integration/launch/healthcheck workflow is documented in `docs/V5_SCENE_DEPENDENCY.md` and `docs/wp0_run.md`.
+- Latest WP0 validation status (2026-03-09): overall `PASS` with `6/6` sections passing, including rosbag replay gate.
 
 ### 1) Architecture Overview (L1 / L2 / L3)
 - **L1 (semantic/global intent):** outputs task intent and constraints, not low-level controls.

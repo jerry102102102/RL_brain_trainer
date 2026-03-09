@@ -2,6 +2,8 @@
 
 WP0 runtime in this repo depends on the ENPM662 kitchen scene repository and does not vendor scene assets into V5.
 
+Current status (2026-03-09): `artifacts/wp0/wp0_report.json` is overall `PASS` with `6/6` sections passing, including rosbag record/replay latency gate.
+
 ## Selected approach
 - Strategy: local symlink bridge (`external/kitchen_scene`) + wrapper scripts.
 - Reason: minimal/reversible, avoids duplicating large scene assets, keeps source-of-truth in ENPM662 repo.
@@ -65,4 +67,3 @@ scripts/v5/bridge_kitchen_scene.sh \
 ```
 Expected output:
 - `ERROR: scene repo not found: /path/that/does/not/exist`
-

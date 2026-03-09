@@ -1,6 +1,6 @@
 # V5 Kitchen Manipulation — Three-Layer RL Execution Plan
 
-Status: Draft v2 (critique-integrated)
+Status: Draft v2 (critique-integrated) + WP0 PASS (6/6, with replay) as of 2026-03-09
 Owner: Jerry + Assistant
 Branch: `v5`
 Repo: `repos/personal/RL_brain_trainer`
@@ -322,13 +322,13 @@ Deliverables:
 - explicit local dependency bridge to ENPM662 kitchen scene repo (no duplicated large assets)
 
 Tasks:
-- [ ] scene bridge script validated (`scripts/v5/bridge_kitchen_scene.sh`)
-- [ ] camera SDF/launch integration verified in scene
-- [ ] `/v5/cam/*/rgb` + `/camera_info` publishing
-- [ ] TF check script (`view_frames` / `tf2_echo`) passes
-- [ ] image health diagnostics (fps, dropped frame, latency)
-- [ ] rosbag2 record/replay script for camera+state topics
-- [ ] tray stream extraction (`/tray_tracking/pose_stream` -> `/tray1/pose` GT-only)
+- [x] scene bridge script validated (`scripts/v5/bridge_kitchen_scene.sh`)
+- [x] camera SDF/launch integration verified in scene
+- [x] `/v5/cam/*/rgb` + `/camera_info` publishing
+- [x] TF check script (`view_frames` / `tf2_echo`) passes
+- [x] image health diagnostics (fps, dropped frame, latency)
+- [x] rosbag2 record/replay script for camera+state topics
+- [x] tray stream extraction (`/tray_tracking/pose_stream` -> `/tray1/pose` GT-only)
 
 Exit criteria:
 - 5-min stable camera + state capture
@@ -338,6 +338,17 @@ Exit criteria:
 - replay reproduces same topic structure
 - approx-sync success rate (overhead+side) > 95%
 - replay receive latency P95 < 120 ms
+
+### Implementation Log (WP0)
+- Clock-domain mixing (`recv_now - header.stamp` across mismatched time bases) caused false latency failures; mitigation: lock latency checks to same ROS clock domain with explicit definition in report output.
+- Duplicate launch residue (leftover ROS/Gazebo processes) polluted live checks; mitigation: enforce clean relaunch discipline before WP0 live/replay runs.
+- Package-name detection for scene launch was inconsistent across repo layouts; mitigation: resolve launch command through wrapper scripts with dry-run verification.
+- `camera_info` bridge parity drifted from RGB topics during integration; mitigation: enforce paired RGB + `camera_info` coverage in WP0 contracts and rosbag record topics.
+- Tray topic alignment was inconsistent (`/tray_tracking/pose_stream` vs `/tray1/pose`); mitigation: keep explicit extraction path to `/tray1/pose` for GT-only stability checks.
+- `id_switch` source ambiguity (multiple possible streams) reduced reproducibility; mitigation: pin eval source in config/report (`/v5/perception/object_pose_est`) and log source metadata.
+- Replay isolation was noisy when live publishers remained active; mitigation: replay checks run with isolated replay path and dedicated replay-latency gate.
+- Missing `ROS_LOG_DIR` control made diagnostics hard to trace; mitigation: set per-run log directories under `artifacts/wp0` for repeatable evidence capture.
+- Bash vs zsh setup differences caused environment drift; mitigation: standardize wrapper scripts and docs on explicit shell-agnostic invocation plus dry-run command echoing.
 
 ## WP1 — L1 layer (phase-aware)
 Deliverables:
