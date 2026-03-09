@@ -85,6 +85,36 @@ class TestV5Wp0HealthcheckReport(unittest.TestCase):
         self.assertEqual(out["subchecks"]["replay_command_uses_clock"]["status"], STATUS_PASS)
         self.assertEqual(out["subchecks"]["replay_image_latency_p95_lt_120ms"]["status"], STATUS_BLOCKED)
 
+    def test_evaluate_rosbag_replay_uses_only_remapped_topics(self):
+        rosbag_tool = {
+            "metrics": {
+                "record": {"command": ["ros2", "bag", "record", "--use-sim-time", "-o", "/tmp/bag", "/a"], "shell": "x"},
+                "replay": {"command": ["ros2", "bag", "play", "/tmp/bag", "--clock"], "shell": "y"},
+            }
+        }
+        replay_image_tool = {
+            "_replay": {
+                "replay_topic_map": {
+                    "/v5/cam/overhead/rgb": "/replay/v5/cam/overhead/rgb",
+                    "/v5/cam/side/rgb": "/replay/v5/cam/side/rgb",
+                }
+            },
+            "metrics": {
+                "per_topic": {
+                    "/replay/v5/cam/overhead/rgb": {"latency": {"p95_ms": 100.0}, "frames": 50},
+                    "/replay/v5/cam/side/rgb": {"latency": {"p95_ms": 110.0}, "frames": 50},
+                    "/v5/cam/overhead/rgb": {"latency": {"p95_ms": 999.0}, "frames": 1},
+                }
+            },
+        }
+        out = evaluate_rosbag_replay(self.cfg, rosbag_tool, replay_image_tool, "/tmp/bag")
+        self.assertEqual(out["status"], STATUS_PASS)
+        self.assertEqual(out["numeric_evidence"]["replay_image_latency_p95_ms"], 110.0)
+        self.assertEqual(
+            out["evidence"]["ignored_non_remapped_replay_topics"],
+            ["/v5/cam/overhead/rgb"],
+        )
+
     def test_evaluate_tray_stability_fail_on_id_switch_rate(self):
         pose_tool = {"metrics": {"std_xyz_m": [0.001, 0.001, 0.001], "gate": {"pass": True}}}
         id_tool = {"metrics": {"switch_rate": 0.02, "missing_rate": 0.0}}

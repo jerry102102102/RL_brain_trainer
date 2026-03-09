@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -166,6 +168,18 @@ def _safe_get(d: dict[str, Any] | None, *path: str) -> Any:
             return None
         cur = cur.get(key)
     return cur
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 def collect_system_metadata(repo_root: Path) -> dict[str, Any]:
@@ -634,15 +648,47 @@ def evaluate_rosbag_replay(
 
     if replay_image_tool and isinstance(_safe_get(replay_image_tool, "metrics"), dict):
         per_topic = _safe_get(replay_image_tool, "metrics", "per_topic") or {}
+        replay_topic_map = _safe_get(replay_image_tool, "_replay", "replay_topic_map")
+        remapped_topics = set()
+        if isinstance(replay_topic_map, dict):
+            remapped_topics = {str(v) for v in replay_topic_map.values() if str(v).startswith("/replay/v5/")}
+            evidence["replay_topic_map"] = replay_topic_map
+            evidence["replay_topic_filter"] = sorted(remapped_topics)
         p95_vals = []
+        ignored_topics: list[str] = []
+        included_topics = 0
         for topic, topic_metrics in per_topic.items():
+            if remapped_topics and topic not in remapped_topics:
+                ignored_topics.append(topic)
+                continue
             p95 = _safe_get(topic_metrics, "latency", "p95_ms")
             if p95 is not None:
                 p95_vals.append(float(p95))
+            included_topics += 1
             evidence.setdefault("replay_image_topics", {})[topic] = {
                 "latency_p95_ms": p95,
                 "frames": topic_metrics.get("frames"),
             }
+        if ignored_topics:
+            evidence["ignored_non_remapped_replay_topics"] = sorted(ignored_topics)
+        if remapped_topics and included_topics == 0:
+            subchecks["replay_image_latency_p95_lt_120ms"] = {
+                "status": STATUS_BLOCKED,
+                "reason": "no remapped /replay/v5/* replay image metrics",
+            }
+            statuses = [v.get("status") for v in subchecks.values()]
+            if STATUS_FAIL in statuses:
+                status = STATUS_FAIL
+            elif all(s == STATUS_PASS for s in statuses):
+                status = STATUS_PASS
+            else:
+                status = STATUS_BLOCKED
+            summary = {
+                STATUS_PASS: "Rosbag record/replay commands and replay image latency validated.",
+                STATUS_FAIL: "Rosbag record/replay requirement failed.",
+                STATUS_BLOCKED: "Rosbag record/replay validation incomplete (replay not executed or samples unavailable).",
+            }[status]
+            return _blocked(summary, "replay latency metrics unavailable", numeric_evidence=numeric, evidence=evidence, subchecks=subchecks)
         if p95_vals:
             numeric["replay_image_latency_p95_ms"] = max(p95_vals)
             subchecks["replay_image_latency_p95_lt_120ms"] = {"status": _status_from_bool(max(p95_vals) < replay_limit)}
@@ -724,10 +770,50 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _run_rosbag_replay_image_diag(config_path: Path, artifacts_dir: Path, duration_sec: float, bag_path: str) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     out_path = artifacts_dir / "replay_image_health.json"
-    cmd = ["ros2", "bag", "play", bag_path, "--clock"]
+    cfg = load_yaml(config_path)
+    wp0 = cfg.get("wp0", {})
+    cams = wp0.get("cameras", {})
+
+    replay_prefix = "/replay/v5"
+    remaps: list[str] = []
+    replay_topic_map: dict[str, str] = {}
+    skipped_non_v5_topics: list[str] = []
+    for cam in cams.values():
+        for key in ("image_topic", "camera_info_topic"):
+            topic = cam.get(key)
+            if not topic:
+                continue
+            if not isinstance(topic, str) or not topic.startswith("/v5/"):
+                skipped_non_v5_topics.append(str(topic))
+                continue
+            replay_topic = f"{replay_prefix}{topic[len('/v5'):]}"
+            remaps.extend(["--remap", f"{topic}:={replay_topic}"])
+            replay_topic_map[topic] = replay_topic
+
+    cmd = ["ros2", "bag", "play", bag_path, "--clock", *remaps]
     proc = None
-    meta: dict[str, Any] = {"bag_play_command": cmd, "bag_path": bag_path}
+    meta: dict[str, Any] = {
+        "bag_play_command": [str(x) for x in cmd],
+        "bag_path": str(bag_path),
+        "replay_topic_map": replay_topic_map,
+    }
+    if skipped_non_v5_topics:
+        meta["skipped_non_v5_topics"] = sorted(set(skipped_non_v5_topics))
+
+    tmp_cfg_path: Path | None = None
     try:
+        replay_cfg = copy.deepcopy(cfg)
+        for cam in replay_cfg.get("wp0", {}).get("cameras", {}).values():
+            if cam.get("image_topic") in replay_topic_map:
+                cam["image_topic"] = replay_topic_map[cam["image_topic"]]
+            if cam.get("camera_info_topic") in replay_topic_map:
+                cam["camera_info_topic"] = replay_topic_map[cam["camera_info_topic"]]
+
+        fd, tmp_name = tempfile.mkstemp(prefix="wp0_replay_cfg_", suffix=".json", dir=str(artifacts_dir))
+        os.close(fd)
+        tmp_cfg_path = Path(tmp_name)
+        write_json(_json_safe(replay_cfg), output_path=str(tmp_cfg_path))
+
         proc = subprocess.Popen(
             cmd,
             cwd=str(artifacts_dir),
@@ -738,15 +824,19 @@ def _run_rosbag_replay_image_diag(config_path: Path, artifacts_dir: Path, durati
         )
     except FileNotFoundError as exc:
         meta["error"] = str(exc)
+        if tmp_cfg_path and tmp_cfg_path.exists():
+            tmp_cfg_path.unlink(missing_ok=True)
         return None, meta
     except Exception as exc:  # pragma: no cover - defensive
         meta["error"] = str(exc)
+        if tmp_cfg_path and tmp_cfg_path.exists():
+            tmp_cfg_path.unlink(missing_ok=True)
         return None, meta
 
     try:
         run_res = _run_tool_module(
             "hrl_trainer.v5.tools.image_health_diag",
-            config_path=config_path,
+            config_path=tmp_cfg_path or config_path,
             output_path=out_path,
             extra_args=["--duration-sec", str(duration_sec), "--replay-mode"],
             cwd=REPO_ROOT,
@@ -754,7 +844,7 @@ def _run_rosbag_replay_image_diag(config_path: Path, artifacts_dir: Path, durati
         )
         tool_json = attach_runner_metadata(run_res.json_output, run_res)
         meta["diag_returncode"] = run_res.returncode
-        return tool_json, meta
+        return tool_json, _json_safe(meta)
     finally:
         if proc is not None and proc.poll() is None:
             proc.terminate()
@@ -763,6 +853,8 @@ def _run_rosbag_replay_image_diag(config_path: Path, artifacts_dir: Path, durati
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=5)
+        if tmp_cfg_path and tmp_cfg_path.exists():
+            tmp_cfg_path.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -846,9 +938,9 @@ def main() -> int:
         replay_tool, replay_meta = _run_rosbag_replay_image_diag(config_path, artifacts_dir, duration_sec, args.replay_bag)
         if replay_tool is not None:
             replay_tool = dict(replay_tool)
-            replay_tool["_replay"] = replay_meta
+            replay_tool["_replay"] = _json_safe(replay_meta)
         else:
-            replay_tool = {"_replay": replay_meta}
+            replay_tool = {"_replay": _json_safe(replay_meta)}
     tool_outputs["replay_image"] = replay_tool
 
     report["tool_outputs"] = tool_outputs
