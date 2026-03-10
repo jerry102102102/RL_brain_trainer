@@ -368,6 +368,55 @@ Tasks:
 Exit criteria:
 - 20 random tasks produce valid intent packets with clean layer boundary
 
+## WP1.5 — RL pipeline preparation + workspace shaping scaffold
+Purpose:
+- Build a **rule-based, RL-ready bridge** between WP1 and WP2.
+- Do not train final RL policy yet.
+- Freeze interfaces and shaping pipeline so WP2 starts from a fixed contract.
+
+Deliverables:
+- RL observation contract (policy-visible schema + builder)
+- RL action contract (aligned with `SkillCommand`, bounded + safe)
+- Workspace exploration pretraining task
+- Modular reward/scoring composer (robot-shaping style)
+- Rule-based rollout generator (same contracts as future RL)
+- Easy/medium/hard curriculum spec
+- Reusable rollout artifacts for RL/BC warm-start
+
+Key design rule:
+- External execution path stays: `L1 -> Rule-L2 -> L3`
+- Internal training prep path is added: `L1 -> obs builder / reward composer / rollout logger`
+- Future RL must replace Rule-L2 **without** changing L1/L3 APIs.
+
+Tasks:
+- [ ] Freeze observation v1 schema (latent, robot state, stage flag, object pose, target slot/zone)
+- [ ] Freeze action v1 schema (`delta_pose`, gripper command, speed profile, bounded guard params)
+- [ ] Implement action->`SkillCommand` adapter + validation tests
+- [ ] Implement workspace zone map + canonical hover/target anchors
+- [ ] Implement reward composer modules:
+  - progress
+  - safety/collision
+  - smoothness
+  - workspace coverage
+  - subgoal/terminal success
+- [ ] Implement rule-based rollout generator (with success/fail labels + fail reason)
+- [ ] Add deterministic replay + rollout integrity checks
+- [ ] Define curriculum YAMLs (`easy`, `medium`, `hard`) with fixed seed sets
+- [ ] Export training artifacts (rollout JSON/CSV, reward breakdown, canonical trajectories)
+
+Exit criteria:
+- Observation/action contracts are documented + validated by tests
+- Rule-based generator can produce reproducible rollouts under all 3 curriculum levels
+- Reward breakdown is logged per step and per episode
+- Rollout artifacts are reusable for WP2 warm-start (RL/BC)
+- No L1/L3 API changes required to swap in RL-L2
+
+Implementation notes (WP1.5 pitfalls to avoid):
+- Avoid moving target contracts (freeze schema before large-scale rollout generation)
+- Keep L2 learning surface clean; do not leak L3 internals into policy API
+- Keep shaping modular/config-driven (weight changes without code edits)
+- Treat WP1.5 as engineering prep, not a side research detour
+
 ## WP2 — L2 baseline + RL slot
 Deliverables:
 - Rule-L2 baseline
