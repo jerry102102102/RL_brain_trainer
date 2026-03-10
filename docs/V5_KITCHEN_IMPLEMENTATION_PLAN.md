@@ -429,7 +429,15 @@ Tasks:
 - [ ] memory hook (optional)
 
 Exit criteria:
-- RL module can replace rule baseline without changing L1/L3 APIs
+- Interface success:
+  - RL module can replace rule baseline without changing L1/L3 APIs
+- Training success:
+  - on easy benchmark, RL-L2 success rate is not worse than Rule-L2 baseline
+  - reward breakdown and rollout logs are reproducible
+  - on medium benchmark, RL-L2 improves at least one KPI:
+    - success rate, or
+    - collision rate, or
+    - completion time
 
 ## WP3 — L3 execution + safety
 Deliverables:
@@ -515,6 +523,20 @@ Termination:
 Curriculum:
 - easy -> medium -> hard progression tied to success threshold
 
+## 10.2 Stagewise RL training policy
+
+Stage A — Workspace exploration
+- objective: learn safe hover, zone transition, and clearance-aware motion
+- task shape: exploration-focused; no object manipulation success requirement
+
+Stage B — Atomic skill training
+- objective: stabilize `APPROACH / GRASP / PLACE / RETREAT`
+- task shape: skill-level training with shaping rewards and strict SkillCommand boundaries
+
+Stage C — Task composition
+- objective: learn `MOVE_PLATE(A,B)` end-to-end under frozen contracts
+- task shape: full pipeline RL-L2 training with curriculum + failure recovery
+
 ## 11) Metrics
 
 Core:
@@ -534,6 +556,13 @@ Per-run artifact:
 - replay bag path
 - failure snapshots
 
+### Phase-1 minimum acceptance gates
+- `success_rate >= 0.70` on easy eval set
+- `collision_rate <= 0.05`
+- `timeout_rate <= 0.10`
+- `safety_intervention_rate` below configured threshold
+- fixed config + seed results reproducible within agreed tolerance
+
 ---
 
 ## 12) Timeline (realistic)
@@ -551,7 +580,7 @@ Per-run artifact:
 ---
 
 
-## 13.1 Practical risk-control refinements (latest)
+## 13) Practical risk-control refinements
 
 ### R1. Perception adapter is the primary risk
 Observed risk:
@@ -595,35 +624,48 @@ Execution policy:
 - single-variable change per experiment round (reward OR termination OR curriculum).
 - if RL-L2 fails to beat baseline on agreed KPI, treat as non-progress and rollback.
 
-## 13) Immediate Next Actions
+## 14) Immediate Next Actions
 
-1. Add `/camera_info` and TF verification scripts.
-2. Add `/v5/perception/object_pose_est` adapter stub.
-3. Enforce SkillCommand strict schema (remove trajectory chunk path).
-4. Implement SlotMap spec and 10-task smoke test.
-5. Add rosbag2 record/replay command set.
+### Execution now
+1. Finish WP1 minimal (`IntentPacket`, `SlotMap`, `/v5/perception/object_pose_est` adapter).
+2. Freeze WP1.5 observation/action v1 schema.
+3. Implement reward composer + rule rollout generator.
+4. Define workspace zone map + canonical hover anchors.
+5. Generate first exploration rollouts and verify replay reproducibility.
+
+### Deferred but queued
+- camera hardening refinements
+- perception estimator swap experiments
+- Phase-1 visual encoder integration
 
 ---
 
-## 14) File/Code Placement
+## 15) File/Code Placement
 
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/intent_layer.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/perception_adapter.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/skill_layer.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/control_layer.py`
 - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/pipeline.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/rl_observation.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/rl_action_adapter.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/reward_composer.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/workspace_exploration.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/rule_rollout_generator.py`
+- `hrl_ws/src/hrl_trainer/hrl_trainer/v5/curriculum.py`
 - `hrl_ws/src/hrl_trainer/config/v5_kitchen_*.yaml`
 - `docs/V5_EXPERIMENT_LOG.md`
 
 ---
 
-## 15) Acceptance Gate
+## 16) Acceptance Gate
 
 - [ ] Phase split accepted (Phase-0 GT / Phase-1 Vision)
 - [ ] L2 strict output boundary accepted
 - [ ] camera contract accepted
 - [ ] observation pipeline accepted
 - [ ] SlotMap spec accepted
+- [ ] RL prep scaffold accepted (obs/action contract + reward composer + rollout artifact path)
 - [ ] safety enums/logging accepted
 - [ ] timeline accepted
 
