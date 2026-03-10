@@ -1,5 +1,7 @@
 # V5 Kitchen Manipulation — Three-Layer RL Execution Plan
 
+Reference doctrine: `docs/V5_DESIGN_PHILOSOPHY.md` (L1/L2/L3 separation, L2-first shaping, simulation-first).
+
 Status: Draft v2 (critique-integrated) + WP0 PASS (6/6, with replay) as of 2026-03-09
 Owner: Jerry + Assistant
 Branch: `v5`
