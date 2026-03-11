@@ -360,13 +360,31 @@ Deliverables:
 - perception adapter output `/v5/perception/object_pose_est`
 
 Tasks:
-- [ ] IntentPacket schema
-- [ ] SlotMap implementation
-- [ ] Phase-0 GT proxy switch + Phase-1 vision-only switch
-- [ ] failure path (`unreachable`, `missing object`, `disambiguation required`)
+- [x] IntentPacket schema
+- [x] SlotMap implementation
+- [x] Phase-0 GT proxy switch + Phase-1 vision-only switch
+- [x] failure path (`unreachable`, `missing object`, `disambiguation required`)
 
 Exit criteria:
 - 20 random tasks produce valid intent packets with clean layer boundary
+
+### Implementation Log (WP1)
+- Added strict `IntentPacket` schema + validator with explicit L1/L2/L3 boundary guard (forbidden L2/L3 fields are rejected at validation time).
+- Landed runtime `SlotMap` loading path from repo config (`hrl_ws/src/hrl_trainer/config/v5_slot_map.yaml`) instead of test-only mock wiring.
+- Added perception adapter scaffold for `/v5/perception/object_pose_est` with explicit mode switch:
+  - `phase0_gt_proxy`
+  - `phase1_vision_only`
+- Encoded failure semantics as first-class outcomes:
+  - `UNREACHABLE`
+  - `MISSING_OBJECT`
+  - `TASK_DISAMBIGUATION_REQUIRED`
+- Added acceptance harness + runner (`scripts/v5/run_wp1_acceptance.sh`) and summary output contract:
+  - `success_count`
+  - `fail_count`
+  - `fail_reason_breakdown`
+- Current acceptance evidence (latest run):
+  - 10-task smoke + 20 random acceptance completed
+  - success_count=30, fail_count=0, fail_reason_breakdown={}
 
 ## WP1.5 — RL pipeline preparation + workspace shaping scaffold
 Purpose:

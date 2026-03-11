@@ -1,9 +1,9 @@
-# RL_brain_trainer (V4 Mainline)
+# RL_brain_trainer (V5 Active / V4 Legacy)
 
 ## 中文版
 
-本 repo 目前主線是 **V4（sim2d）**：
-以「可驗證、可重跑、可逐步升級到手臂場景」為目標，先把移動任務中的層級決策與控制約束打穩，再往 V5 manipulation 擴展。
+本 repo 目前開發焦點是 **V5（manipulation）**，V4（sim2d）保留為可重現基線：
+以「可驗證、可重跑、可逐步升級」為目標，V5 持續推進手臂場景三層架構，V4 作為歷史主線與對照實驗基底。
 
 ### 1) 架構總覽（L1 / L2 / L3）
 - **L1（語意/全域意圖）**：產生任務意圖與約束，不直接輸出控制量。
@@ -70,13 +70,14 @@ python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
 
 ## English Version
 
-This repository currently tracks the **V4 (sim2d) mainline**.
-The goal is to build a verifiable and reproducible hierarchy for navigation first, then extend it to **V5 manipulation (robot arm simulation)**.
+This repository is now **V5-active (manipulation)**, with V4 (sim2d) kept as a legacy/reproducible baseline.
+The goal is to keep a verifiable, reproducible hierarchy while advancing V5 robot-arm manipulation and preserving V4 as a reference line.
 
-### V5 WP0 Dependency Note
+### V5 Status Snapshot
 - WP0 runtime for V5 kitchen work depends on the ENPM662 kitchen scene repo.
 - Integration/launch/healthcheck workflow is documented in `docs/V5_SCENE_DEPENDENCY.md` and `docs/wp0_run.md`.
-- Latest WP0 validation status (2026-03-09): overall `PASS` with `6/6` sections passing, including rosbag replay gate.
+- WP0 validation status (2026-03-09): overall `PASS` with `6/6` sections passing, including rosbag replay gate.
+- WP1 foundation status (latest): IntentPacket/SlotMap/perception-adapter scaffold + acceptance harness landed (see `docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`).
 
 ### 1) Architecture Overview (L1 / L2 / L3)
 - **L1 (semantic/global intent):** outputs task intent and constraints, not low-level controls.
