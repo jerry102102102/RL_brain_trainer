@@ -1,11 +1,14 @@
 import unittest
+from pathlib import Path
 
 from hrl_trainer.v5.intent_layer import (
+    DEFAULT_SLOT_MAP_PATH,
     IntentFailureCode,
     IntentResolutionError,
     IntentValidationError,
     SlotMap,
     build_intent_packet,
+    load_runtime_slot_map,
     parse_move_plate,
     validate_intent_packet,
 )
@@ -51,6 +54,11 @@ class TestV5Wp1IntentLayer(unittest.TestCase):
         )
         validate_intent_packet(packet)
         self.assertEqual(packet.object_id, "tray1")
+
+    def test_runtime_slot_map_loads_from_default_config_path(self):
+        self.assertTrue(Path(DEFAULT_SLOT_MAP_PATH).exists(), f"missing slot map file: {DEFAULT_SLOT_MAP_PATH}")
+        slot_map = load_runtime_slot_map()
+        self.assertGreaterEqual(len(slot_map.slots), 2)
 
     def test_intent_packet_validator_blocks_l2_l3_fields(self):
         bad_payload = {

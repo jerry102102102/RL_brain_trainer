@@ -12,6 +12,7 @@ import yaml
 
 
 MOVE_PLATE_PATTERN = re.compile(r"^MOVE_PLATE\(\s*([^,\s][^,]*?)\s*,\s*([^)]+?)\s*\)$")
+DEFAULT_SLOT_MAP_PATH = Path(__file__).resolve().parents[2] / "config" / "v5_slot_map.yaml"
 
 L2_FORBIDDEN_FIELDS = {
     "skill_mode",
@@ -322,6 +323,14 @@ class SlotMap:
             )
 
         return ResolvedMovePlate(source_slot=source_slot, target_slot=target_slot, object_id=common_objects[0])
+
+
+def load_runtime_slot_map(path: str | Path | None = None) -> SlotMap:
+    """Load slot map from runtime config path used by V5 WP1 pipeline."""
+    slot_map_path = Path(path) if path is not None else DEFAULT_SLOT_MAP_PATH
+    if not slot_map_path.exists():
+        raise FileNotFoundError(f"Slot map config not found: {slot_map_path}")
+    return SlotMap.from_yaml(slot_map_path)
 
 
 def _best_object_pose(

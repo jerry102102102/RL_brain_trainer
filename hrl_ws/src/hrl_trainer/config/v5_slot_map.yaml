@@ -1,0 +1,84 @@
+slots:
+  - slot_id: shelf_A1
+    region_world:
+      center_xyz: [0.90, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [0.86, -1.10, 1.32]
+        rpy: [3.14, 0.0, 0.0]
+    place_pose_candidates:
+      - xyz: [0.90, -1.16, 1.22]
+        rpy: [3.14, 0.0, 0.0]
+    allowed_objects: [tray1]
+    priority: 1
+
+  - slot_id: shelf_A2
+    region_world:
+      center_xyz: [0.70, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [0.66, -1.10, 1.32]
+        rpy: [3.14, 0.0, 0.0]
+    place_pose_candidates:
+      - xyz: [0.70, -1.16, 1.22]
+        rpy: [3.14, 0.0, 0.0]
+    allowed_objects: [tray1]
+    priority: 1
+
+  - slot_id: shelf_A3
+    region_world:
+      center_xyz: [0.50, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [0.46, -1.10, 1.32]
+        rpy: [3.14, 0.0, 0.0]
+    place_pose_candidates:
+      - xyz: [0.50, -1.16, 1.22]
+        rpy: [3.14, 0.0, 0.0]
+    allowed_objects: [tray1]
+    priority: 1
+
+  - slot_id: shelf_B1
+    region_world:
+      center_xyz: [-0.92, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [-0.86, -1.10, 1.32]
+        rpy: [3.14, 0.0, 3.14]
+    place_pose_candidates:
+      - xyz: [-0.92, -1.16, 1.22]
+        rpy: [3.14, 0.0, 3.14]
+    allowed_objects: [tray1]
+    priority: 1
+
+  - slot_id: shelf_B2
+    region_world:
+      center_xyz: [-0.72, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [-0.66, -1.10, 1.32]
+        rpy: [3.14, 0.0, 3.14]
+    place_pose_candidates:
+      - xyz: [-0.72, -1.16, 1.22]
+        rpy: [3.14, 0.0, 3.14]
+    allowed_objects: [tray1]
+    priority: 1
+
+  - slot_id: shelf_B3
+    region_world:
+      center_xyz: [-0.52, -1.16, 1.22]
+      size_xyz: [0.18, 0.18, 0.06]
+      yaw: 0.0
+    approach_pose_candidates:
+      - xyz: [-0.46, -1.10, 1.32]
+        rpy: [3.14, 0.0, 3.14]
+    place_pose_candidates:
+      - xyz: [-0.52, -1.16, 1.22]
+        rpy: [3.14, 0.0, 3.14]
+    allowed_objects: [tray1]
+    priority: 1
