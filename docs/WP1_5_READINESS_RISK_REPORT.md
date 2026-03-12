@@ -78,6 +78,7 @@ Decision: NOT READY (high-priority blockers present)
 ## Prioritized Remediation List
 
 1. Fix WP0 hard failures and unblock blocked checks before declaring WP1.5 runtime-ready (camera contract, TF runtime/frames artifact, approx sync, state latency, rosbag replay).
+   - Remediation B (runtime consistency): run `scripts/v5/run_wp1_5_runtime_parity_check.sh --mode both` and require `overall.result=PASS` to confirm startup parity across manual and auto-launch paths for `/clock`, `/joint_states`, `/v5/cam/overhead/rgb`, `/v5/cam/side/rgb`.
 2. Resolve the failing healthcheck unit test (`--remap` contract drift) and lock replay command semantics with stronger regression coverage.
 3. Implement missing WP1.5 core deliverables: rollout generator, deterministic replay/integrity checks, curriculum YAMLs, and artifact export pipeline.
 4. Add WP1.5 E2E readiness tests spanning artifact generation and replay determinism across `easy/medium/hard` fixed seeds.
