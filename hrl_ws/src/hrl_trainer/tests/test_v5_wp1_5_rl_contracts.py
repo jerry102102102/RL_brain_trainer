@@ -1,6 +1,14 @@
 import unittest
 from pathlib import Path
 
+import yaml
+
+from hrl_trainer.v5.rollout_integrity import (
+    ROLLOUT_ARTIFACT_SCHEMA_VERSION,
+    compare_replay_determinism,
+    rollout_digest_sha256,
+    validate_rollout_payload,
+)
 from hrl_trainer.v5.rl_action import (
     RLActionValidationError,
     action_to_skill_command,
@@ -147,6 +155,62 @@ class TestV5Wp15WorkspaceZoneMap(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             WorkspaceZoneMap.from_dict(payload)
+
+
+class TestV5Wp15RolloutIntegrity(unittest.TestCase):
+    def _sample_rollout(self) -> dict:
+        return {
+            "schema_version": ROLLOUT_ARTIFACT_SCHEMA_VERSION,
+            "episode_id": "ep-0001",
+            "curriculum_level": "easy",
+            "seed": 101,
+            "steps": [
+                {"t": 0, "action": {"skill_mode": "APPROACH"}, "reward_total": 0.2},
+                {"t": 1, "action": {"skill_mode": "PLACE"}, "reward_total": 1.0},
+            ],
+        }
+
+    def test_rollout_validator_accepts_minimal_payload(self):
+        payload = self._sample_rollout()
+        self.assertEqual(validate_rollout_payload(payload), [])
+
+    def test_rollout_digest_is_key_order_invariant(self):
+        payload_a = self._sample_rollout()
+        payload_b = {
+            "steps": payload_a["steps"],
+            "seed": payload_a["seed"],
+            "curriculum_level": payload_a["curriculum_level"],
+            "episode_id": payload_a["episode_id"],
+            "schema_version": payload_a["schema_version"],
+        }
+        self.assertEqual(rollout_digest_sha256(payload_a), rollout_digest_sha256(payload_b))
+
+    def test_compare_replay_determinism_detects_drift(self):
+        reference = self._sample_rollout()
+        replay = self._sample_rollout()
+        replay["steps"][1]["reward_total"] = 0.9
+        out = compare_replay_determinism(reference, replay)
+        self.assertFalse(out["match"])
+        self.assertIn("mismatch_reason", out)
+
+
+class TestV5Wp15CurriculumFixtures(unittest.TestCase):
+    def test_curriculum_fixture_levels_and_seed_sets(self):
+        cfg_dir = Path(__file__).resolve().parents[1] / "config"
+        fixture_names = [
+            ("easy", "v5_curriculum_easy.yaml"),
+            ("medium", "v5_curriculum_medium.yaml"),
+            ("hard", "v5_curriculum_hard.yaml"),
+        ]
+        all_seeds: list[int] = []
+        for expected_level, filename in fixture_names:
+            with (cfg_dir / filename).open("r", encoding="utf-8") as fp:
+                payload = yaml.safe_load(fp) or {}
+            self.assertEqual(payload["schema_version"], "v5_curriculum.v1")
+            self.assertEqual(payload["level"], expected_level)
+            self.assertTrue(isinstance(payload["seed_set"], list) and len(payload["seed_set"]) >= 3)
+            all_seeds.extend(payload["seed_set"])
+        self.assertEqual(len(all_seeds), len(set(all_seeds)))
 
 
 if __name__ == "__main__":

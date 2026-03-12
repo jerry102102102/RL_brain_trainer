@@ -1,11 +1,14 @@
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from hrl_trainer.v5.tools import wp0_healthcheck
 from hrl_trainer.v5.tools.wp0_healthcheck import (
     STATUS_BLOCKED,
     STATUS_FAIL,
     STATUS_PASS,
     ToolRunResult,
+    _run_rosbag_replay_image_diag,
     attach_runner_metadata,
     build_report_skeleton,
     evaluate_approx_sync,
@@ -159,6 +162,79 @@ class TestV5Wp0HealthcheckReport(unittest.TestCase):
         self.assertEqual(out["status"], STATUS_BLOCKED)
         self.assertIn("returncode=1", out["blocked_reason"])
         self.assertIn("stderr_tail=ros2: command not found", out["blocked_reason"])
+
+    def test_run_rosbag_replay_image_diag_uses_single_remap_flag_with_all_rules(self):
+        cfg_path = Path("/tmp/wp0_cfg_test.yaml")
+        cfg_path.write_text(
+            "\n".join(
+                [
+                    "wp0:",
+                    "  cameras:",
+                    "    overhead:",
+                    "      image_topic: /v5/cam/overhead/rgb",
+                    "      camera_info_topic: /v5/cam/overhead/camera_info",
+                    "    side:",
+                    "      image_topic: /v5/cam/side/rgb",
+                    "      camera_info_topic: /v5/cam/side/camera_info",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        artifacts_dir = Path("/tmp/wp0_replay_test_artifacts")
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        launched_cmd: list[str] = []
+
+        class DummyProc:
+            def poll(self):
+                return 0
+
+            def terminate(self):
+                return None
+
+            def wait(self, timeout=None):
+                return 0
+
+        fake_run = ToolRunResult(
+            command=["python", "-m", "image_health_diag"],
+            cwd="/tmp",
+            returncode=0,
+            stdout_tail="",
+            stderr_tail="",
+            json_output={"metrics": {"per_topic": {}}},
+            error=None,
+        )
+        with mock.patch.object(wp0_healthcheck.subprocess, "Popen") as popen_mock, mock.patch.object(
+            wp0_healthcheck, "_run_tool_module", return_value=fake_run
+        ):
+            def _fake_popen(cmd, **_kwargs):
+                launched_cmd.extend(cmd)
+                return DummyProc()
+
+            popen_mock.side_effect = _fake_popen
+            _tool_json, meta = _run_rosbag_replay_image_diag(cfg_path, artifacts_dir, 1.0, "/tmp/test_bag")
+
+        self.assertEqual(launched_cmd.count("--remap"), 1)
+        remap_idx = launched_cmd.index("--remap")
+        self.assertEqual(launched_cmd[:remap_idx], ["ros2", "bag", "play", "/tmp/test_bag", "--clock"])
+        self.assertEqual(
+            launched_cmd[remap_idx + 1 : remap_idx + 5],
+            [
+                "/v5/cam/overhead/rgb:=/replay/v5/cam/overhead/rgb",
+                "/v5/cam/overhead/camera_info:=/replay/v5/cam/overhead/camera_info",
+                "/v5/cam/side/rgb:=/replay/v5/cam/side/rgb",
+                "/v5/cam/side/camera_info:=/replay/v5/cam/side/camera_info",
+            ],
+        )
+        self.assertEqual(
+            meta["replay_topic_map"],
+            {
+                "/v5/cam/overhead/rgb": "/replay/v5/cam/overhead/rgb",
+                "/v5/cam/overhead/camera_info": "/replay/v5/cam/overhead/camera_info",
+                "/v5/cam/side/rgb": "/replay/v5/cam/side/rgb",
+                "/v5/cam/side/camera_info": "/replay/v5/cam/side/camera_info",
+            },
+        )
+        self.assertEqual(meta["diag_returncode"], 0)
 
 
 if __name__ == "__main__":

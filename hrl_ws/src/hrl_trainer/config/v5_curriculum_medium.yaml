@@ -1,0 +1,10 @@
+schema_version: v5_curriculum.v1
+level: medium
+seed_set: [201, 202, 203, 204, 205]
+rollout:
+  max_steps: 120
+  timeout_sec: 35.0
+  success_target_rate_min: 0.75
+environment:
+  disturbance: medium
+  obstacle_count: 2

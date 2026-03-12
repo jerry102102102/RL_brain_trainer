@@ -1,0 +1,10 @@
+schema_version: v5_curriculum.v1
+level: easy
+seed_set: [101, 102, 103, 104, 105]
+rollout:
+  max_steps: 80
+  timeout_sec: 25.0
+  success_target_rate_min: 0.9
+environment:
+  disturbance: low
+  obstacle_count: 0
