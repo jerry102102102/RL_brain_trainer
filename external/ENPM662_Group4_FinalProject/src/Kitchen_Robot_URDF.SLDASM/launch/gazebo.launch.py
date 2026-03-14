@@ -57,6 +57,11 @@ def generate_launch_description():
         default_value='-r -s --headless-rendering -v 2 worlds/v5_kitchen_empty.sdf',
         description='Arguments passed to gz sim (headless path).'
     )
+    declare_enable_legacy_tray_pose_adapter = DeclareLaunchArgument(
+        'enable_legacy_tray_pose_adapter',
+        default_value='false',
+        description='Enable legacy TFMessage tray pose adapter path.'
+    )
 
     # === Environment variables ===
     set_res_gz = SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.pathsep.join([pkg_share, res_root]))
@@ -234,18 +239,40 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Plate tracking stream: bridge world pose info into ROS for downstream filtering.
-    # NOTE: /model/tray1/pose currently has no publisher in this scene, so we bridge
-    # /world/empty/pose/info (gz.msgs.Pose_V) instead.
+    # Dedicated tray tracking stream: bridge dynamic pose info with name field preserved.
+    bridge_dynamic_pose_info = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/world/empty/dynamic_pose/info@ros_gz_interfaces/msg/Pose_V[gz.msgs.Pose_V'],
+        remappings=[('/world/empty/dynamic_pose/info', '/tray_tracking/pose_stream_raw')],
+        output='screen'
+    )
+
+    # Legacy adapter path remains available behind a launch arg for rollback/testing.
     bridge_world_pose_info = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=['/world/empty/pose/info@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V'],
         remappings=[('/world/empty/pose/info', '/tray_tracking/pose_stream')],
+        condition=IfCondition(LaunchConfiguration('enable_legacy_tray_pose_adapter')),
         output='screen'
     )
 
-    # Tray pose adapter: robustly emit /tray1/pose even when source child/frame ids are empty.
+    tray_pose_extractor = Node(
+        package='kitchen_robot_controller',
+        executable='tray_pose_extractor_node',
+        name='tray_pose_extractor',
+        parameters=[{
+            'use_sim_time': True,
+            'input_topic': '/tray_tracking/pose_stream_raw',
+            'output_topic': '/tray1/pose',
+            'target_name': 'tray1',
+            'default_frame_id': 'world',
+        }],
+        output='screen'
+    )
+
+    # Legacy fallback path; disabled by default to avoid name-loss-based selection.
     tray_pose_adapter = Node(
         package='kitchen_robot_controller',
         executable='tray_pose_adapter_node',
@@ -259,6 +286,7 @@ def generate_launch_description():
             'expected_xyz': [holders_xy[0][0], holders_xy[0][1] + TRAY_DY, tray_world_z],
             'publish_rate_hz': 10.0,
         }],
+        condition=IfCondition(LaunchConfiguration('enable_legacy_tray_pose_adapter')),
         output='screen'
     )
 
@@ -272,6 +300,9 @@ def generate_launch_description():
             'output_topic': '/v5/perception/object_pose_est',
             'id_value': 'tray1',
             'publish_rate_hz': 10.0,
+            # Keep periodic stats logs off by default to reduce runtime noise.
+            'enable_stats_log': False,
+            'stats_log_every_n': 300,
         }],
         output='screen'
     )
@@ -361,6 +392,7 @@ def generate_launch_description():
         declare_use_software_renderer,
         declare_gz_args,
         declare_gz_headless_args,
+        declare_enable_legacy_tray_pose_adapter,
         set_res_gz, set_res_ign, soft_gl, no_audio,
         prep_params,
         gz_gui,
@@ -377,7 +409,9 @@ def generate_launch_description():
         static_tf_cam_overhead_optical,
         static_tf_world_cam_side,
         static_tf_cam_side_optical,
+        bridge_dynamic_pose_info,
         bridge_world_pose_info,
+        tray_pose_extractor,
         tray_pose_adapter,
         object_id_publisher,
         bridge_cam_overhead,

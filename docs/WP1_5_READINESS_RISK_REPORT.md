@@ -4,6 +4,18 @@ Date: 2026-03-12
 Scope: WP1.5 readiness for handoff into WP2 (RL slot integration)
 Decision: NOT READY (high-priority blockers present)
 
+## Update (2026-03-14, WP1.5 Patch B)
+
+- Runtime tray pose source now uses a dedicated name-preserving path:
+  `/world/empty/dynamic_pose/info` -> `/tray_tracking/pose_stream_raw` -> `tray_pose_extractor_node` -> `/tray1/pose`.
+- Legacy TF fallback path (`/world/empty/pose/info` -> `tray_pose_adapter_node`) remains available but is disabled by default.
+- Expected impact: `/tray1/pose` no longer depends on name-less TF candidate fallback for tray selection.
+- Validation commands:
+  - `cd external/ENPM662_Group4_FinalProject/src/kitchen_robot_controller && PYTHONPATH=. pytest -q test/test_tray_pose_extractor_logic.py`
+  - `cd external/ENPM662_Group4_FinalProject/src && source install/setup.bash && ros2 launch kitchen_robot_description gazebo.launch.py enable_legacy_tray_pose_adapter:=false headless:=true`
+  - `source external/ENPM662_Group4_FinalProject/src/install/setup.bash && ros2 topic echo /tray1/pose --once`
+  - `source external/ENPM662_Group4_FinalProject/src/install/setup.bash && ros2 node list | rg 'tray_pose_extractor|tray_pose_adapter'` (expect only `tray_pose_extractor` by default)
+
 ## Risk Register
 
 ### 1) Runtime substrate instability inherited from WP0 blocks reliable WP1.5 rollout generation
