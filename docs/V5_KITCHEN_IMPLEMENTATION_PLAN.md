@@ -49,7 +49,9 @@ Policy-visible:
 - optional perception output topic `/v5/perception/object_pose_est`
 
 Policy-hidden:
-- `/tray_tracking/pose_stream` and tray GT derivatives (reward/eval only)
+- canonical GT upstream `/tray_tracking/pose_stream_raw` (policy-hidden; reward/eval only)
+- legacy `/tray_tracking/pose_stream` disabled by default
+- tray GT derivatives (reward/eval only)
 
 > V5 completion is judged on **Phase-1**, not only Phase-0.
 
@@ -145,7 +147,8 @@ Policy-visible streams:
 - arm controller state topics
 
 Policy-hidden streams:
-- `/tray_tracking/pose_stream`
+- `/tray_tracking/pose_stream_raw` (canonical GT bridge stream)
+- `/tray_tracking/pose_stream` (legacy, disabled by default)
 - `/tray1/pose` (if derived from GT)
 
 GT-only usage:
@@ -330,7 +333,7 @@ Tasks:
 - [x] TF check script (`view_frames` / `tf2_echo`) passes
 - [x] image health diagnostics (fps, dropped frame, latency)
 - [x] rosbag2 record/replay script for camera+state topics
-- [x] tray stream extraction (`/tray_tracking/pose_stream` -> `/tray1/pose` GT-only)
+- [x] tray stream extraction (`/tray_tracking/pose_stream_raw` -> `/tray1/pose` GT-only; `/tray_tracking/pose_stream` legacy/disabled-by-default)
 
 Exit criteria:
 - 5-min stable camera + state capture
@@ -346,7 +349,7 @@ Exit criteria:
 - Duplicate launch residue (leftover ROS/Gazebo processes) polluted live checks; mitigation: enforce clean relaunch discipline before WP0 live/replay runs.
 - Package-name detection for scene launch was inconsistent across repo layouts; mitigation: resolve launch command through wrapper scripts with dry-run verification.
 - `camera_info` bridge parity drifted from RGB topics during integration; mitigation: enforce paired RGB + `camera_info` coverage in WP0 contracts and rosbag record topics.
-- Tray topic alignment was inconsistent (`/tray_tracking/pose_stream` vs `/tray1/pose`); mitigation: keep explicit extraction path to `/tray1/pose` for GT-only stability checks.
+- Tray topic alignment was inconsistent (canonical `/tray_tracking/pose_stream_raw` vs legacy `/tray_tracking/pose_stream` vs `/tray1/pose`); mitigation: keep explicit extraction path `/tray_tracking/pose_stream_raw` -> `/tray1/pose` for GT-only stability checks.
 - `id_switch` source ambiguity (multiple possible streams) reduced reproducibility; mitigation: pin eval source in config/report (`/v5/perception/object_pose_est`) and log source metadata.
 - Replay isolation was noisy when live publishers remained active; mitigation: replay checks run with isolated replay path and dedicated replay-latency gate.
 - Missing `ROS_LOG_DIR` control made diagnostics hard to trace; mitigation: set per-run log directories under `artifacts/wp0` for repeatable evidence capture.

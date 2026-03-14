@@ -62,8 +62,11 @@ wp0:
     topic: /tray1/pose
     type: geometry_msgs/msg/PoseStamped
     settle_sec: 2.0
+    # Canonical upstream chain: /world/empty/dynamic_pose/info -> /tray_tracking/pose_stream_raw -> /tray1/pose.
     # Jitter source is explicitly locked to /tray1/pose (PoseStamped, world frame).
     excluded_topics:
+      - /tray_tracking/pose_stream_raw
+      # Legacy/disabled-by-default compatibility topic (do not use as active source).
       - /tray_tracking/pose_stream
     pose_field: pose
     header_field: header
