@@ -180,6 +180,61 @@ Output:
 #### Legacy path status（明確標示）
 - `/tray_tracking/pose_stream` 僅為 legacy/disabled-by-default 參考路徑，不作為 WP2 主線輸入。
 
+### 5.1.b Real-world deployment pipelines（真實環境）
+
+> 原則：真實環境沿用同一份 L1/L2/L3 契約，不改語義介面，只替換資料來源與控制落地端。
+
+#### Pipeline D: Real perception（online）
+1. 實體感測器輸入
+   - RGB / depth / robot proprioception /（可選）force-torque
+2. 感知與追蹤
+   - object detection + pose estimation + confidence/staleness gate
+3. Policy-visible perception output（與 sim 對齊）
+   - `/v5/perception/object_pose_est`
+4. 餵給 L1/L2
+   - L1 intent construction
+   - L2 skill policy observation
+
+**Direction:** sensors -> perception stack -> `/v5/perception/object_pose_est` -> L1/L2
+
+#### Pipeline E: Real execution（control）
+1. L1
+   - output: `/v5/intent_packet`
+2. L2
+   - output: `/v5/skill_command`
+3. L3（real controller adapter）
+   - 將 skill command 投影到硬體可執行控制命令（joint/cartesian/servo）
+4. Hardware control loop
+   - robot driver / controller manager / actuator
+5. Feedback + safety telemetry
+   - execution status / intervention log / fail reason
+
+**Direction:** L1_out -> L2_out -> L3(real adapter) -> hardware controller -> robot
+
+#### Pipeline F: Real safety & supervision（必備）
+1. Online safety checks
+   - collision distance / tilt / joint bounds / workspace forbidden zones / e-stop state
+2. Intervention manager
+   - HALT / SLOWDOWN / RETREAT / HOLD
+3. Structured logs
+   - intervention type, trigger metric, timestamp, recover action
+4. Human override path
+   - manual takeover / kill-switch / resume policy
+
+**Direction:** controller feedback + environment context -> safety shield -> intervention + logs
+
+#### Pipeline G: Sim-to-Real evaluation（一致性管線）
+1. Contract parity check
+   - L1/L2/L3 topic schema parity（sim vs real）
+2. Metric parity check
+   - success/collision/time/intervention 指標定義一致
+3. Replayability artifacts
+   - real-run logs 可回放成同格式評估報告
+4. Deployment gate
+   - 未通過 parity gate 不可進 production rollout
+
+**Direction:** sim metrics + real metrics -> parity report -> deploy/hold decision
+
 ObjectPoseArray contract:
 - `header.frame_id = world` (fixed)
 - `objects[] = {object_id, pose, confidence, pos_std, yaw_std, stamp}`
