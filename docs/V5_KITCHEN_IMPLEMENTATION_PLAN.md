@@ -143,6 +143,43 @@ Output:
 - `L3_out`: `/arm_controller/joint_trajectory`
 - `Perception_out`: `/v5/perception/object_pose_est` (policy-visible estimate, `ObjectPoseArray`)
 
+### 5.1.a Canonical pipeline definitions（來源 -> 去向）
+
+#### Pipeline A: Runtime perception（online 主線）
+1. Gazebo world pose source（raw）
+   - `/world/empty/dynamic_pose/info` (`gz.msgs.Pose_V`)
+2. ROS bridge remap（name-preserving）
+   - `/tray_tracking/pose_stream_raw` (`ros_gz_interfaces/msg/Pose_V`)
+3. Tray extractor（deterministic）
+   - `/tray1/pose` (`geometry_msgs/msg/PoseStamped`, frame=`world`)
+4. Object id publisher / perception adapter
+   - `/v5/perception/object_pose_est`（給 L1/L2 policy-visible）
+
+**Direction:** Gazebo -> Bridge -> Extractor -> Perception_out -> L1/L2
+
+#### Pipeline B: Three-layer execution（control 主線）
+1. L1 intent generation
+   - output: `/v5/intent_packet`
+2. L2 policy / local planner
+   - input: intent + policy-visible obs
+   - output: `/v5/skill_command`
+3. L3 deterministic executor + safety shield
+   - input: skill command + controller feedback
+   - output: `/arm_controller/joint_trajectory`
+
+**Direction:** L1_out -> L2_out -> L3_out -> robot controller
+
+#### Pipeline C: Training/diagnostics（offline/analysis 支線）
+1. Obs builder（camera + robot state + perception）
+2. Reward composer（sparse + PBRS + safety + smooth）
+3. Rollout logger / replay integrity checker
+4. Benchmark evaluator（Rule-L2 vs RL-L2）
+
+**Direction:** Runtime logs/topics -> training artifacts -> evaluation reports
+
+#### Legacy path status（明確標示）
+- `/tray_tracking/pose_stream` 僅為 legacy/disabled-by-default 參考路徑，不作為 WP2 主線輸入。
+
 ObjectPoseArray contract:
 - `header.frame_id = world` (fixed)
 - `objects[] = {object_id, pose, confidence, pos_std, yaw_std, stamp}`
