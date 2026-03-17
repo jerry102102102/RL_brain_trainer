@@ -100,14 +100,22 @@ Input:
 - robot state + perception estimate
 
 Output (`SkillCommand`) — **strict schema**:
-- `skill_mode` ∈ {APPROACH, GRASP, LIFT, TRANSFER, PLACE, RETREAT}
+- `skill_mode` ∈ {APPROACH, INSERT_SUPPORT, LIFT_CARRY, PLACE, WITHDRAW, RETREAT}
 - `ee_target_pose` **or** `delta_pose`
-- `gripper_cmd` ∈ {OPEN, CLOSE, HOLD}
-- `speed_profile_id` ∈ {SLOW, NORMAL}
+- `u_slot_params`:
+  - `insert_depth`
+  - `lateral_alignment`
+  - `vertical_clearance`
+  - `entry_yaw`
+- `timing_params`:
+  - `approach_speed_scale`
+  - `lift_profile_id`
+  - `contact_settle_time`
 - `guard`:
   - `keep_level`
   - `max_tilt`
   - `min_clearance`
+  - `fragility_mode_hint`
 
 Hard prohibition:
 - no time-parameterized trajectory chunk
@@ -411,7 +419,7 @@ Key design rule:
 
 Tasks:
 - [ ] Freeze observation v1 schema (latent, robot state, stage flag, object pose, target slot/zone)
-- [ ] Freeze action v1 schema (`delta_pose`, gripper command, speed profile, bounded guard params)
+- [ ] Freeze action v1 schema（`delta_pose` + U-slot 參數 + timing 參數 + bounded guard）
 - [ ] Implement action->`SkillCommand` adapter + validation tests
 - [ ] Implement workspace zone map + canonical hover/target anchors
 - [ ] Implement reward composer modules:
@@ -438,42 +446,68 @@ Implementation notes (WP1.5 pitfalls to avoid):
 - Keep shaping modular/config-driven (weight changes without code edits)
 - Treat WP1.5 as engineering prep, not a side research detour
 
-## WP2 — L2 baseline + RL slot
+## WP2 — RL-L2 slot（參數化中階連續策略）
+
+> 依賴關係（硬規則）
+> - WP2 不可先於 WP3-Lite。先完成 L3 最小可用執行/安全底座，再做 RL-L2 訓練。
+> - Runtime gate 必須先 PASS：`scripts/v5/run_wp1_5_runtime_parity_check.sh --mode both`
+
 Deliverables:
-- Rule-L2 baseline
-- RL-L2 pluggable module
+- Rule-L2 v0 baseline（可重跑、可對照）
+- RL-L2 v2（參數化中階連續策略，非 trajectory generator）
+- RL-L2 / Rule-L2 benchmark 對照結果（easy/medium）
 
-Tasks:
-- [ ] SkillCommand strict schema enforcement
-- [ ] baseline skill policy (approach/grasp/place)
-- [ ] RL adapter consuming observation pipeline latent
-- [ ] memory hook (optional)
+WP2 固定頻率契約（已拍板）：
+- L2：10–20 Hz（事件觸發重算）
+- L3：100–200 Hz（deterministic control + safety shield）
+- L2/L3 互動：stale timeout + interpolation + predictive clamp + fail-safe fallback
 
-Exit criteria:
+Tasks（具體化）:
+- [ ] M1: Rule-L2 v0 封裝（沿用既有 controller 思路）
+  - 只輸出 `SkillCommand`，不得輸出 trajectory chunk / spline / JointTrajectory
+  - 產生 rule rollout artifact（easy/medium）
+- [ ] M2: RL-L2 action schema v2（參數化擴展）
+  - 在不破壞 L3 邊界下，增加可學習連續控制意圖（pose/U-slot/timing/safety-hint）
+  - 每步輸出 reward breakdown 與 action telemetry
+- [ ] M3: Reward composer v1（Sparse + PBRS + safety + smooth）
+  - 支援 config-driven 權重調整（不改程式碼即可改權重）
+- [ ] M4: Curriculum + warm-start
+  - Stage A/B/C（workspace exploration -> atomic skills -> task composition）
+  - Rule rollout 生成 BC warm-start dataset
+- [ ] M5: RL baseline 訓練與對照
+  - SAC baseline（fixed seeds）
+  - ablation：no shaping vs heuristic dense vs PBRS
+
+Exit criteria（DoD）:
 - Interface success:
-  - RL module can replace rule baseline without changing L1/L3 APIs
+  - RL-L2 可替換 Rule-L2，且不改 L1/L3 API
+  - L2 輸出嚴格通過 `SkillCommand` boundary validator
+- Runtime success:
+  - parity gate PASS（manual + auto）
 - Training success:
-  - on easy benchmark, RL-L2 success rate is not worse than Rule-L2 baseline
-  - reward breakdown and rollout logs are reproducible
-  - on medium benchmark, RL-L2 improves at least one KPI:
-    - success rate, or
-    - collision rate, or
-    - completion time
+  - easy benchmark 上，RL-L2 success rate 不低於 Rule-L2
+  - medium benchmark 上至少改善一項 KPI（success/collision/time）
+  - reward breakdown、telemetry、rollout logs 可重現
 
-## WP3 — L3 execution + safety
+## WP3 — L3 execution + safety（WP2 先決 Lite + 完整版）
 Deliverables:
 - deterministic executor
 - safety shield
 - structured intervention/failure logs
 
 Tasks:
-- [ ] projection to safe command space
-- [ ] intervention triggers + recovery policy
-- [ ] thresholds configurable in yaml + triggered metric logged
-- [ ] enum-based structured logs
+- [ ] WP3-Lite（WP2 前置）
+  - projection to safe command space（先可用）
+  - stale command handling（hold/interpolate/clamp/timeout stop）
+  - basic intervention triggers（distance/tilt/ttc）
+- [ ] WP3-Full（WP2 並行收斂）
+  - intervention triggers + recovery policy 完整化
+  - thresholds configurable in yaml + triggered metric logged
+  - enum-based structured logs + replay-friendly diagnostics
 
 Exit criteria:
 - no unsafe command reaches controller in stress scenarios
+- L2 command loss/stale 情境下，L3 可穩定降級與安全停機
 
 ## WP4 — Evaluation harness
 Deliverables:
@@ -517,16 +551,20 @@ E5: Holdout generalization (hard requirement)
 
 ## 10.1 RL-L2 training loop contract
 Observation (policy-visible):
-- image latent(s) from observation pipeline
-- robot state
-- stage flag
-- optional perception estimate (`/v5/perception/object_pose_est`)
+- image latent(s) from observation pipeline（overhead/side）
+- robot state（joint state、ee pose/twist、controller state）
+- stage flag / current skill mode
+- perception estimate（`/v5/perception/object_pose_est`）
+- tray 相對位姿特徵（EE->tray frame 相對平移/yaw）
+- U-slot 幾何關聯特徵（estimated slot-edge distance、clearance proxy）
+- command staleness 與 safety context（intervention recent flag）
 
 Action space (learned fields in SkillCommand):
-- `skill_mode` switch policy (optional staged)
+- `skill_mode` switch policy（`APPROACH -> INSERT_SUPPORT -> LIFT_CARRY -> PLACE -> WITHDRAW`）
 - `delta_pose` / `ee_target_pose` selection
-- `speed_profile_id`
-- guard parameter selection within bounded range
+- U-slot insertion params（`insert_depth`, `lateral_alignment`, `vertical_clearance`, `entry_yaw`）
+- timing params（`approach_speed_scale`, `lift_profile_id`, `contact_settle_time`）
+- guard hint selection within bounded range（含 `fragility_mode_hint`）
 
 Reward components:
 - success bonus
