@@ -1,143 +1,91 @@
-# RL_brain_trainer (V5 Active / V4 Legacy)
+# RL_brain_trainer (V5 Active)
 
-## 中文版
-
-本 repo 目前開發焦點是 **V5（manipulation）**，V4（sim2d）保留為可重現基線：
-以「可驗證、可重跑、可逐步升級」為目標，V5 持續推進手臂場景三層架構，V4 作為歷史主線與對照實驗基底。
-
-### 1) 架構總覽（L1 / L2 / L3）
-- **L1（語意/全域意圖）**：產生任務意圖與約束，不直接輸出控制量。
-- **L2（局部規劃 / policy）**：根據狀態與目標產生局部決策（可含記憶/殘差策略）。
-- **L3（deterministic follower）**：把 L2 指令轉成可執行控制，負責可追蹤性與穩定性。
-
-核心契約：把「理解」和「技能」分開，把「技能」和「精度」分開。  
-介面細節：`docs/V4_INTERFACE_SPEC.md`
-
-### 2) V4 關鍵機制
-**控制約束（Control Constraints）**
-- `v ∈ [-1.2, 1.2]`（允許倒車）
-- `ω ∈ [-2π, 2π]`（±360 deg/s）
-
-**Reward（目前實作）**
-- 距離/進度相關項
-- 控制 effort 懲罰
-- 成功獎勵（success bonus）
-- 碰撞懲罰（collision penalty）
-
-備註：目前 V4 訓練路徑沒有獨立命名為 backtracking loss 的顯式項。
-
-### 3) 實驗方法（V4）
-**代表性訓練設定**
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
-
-**執行範例**
-```bash
-cd hrl_ws
-uv sync
-source .venv/bin/activate
-
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
-```
-
-### 4) 最新結果（V4）
-- No-obstacle MVP：success rate **95.83%**（115/120）
-- Complex + Velocity Constraints：success rate **95.56%**（172/180）, collisions **8**, timeout **0**
-
-### 5) 參考文獻
-- 索引：`docs/literature/INDEX.md`
-- 閱讀路徑：`docs/literature/PIPELINE_GUIDE.md`
-- 關聯文獻：RoBridge / Mem-α / Memory-R1 / RLBenchNet / LAC
-
-### 6) 目錄重點
-- 程式：
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/env.py`
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
-- 文件：
-  - `docs/V4_INTERFACE_SPEC.md`
-  - `docs/archive/v3_legacy/V3_VELOCITY_PATCH_REPORT.md`
-  - `docs/archive/v3_legacy/V3_GUIDE.md`
-  - `docs/archive/v3_legacy/V3_PROGRESS_BOARD.md`
-
-### 7) Branch 策略
-- `main`：V4 主線
-- `
-下一階段：**V5 模擬手臂場景（manipulation）**。
+> 目前主線是 **V5 三層架構（L1/L2/L3）** 的 kitchen manipulation。
+> V4/sim2d 保留為歷史基線，不是當前開發主戰場。
 
 ---
 
-## English Version
+## 中文（Current Truth）
 
-This repository is now **V5-active (manipulation)**, with V4 (sim2d) kept as a legacy/reproducible baseline.
-The goal is to keep a verifiable, reproducible hierarchy while advancing V5 robot-arm manipulation and preserving V4 as a reference line.
+## 1) 當前狀態（2026-03）
+- ✅ **WP1.5 runtime hotfix 已落地並合併到 `v5`**
+  - Jazzy 環境下以 **QUASI_DEDICATED** tray pose 路徑運作（非 Pose_V dedicated）。
+  - `tray_pose_adapter` 已加 deterministic gate，實測可達 `fallback_ratio=0.000`。
+- ✅ **controller auto bring-up 已修復**
+  - 啟動後可自動 `LOAD -> CONFIGURE -> ACTIVATE`，不需手動 spawner。
+- ✅ 健康檢查關鍵項目可通過
+  - `/controller_manager/list_controllers`：`joint_state_broadcaster` + `arm_controller` active
+  - `/tray1/pose` sample PASS
+  - `/v5/perception/object_pose_est` sample PASS
 
-### V5 Status Snapshot
-- WP0 runtime for V5 kitchen work depends on the ENPM662 kitchen scene repo.
-- Integration/launch/healthcheck workflow is documented in `docs/V5_SCENE_DEPENDENCY.md` and `docs/wp0_run.md`.
-- WP0 validation status (2026-03-09): overall `PASS` with `6/6` sections passing, including rosbag replay gate.
-- WP1 foundation status (latest): IntentPacket/SlotMap/perception-adapter scaffold + acceptance harness landed (see `docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`).
+## 2) 架構與契約（L1 / L2 / L3）
+- **L1（Intent）**：輸出任務語義，不輸出控制軌跡
+  - Topic: `/v5/intent_packet`
+- **L2（Policy / Skill）**：輸出 SkillCommand（中階決策）
+  - Topic: `/v5/skill_command`
+- **L3（Deterministic Executor + Safety）**：把 SkillCommand 轉成控制器可執行命令
+  - Topic: `/arm_controller/joint_trajectory`
 
-### 1) Architecture Overview (L1 / L2 / L3)
-- **L1 (semantic/global intent):** outputs task intent and constraints, not low-level controls.
-- **L2 (local planning/policy):** generates local decisions from state/goal (optionally memory/residual policy).
-- **L3 (deterministic follower):** converts L2 outputs into executable controls with tracking stability.
+> 硬邊界：L2 不直接輸出 trajectory chunk/spline/joint trajectory。
 
-Core contract: separate understanding from skill, and skill from precision.  
-Interface details: `docs/V4_INTERFACE_SPEC.md`
+## 3) 目前 canonical pipeline（sim）
+Gazebo / bridge / perception：
 
-### 2) V4 Key Mechanisms
-**Control constraints**
-- `v ∈ [-1.2, 1.2]` (reverse enabled)
-- `ω ∈ [-2π, 2π]` (±360 deg/s)
+`/world/empty/pose/info`
+→ `/tray_tracking/pose_stream`
+→ `tray_pose_adapter_node`
+→ `/tray1/pose`
+→ `object_id_publisher_node`
+→ `/v5/perception/object_pose_est`
 
-**Reward terms (current implementation)**
-- distance/progress-related term
-- control effort penalty
-- success bonus
-- collision penalty
+> 備註：在當前 Jazzy 環境，`Pose_V` dedicated 路徑不可用，因此使用 QUASI_DEDICATED（deterministic legacy adapter）。
 
-Note: there is no explicitly named “backtracking loss” term in the current online_v4 path.
+## 4) WP2 方向（已拍板）
+- L2/L3 頻率契約：
+  - **L2 = 10–20 Hz**（中階連續策略）
+  - **L3 = 100–200 Hz**（deterministic + safety shield）
+- 互動策略：stale timeout + interpolation + predictive clamp + fail-safe fallback
+- M1：Rule-L2 v0 baseline（U-slot flow）
 
-### 3) Experimental Method (V4)
-**Representative configs**
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
-- `hrl_ws/src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
-
-**Run example**
+## 5) 常用命令
+### 啟動場景（headless）
 ```bash
-cd hrl_ws
-uv sync
-source .venv/bin/activate
-
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source /opt/ros/jazzy/setup.bash
+source external/ENPM662_Group4_FinalProject/src/install/setup.bash
+ros2 launch kitchen_robot_description gazebo.launch.py headless:=true use_software_renderer:=true
 ```
 
-### 4) Latest Results (V4)
-- No-obstacle MVP: success rate **95.83%** (115/120)
-- Complex + velocity constraints: success rate **95.56%** (172/180), collisions **8**, timeout **0**
+### 快速健康檢查
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/external/ENPM662_Group4_FinalProject/src/install/setup.bash
 
-### 5) References
-- Index: `docs/literature/INDEX.md`
-- Reading path: `docs/literature/PIPELINE_GUIDE.md`
-- Key references: RoBridge / Mem-α / Memory-R1 / RLBenchNet / LAC
+ros2 service call /controller_manager/list_controllers controller_manager_msgs/srv/ListControllers "{}"
+ros2 topic echo /tray1/pose --qos-reliability best_effort --once
+ros2 topic echo /v5/perception/object_pose_est --qos-reliability best_effort --once
+```
 
-### 6) Important Files
-- Code:
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/env.py`
-  - `hrl_ws/src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py`
-- Docs:
-  - `docs/V4_INTERFACE_SPEC.md`
-  - `docs/archive/v3_legacy/V3_VELOCITY_PATCH_REPORT.md`
-  - `docs/archive/v3_legacy/V3_GUIDE.md`
-  - `docs/archive/v3_legacy/V3_PROGRESS_BOARD.md`
+---
 
-### 7) Branch Strategy
-- `main`: V4 mainline (only)
+## English (Brief)
 
-V2/V3 materials are archived under `docs/archive/v3_legacy/` and are no longer part of the active path.
+### Current active line
+- V5 kitchen manipulation is the active development line.
+- WP1.5 runtime fixes are merged on `v5`.
+- In current ROS 2 Jazzy environment, Pose_V dedicated tray path is unavailable; system runs in **QUASI_DEDICATED** mode with deterministic legacy adapter and validated healthy topic flow.
 
-Next stage: **V5 robot-arm simulation (manipulation)**.
+### Core contract
+- L1 intent: `/v5/intent_packet`
+- L2 policy skill command: `/v5/skill_command`
+- L3 deterministic execution: `/arm_controller/joint_trajectory`
+
+### Health checks expected
+- `joint_state_broadcaster` + `arm_controller` active
+- `/tray1/pose` sample available
+- `/v5/perception/object_pose_est` sample available (`tray1`)
+
+For detailed implementation milestones and constraints, see:
+- `docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`
+- `docs/WP1_5_RUNTIME_PARITY_CHECKER.md`
+- `docs/V5_EXPERIMENT_LOG.md`
