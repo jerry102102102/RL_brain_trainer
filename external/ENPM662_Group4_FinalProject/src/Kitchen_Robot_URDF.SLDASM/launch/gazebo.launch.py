@@ -9,6 +9,7 @@ from launch.actions import (
     RegisterEventHandler,
     ExecuteProcess,
     TimerAction,
+    LogInfo,
 )
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
@@ -57,10 +58,31 @@ def generate_launch_description():
         default_value='-r -s --headless-rendering -v 2 worlds/v5_kitchen_empty.sdf',
         description='Arguments passed to gz sim (headless path).'
     )
+    # Capability gate for dedicated Pose_V path (Jazzy commonly lacks this bridge/type pair)
+    try:
+        import ros_gz_interfaces.msg._pose_v  # type: ignore
+        pose_v_msg_supported = True
+    except Exception:
+        pose_v_msg_supported = False
+
+    # Keep conservative false unless explicitly validated for this environment.
+    bridge_pose_v_supported = False
+    dedicated_supported = pose_v_msg_supported and bridge_pose_v_supported
+
+    declare_enable_dedicated_tray_source = DeclareLaunchArgument(
+        'enable_dedicated_tray_source',
+        default_value='true' if dedicated_supported else 'false',
+        description='Enable dedicated Pose_V tray source path when supported.'
+    )
     declare_enable_legacy_tray_pose_adapter = DeclareLaunchArgument(
         'enable_legacy_tray_pose_adapter',
-        default_value='false',
+        default_value='false' if dedicated_supported else 'true',
         description='Enable legacy TFMessage tray pose adapter path.'
+    )
+    declare_auto_fallback_legacy_on_unsupported = DeclareLaunchArgument(
+        'auto_fallback_legacy_on_unsupported',
+        default_value='true',
+        description='When dedicated path unsupported, auto-run legacy adapter path.'
     )
 
     # === Environment variables ===
@@ -68,6 +90,15 @@ def generate_launch_description():
     set_res_ign = SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', os.pathsep.join([pkg_share, res_root]))
     soft_gl = SetEnvironmentVariable('LIBGL_ALWAYS_SOFTWARE', '1', condition=IfCondition(LaunchConfiguration('use_software_renderer')))
     no_audio = SetEnvironmentVariable('GZ_AUDIO', '0')
+
+    tray_mode_warning = LogInfo(
+        msg=(
+            '[WARN] tray pose source running in QUASI_DEDICATED mode '
+            f'(deterministic legacy adapter; Pose_V dedicated path unsupported: '
+            f'pose_v_msg={pose_v_msg_supported}, bridge_pose_v={bridge_pose_v_supported}).'
+        ),
+        condition=IfCondition('true' if (not dedicated_supported) else 'false')
+    )
 
     # Copy controller.yaml into /tmp so the <parameters> tag can read it
     prep_params = ExecuteProcess(cmd=['/bin/bash', '-c', f'cp "{controllers}" "{tmp_params}"'], output='screen')
@@ -200,35 +231,23 @@ def generate_launch_description():
     )
 
     # === ros2_control controllers ===
-    jsp = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=[
-            'joint_state_broadcaster',
+    controller_autobringup = ExecuteProcess(
+        cmd=[
+            '/usr/bin/python3',
+            os.path.join(pkg_share, 'launch', 'controller_autobringup.py'),
             '--controller-manager', '/controller_manager',
-            '--param-file', controllers,
-            '--switch-timeout', '30',
+            '--timeout', '30',
+            '--period', '1.0',
+            '--controllers', 'joint_state_broadcaster', 'arm_controller',
         ],
         output='screen'
     )
 
-    arm_ctrl = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=[
-            'arm_controller',
-            '--controller-manager', '/controller_manager',
-            '--param-file', controllers,
-            '--switch-timeout', '30',
-        ],
-        output='screen'
-    )
-
-    spawn_then_jsp = RegisterEventHandler(
-        OnProcessExit(target_action=spawn, on_exit=[TimerAction(period=2.0, actions=[jsp])])
-    )
-    jsp_then_arm = RegisterEventHandler(
-        OnProcessExit(target_action=jsp, on_exit=[TimerAction(period=2.0, actions=[arm_ctrl])])
+    spawn_then_controller_autobringup = RegisterEventHandler(
+        OnProcessExit(
+            target_action=spawn,
+            on_exit=[TimerAction(period=2.0, actions=[controller_autobringup])],
+        )
     )
 
     # === Bridges ===
@@ -245,6 +264,7 @@ def generate_launch_description():
         executable='parameter_bridge',
         arguments=['/world/empty/dynamic_pose/info@ros_gz_interfaces/msg/Pose_V[gz.msgs.Pose_V'],
         remappings=[('/world/empty/dynamic_pose/info', '/tray_tracking/pose_stream_raw')],
+        condition=IfCondition(LaunchConfiguration('enable_dedicated_tray_source')),
         output='screen'
     )
 
@@ -269,6 +289,7 @@ def generate_launch_description():
             'target_name': 'tray1',
             'default_frame_id': 'world',
         }],
+        condition=IfCondition(LaunchConfiguration('enable_dedicated_tray_source')),
         output='screen'
     )
 
@@ -392,8 +413,11 @@ def generate_launch_description():
         declare_use_software_renderer,
         declare_gz_args,
         declare_gz_headless_args,
+        declare_enable_dedicated_tray_source,
         declare_enable_legacy_tray_pose_adapter,
+        declare_auto_fallback_legacy_on_unsupported,
         set_res_gz, set_res_ign, soft_gl, no_audio,
+        tray_mode_warning,
         prep_params,
         gz_gui,
         gz_headless,
@@ -402,8 +426,7 @@ def generate_launch_description():
         *prop_spawns,
         spawn_cam_overhead,
         spawn_cam_side,
-        spawn_then_jsp,
-        jsp_then_arm,
+        spawn_then_controller_autobringup,
         bridge_clock,
         static_tf_world_cam_overhead,
         static_tf_cam_overhead_optical,
