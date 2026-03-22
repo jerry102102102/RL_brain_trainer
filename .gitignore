@@ -1,0 +1,53 @@
+# --- Python caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Local/ROS build outputs ---
+build/
+install/
+log/
+**/build/
+**/install/
+**/log/
+
+# --- ROS runtime logs/temp ---
+*.log
+.ros/
+ros_home/
+
+# --- Graphviz / generated frame dumps ---
+frames_*.gv
+frames_*.pdf
+artifacts/wp0/frames*.gv
+artifacts/wp0/frames*.pdf
+
+# --- WP0 local diagnostic/runtime artifacts (generated noise) ---
+artifacts/wp0/ros_logs/
+artifacts/wp0/ros2_logs/
+artifacts/wp0/smoke_runs/
+artifacts/wp0/*_live*.json
+artifacts/wp0/*_after_*.json
+artifacts/wp0/replay_*.json
+artifacts/wp0/state_latency*.json
+artifacts/wp0/tf_check*.json
+artifacts/wp0/id_switch.json
+artifacts/wp0/image_live.json
+artifacts/wp0/pose_jitter.json
+artifacts/wp0/rosbag_print_commands.json
+artifacts/wp0/scene_colcon_build.log
+artifacts/wp0/scene_launch.log
+
+# --- Nested project caches ---
+external/**/__pycache__/
+hrl_ws/**/__pycache__/
+
+# --- External class project lives in its own repo (do not track here) ---
+external/ENPM662_Group4_FinalProject/
+
+# --- Keep core published reports tracked ---
+!artifacts/reports/
+!artifacts/reports/v5/
+!artifacts/reports/v5/**
+!docs/reports/
+!docs/reports/**
