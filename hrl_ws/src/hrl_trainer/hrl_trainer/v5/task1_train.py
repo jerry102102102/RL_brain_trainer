@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 import time
+import warnings
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -1234,7 +1235,7 @@ def run_task1_training(
     *,
     episodes: int,
     reward_mode: RewardMode,
-    backend: RuntimeBackend = "bootstrap",
+    backend: RuntimeBackend = "gazebo",
     cfg: Task1Config | None = None,
     checkpoint_path: str | None = None,
     auto_reset: bool | None = None,
@@ -1251,6 +1252,16 @@ def run_task1_training(
     l2_diagnostic_mode: Literal["default", "conservative_joint_map"] = "default",
 ) -> list[dict[str, object]]:
     config = cfg or Task1Config()
+    normalized_l3_exec_mode = _normalize_l3_exec_mode(str(l3_exec_mode))
+    normalized_macro_kickoff_action = _normalize_macro_kickoff_action(
+        bool(macro_kickoff_action), l3_exec_mode=normalized_l3_exec_mode
+    )
+    if backend == "bootstrap":
+        warnings.warn(
+            "[compat] backend=bootstrap is kept only for local smoke tests; recommended/default path is backend=gazebo + action",
+            stacklevel=2,
+        )
+
     l1 = HighPoseTargetProvider(target_xyz=np.asarray(target_pose_xyz, dtype=float)) if target_pose_xyz is not None else HighPoseTargetProvider()
     l2 = LearnableL2Policy(l2_diagnostic_mode=l2_diagnostic_mode)
 
@@ -1264,10 +1275,10 @@ def run_task1_training(
             scene_reset_cmd=scene_reset_cmd,
             allow_ee_fallback=allow_ee_fallback,
             verbose_debug=verbose_debug,
-            l3_exec_mode=l3_exec_mode,
+            l3_exec_mode=normalized_l3_exec_mode,
             action_timeout_sec=float(action_timeout),
             action_server_timeout_sec=float(action_server_timeout),
-            macro_kickoff_action=bool(macro_kickoff_action),
+            macro_kickoff_action=normalized_macro_kickoff_action,
         )
         l3 = runtime_l3
     else:
@@ -1400,6 +1411,24 @@ def run_task1_training(
             runtime_l3.close()
 
 
+def _normalize_l3_exec_mode(mode: str) -> Literal["action"]:
+    if mode != "action":
+        warnings.warn(
+            f"[compat] --l3-exec-mode={mode} is deprecated; forcing action path (gazebo+action)",
+            stacklevel=2,
+        )
+    return "action"
+
+
+def _normalize_macro_kickoff_action(enabled: bool, *, l3_exec_mode: str) -> bool:
+    if enabled:
+        warnings.warn(
+            "[compat] --macro-kickoff-action requires legacy hybrid flow; disabling for single-path gazebo+action",
+            stacklevel=2,
+        )
+    return False
+
+
 def _resolve_n_joints_for_backend(*, backend: RuntimeBackend, cli_n_joints: int | None) -> int:
     if cli_n_joints is not None:
         return int(cli_n_joints)
@@ -1412,7 +1441,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run V5 Task-1 EE pose reaching training loop")
     parser.add_argument("--episodes", type=int, default=3)
     parser.add_argument("--reward-mode", choices=["no_shaping", "heuristic", "pbrs"], default="heuristic")
-    parser.add_argument("--backend", choices=["bootstrap", "gazebo"], default="bootstrap")
+    parser.add_argument(
+        "--backend",
+        choices=["bootstrap", "gazebo"],
+        default="gazebo",
+        help="Default/recommended path is gazebo. bootstrap is compatibility-only for local smoke checks.",
+    )
     parser.add_argument("--auto-reset", dest="auto_reset", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--reset-timeout", type=float, default=4.0)
     parser.add_argument("--scene-reset-cmd", type=str, default=None)
@@ -1421,7 +1455,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--safe-z-min", type=float, default=Task1Config.safe_z_min)
     parser.add_argument("--n-joints", type=int, default=None, help="Action/state joint dimension used by the trainer")
     parser.add_argument("--allow-ee-fallback", action="store_true", help="Allow q[:3] fallback when no EE pose topic/TF is available")
-    parser.add_argument("--l3-exec-mode", choices=["action", "topic", "hybrid"], default="action")
+    parser.add_argument(
+        "--l3-exec-mode",
+        choices=["action", "topic", "hybrid"],
+        default="action",
+        help="compat flag; topic/hybrid are deprecated and will be translated to action with warning",
+    )
     parser.add_argument("--action-timeout", type=float, default=1.5)
     parser.add_argument("--action-server-timeout", type=float, default=3.0)
     parser.add_argument("--macro-ttl-steps", type=int, default=4)
