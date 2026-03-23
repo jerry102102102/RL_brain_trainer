@@ -655,6 +655,53 @@ class GazeboRuntimeL3Executor:
             )
         return q, dq, ee_proxy
 
+    def _predict_ee_pose_from_q_target(
+        self,
+        *,
+        q_runtime: np.ndarray,
+        q_target: np.ndarray,
+        ee_runtime: np.ndarray | None,
+    ) -> tuple[np.ndarray | None, str]:
+        q_runtime = np.asarray(q_runtime, dtype=float)
+        q_target = np.asarray(q_target, dtype=float)
+
+        # Preferred path: predict via FK at q_target when legacy FK and joint-state mapping are available.
+        if self._fk_solver is not None and self._latest_joint_state is not None:
+            names = list(getattr(self._latest_joint_state, "name", []) or [])
+            positions = list(getattr(self._latest_joint_state, "position", []) or [])
+            if names and positions:
+                index_by_name = {name: idx for idx, name in enumerate(names)}
+                if all(jn in index_by_name for jn in self._legacy_fk_joint_order):
+                    ordered_indices = [index_by_name[jn] for jn in self._legacy_fk_joint_order]
+                    max_required_idx = max(ordered_indices) if ordered_indices else -1
+                    if len(positions) > max_required_idx:
+                        try:
+                            q_fk_runtime = np.array([positions[idx] for idx in ordered_indices], dtype=float)
+                            q_fk_target = q_fk_runtime.copy()
+                            delta = q_target - q_runtime
+                            overlay_n = min(delta.size, q_fk_target.size)
+                            if overlay_n > 0:
+                                q_fk_target[:overlay_n] = q_fk_runtime[:overlay_n] + delta[:overlay_n]
+                            t_ee = self._fk_solver(q_fk_target)
+                            if t_ee is not None:
+                                pos = np.asarray(t_ee[:3, 3], dtype=float)
+                                if pos.shape == (3,) and np.all(np.isfinite(pos)):
+                                    return pos.copy(), "fk_q_target"
+                        except Exception:
+                            pass
+
+        # Conservative fallback: transfer commanded joint-3 delta to EE z.
+        if ee_runtime is not None and q_runtime.size >= 3 and q_target.size >= 3:
+            predicted = np.asarray(ee_runtime, dtype=float).copy()
+            predicted[2] = float(predicted[2] + (q_target[2] - q_runtime[2]))
+            return predicted, "conservative_joint3_delta"
+
+        # Last resort diagnostic fallback.
+        if q_target.size >= 3:
+            return np.asarray(q_target[:3], dtype=float).copy(), "q_target_first3_fallback"
+
+        return None, "unavailable"
+
     def execute_with_safety(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
         q_runtime, _, ee_runtime = self.read_runtime_state(n_joints=state.q.size)
         requested_delta_q = np.asarray(delta_q_cmd, dtype=float).copy()
@@ -673,14 +720,16 @@ class GazeboRuntimeL3Executor:
             )
         q_target = np.clip(q_runtime + limited_cmd, self.q_min[: q_runtime.size], self.q_max[: q_runtime.size])
 
-        candidate_ee_z = float(ee_runtime[2]) if ee_runtime is not None else float(q_runtime[2])
-        if candidate_ee_z < state.safe_z_min:
+        current_ee_z = float(ee_runtime[2]) if ee_runtime is not None else float(q_runtime[2])
+        predicted_ee_pose, predicted_source = self._predict_ee_pose_from_q_target(
+            q_runtime=q_runtime,
+            q_target=q_target,
+            ee_runtime=ee_runtime,
+        )
+        predicted_ee_z = float(predicted_ee_pose[2]) if predicted_ee_pose is not None else current_ee_z
+        if predicted_ee_z < state.safe_z_min:
             self._accepted_low_motion_streak = 0
-            diag = (
-                f"unsafe reject: reason=z_under_safe_min safe_z_min={state.safe_z_min:.3f} "
-                f"candidate_ee_z={candidate_ee_z:.3f} margin={candidate_ee_z - state.safe_z_min:.3f} "
-                f"ee_source={self.ee_source_name()}"
-            )
+            reason = "predicted_z_under_safe_min"
             executed_delta_q = np.zeros_like(q_runtime)
             feasible_ratio, projection_gap, null_effect_step, sat_ratio = compute_feasibility_metrics(
                 requested_delta_q=requested_delta_q,
@@ -692,9 +741,19 @@ class GazeboRuntimeL3Executor:
                 accepted=False,
                 q_next=q_runtime,
                 dq_next=executed_delta_q,
-                safety_violation=float(state.safe_z_min - candidate_ee_z),
+                safety_violation=float(state.safe_z_min - predicted_ee_z),
                 ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
-                logs=(*exec_logs, "L3_CHECK:z_under_safe_min", f"safe_z_min={state.safe_z_min:.3f}", diag, "L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
+                logs=(
+                    *exec_logs,
+                    "L3_CHECK:z_under_safe_min",
+                    f"predicted_ee_z={predicted_ee_z:.6f}",
+                    f"current_ee_z={current_ee_z:.6f}",
+                    f"safe_z_min={state.safe_z_min:.6f}",
+                    f"reason={reason}",
+                    f"prediction_source={predicted_source}",
+                    "L3_EXEC:rejected",
+                    "L3_EXEC:path=gazebo",
+                ),
                 limited_cmd=limited_cmd.copy(),
                 q_target_minus_runtime=(q_target - q_runtime).copy(),
                 requested_delta_q=requested_delta_q,
