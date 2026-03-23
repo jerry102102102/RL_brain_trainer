@@ -121,6 +121,15 @@ class L2Action:
 
 
 @dataclass(frozen=True)
+class MacroDecision:
+    decision_id: str
+    state_version: int
+    ttl_steps: int
+    target_q: np.ndarray
+    seed_delta_q: np.ndarray
+
+
+@dataclass(frozen=True)
 class L3ExecutionResult:
     accepted: bool
     q_next: np.ndarray
@@ -239,6 +248,11 @@ class GazeboRuntimeL3Executor:
     ee_pose_topic: str = "/ee_pose"
     joint_state_wait_sec: float = 3.0
     action_timeout_sec: float = 1.5
+    action_server_timeout_sec: float = 3.0
+    l3_exec_mode: Literal["action", "topic", "hybrid"] = "action"
+    macro_kickoff_action: bool = False
+    action_name: str = "/arm_controller/follow_joint_trajectory"
+    action_min_motion_tol: float = 1e-4
     reset_timeout_sec: float = 4.0
     scene_reset_cmd: str | None = None
     reset_position_tol: float = 0.03
@@ -253,17 +267,24 @@ class GazeboRuntimeL3Executor:
     def __post_init__(self) -> None:
         try:
             import rclpy
+            from control_msgs.action import FollowJointTrajectory
             from geometry_msgs.msg import PoseStamped
+            from rclpy.action import ActionClient
             from sensor_msgs.msg import JointState
             from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
         except Exception as exc:  # pragma: no cover - depends on runtime ROS install
-            raise RuntimeError("backend=gazebo requires ROS2 Python packages (rclpy, sensor_msgs, trajectory_msgs)") from exc
+            raise RuntimeError(
+                "backend=gazebo requires ROS2 Python packages "
+                "(rclpy, sensor_msgs, trajectory_msgs, control_msgs)"
+            ) from exc
 
         self._rclpy = rclpy
         self._JointState = JointState
         self._PoseStamped = PoseStamped
         self._JointTrajectory = JointTrajectory
         self._JointTrajectoryPoint = JointTrajectoryPoint
+        self._FollowJointTrajectory = FollowJointTrajectory
+        self._ActionClient = ActionClient
 
         rclpy.init(args=None)
         self._node = rclpy.create_node("task1_gazebo_runtime_executor")
@@ -274,6 +295,7 @@ class GazeboRuntimeL3Executor:
         self._node.create_subscription(self._JointState, self.joint_state_topic, self._on_joint_state, 10)
         self._node.create_subscription(self._PoseStamped, self.ee_pose_topic, self._on_ee_pose, 10)
         self._traj_pub = self._node.create_publisher(self._JointTrajectory, self.command_topic, 10)
+        self._traj_action_client = self._ActionClient(self._node, self._FollowJointTrajectory, self.action_name)
 
         self._tf_buffer = None
         self._tf_listener = None
@@ -299,6 +321,8 @@ class GazeboRuntimeL3Executor:
         )
 
         self._spin_until_discovery_or_fail()
+        if self.l3_exec_mode in {"action", "hybrid"} and self.macro_kickoff_action:
+            self._wait_for_action_server_or_fail()
         self._wait_for_initial_joint_state_or_fail()
 
     def close(self) -> None:
@@ -317,11 +341,27 @@ class GazeboRuntimeL3Executor:
             topics = {name: types for name, types in self._node.get_topic_names_and_types()}
             has_joint_state = self.joint_state_topic in topics
             has_cmd_topic = self.command_topic in topics
-            if has_joint_state and has_cmd_topic:
+            if self.l3_exec_mode == "action":
+                if has_joint_state:
+                    return
+            elif has_joint_state and has_cmd_topic:
                 return
+        if self.l3_exec_mode == "action":
+            raise RuntimeError(
+                "backend=gazebo fail-fast: required topics missing. "
+                f"need {self.joint_state_topic} for l3_exec_mode=action"
+            )
         raise RuntimeError(
             "backend=gazebo fail-fast: required topics missing. "
             f"need {self.joint_state_topic} and {self.command_topic}"
+        )
+
+    def _wait_for_action_server_or_fail(self) -> None:
+        if self._traj_action_client.wait_for_server(timeout_sec=float(self.action_server_timeout_sec)):
+            return
+        raise RuntimeError(
+            "backend=gazebo fail-fast: FollowJointTrajectory action server unavailable "
+            f"name={self.action_name} timeout={self.action_server_timeout_sec:.2f}s"
         )
 
     def _wait_for_initial_joint_state_or_fail(self) -> None:
@@ -485,6 +525,69 @@ class GazeboRuntimeL3Executor:
                 logs=("L3_CHECK:z_under_safe_min", f"safe_z_min={state.safe_z_min:.3f}", diag, "L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
             )
 
+        if self.l3_exec_mode in {"topic", "hybrid"}:
+            return self._execute_via_topic(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
+        return self._execute_via_action(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
+
+    def execute_macro_kickoff(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
+        if self.l3_exec_mode != "hybrid" or not self.macro_kickoff_action:
+            return self.execute_with_safety(state, delta_q_cmd)
+
+        q_runtime, _, ee_runtime = self.read_runtime_state(n_joints=state.q.size)
+        limited_cmd = np.clip(delta_q_cmd, -self.max_dq_per_step, self.max_dq_per_step)
+        q_target = np.clip(q_runtime + limited_cmd, self.q_min[: q_runtime.size], self.q_max[: q_runtime.size])
+        return self._execute_via_action(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
+
+    def _finalize_execution_result(
+        self,
+        *,
+        state: Task1State,
+        q_runtime: np.ndarray,
+        ee_runtime: np.ndarray | None,
+        base_logs: list[str],
+        status_ok: bool,
+    ) -> L3ExecutionResult:
+        q_next, dq_next, ee_proxy = self.read_runtime_state(n_joints=state.q.size)
+        q_delta = q_next - q_runtime
+        ee_before = ee_runtime if ee_runtime is not None else q_runtime[:3]
+        ee_after = ee_proxy if ee_proxy is not None else q_next[:3]
+        ee_delta = ee_after - ee_before
+        delta_max = float(np.max(np.abs(q_delta)))
+        ee_delta_norm = float(np.linalg.norm(ee_delta))
+        ee_z = float(ee_after[2])
+        safety_violation = float(max(0.0, state.safe_z_min - ee_z))
+        moved = delta_max >= float(self.action_min_motion_tol)
+        accepted = bool(status_ok and moved)
+
+        logs = list(base_logs)
+        logs.extend(
+            [
+                f"post_action_joint_delta_max={delta_max:.6f}",
+                f"post_action_ee_delta_norm={ee_delta_norm:.6f}",
+                f"z_margin={ee_z - state.safe_z_min:.3f}",
+                f"EE_SOURCE:{self.ee_source_name()}",
+            ]
+        )
+        if not moved:
+            logs.append(f"L3_EXEC:no_motion min_motion_tol={self.action_min_motion_tol}")
+        logs.append("L3_EXEC:accepted" if accepted else "L3_EXEC:rejected")
+        return L3ExecutionResult(
+            accepted=accepted,
+            q_next=q_next,
+            dq_next=dq_next,
+            safety_violation=safety_violation,
+            ee_proxy_xyz=ee_proxy,
+            logs=tuple(logs),
+        )
+
+    def _execute_via_topic(
+        self,
+        *,
+        state: Task1State,
+        q_runtime: np.ndarray,
+        q_target: np.ndarray,
+        ee_runtime: np.ndarray | None,
+    ) -> L3ExecutionResult:
         msg = self._JointTrajectory()
         msg.joint_names = list(self._latest_joint_state.name[: state.q.size])
         msg.header.stamp = self._node.get_clock().now().to_msg()
@@ -499,25 +602,12 @@ class GazeboRuntimeL3Executor:
         while time.time() < deadline:
             self._spin_once(0.05)
             if self._latest_joint_stamp_ns is not None and self._latest_joint_stamp_ns != stamp_before:
-                q_next, dq_next, ee_proxy = self.read_runtime_state(n_joints=state.q.size)
-                ee_z = float(ee_proxy[2]) if ee_proxy is not None else float(q_next[2])
-                safety_violation = float(max(0.0, state.safe_z_min - ee_z))
-                ee_source = self.ee_source_name()
-                logs = [
-                    "L3_CHECK:ok",
-                    f"safe_z_min={state.safe_z_min:.3f}",
-                    f"z_margin={ee_z - state.safe_z_min:.3f}",
-                    "L3_EXEC:accepted",
-                    "L3_EXEC:path=gazebo",
-                    f"EE_SOURCE:{ee_source}",
-                ]
-                return L3ExecutionResult(
-                    accepted=True,
-                    q_next=q_next,
-                    dq_next=dq_next,
-                    safety_violation=safety_violation,
-                    ee_proxy_xyz=ee_proxy,
-                    logs=tuple(logs),
+                return self._finalize_execution_result(
+                    state=state,
+                    q_runtime=q_runtime,
+                    ee_runtime=ee_runtime,
+                    base_logs=["L3_CHECK:ok", f"safe_z_min={state.safe_z_min:.3f}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"],
+                    status_ok=True,
                 )
 
         return L3ExecutionResult(
@@ -526,7 +616,124 @@ class GazeboRuntimeL3Executor:
             dq_next=np.zeros_like(q_runtime),
             safety_violation=0.0,
             ee_proxy_xyz=state.ee_proxy_xyz,
-            logs=("L3_EXEC:timeout_waiting_joint_feedback", "L3_EXEC:path=gazebo"),
+            logs=("L3_EXEC:timeout_or_no_motion", f"min_motion_tol={self.action_min_motion_tol}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"),
+        )
+
+    def _execute_via_action(
+        self,
+        *,
+        state: Task1State,
+        q_runtime: np.ndarray,
+        q_target: np.ndarray,
+        ee_runtime: np.ndarray | None,
+    ) -> L3ExecutionResult:
+        if not self._traj_action_client.wait_for_server(timeout_sec=float(self.action_server_timeout_sec)):
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=(
+                    "L3_EXEC:rejected",
+                    "L3_EXEC:path=gazebo",
+                    "L3_EXEC:mode=action",
+                    f"action_server_timeout={self.action_server_timeout_sec:.2f}s",
+                    f"action_name={self.action_name}",
+                ),
+            )
+
+        goal = self._FollowJointTrajectory.Goal()
+        trajectory = self._JointTrajectory()
+        trajectory.joint_names = list(self._latest_joint_state.name[: state.q.size])
+        trajectory.header.stamp = self._node.get_clock().now().to_msg()
+        point = self._JointTrajectoryPoint()
+        point.positions = q_target.tolist()
+        # Give controller enough execution window for action result feedback.
+        point.time_from_start.sec = max(2, int(np.ceil(self.action_timeout_sec)))
+        trajectory.points = [point]
+        goal.trajectory = trajectory
+
+        send_log = (
+            f"action_goal_sent joints={trajectory.joint_names} "
+            f"positions0_3={point.positions[:3]} "
+            f"time_from_start_sec={point.time_from_start.sec}"
+        )
+
+        send_future = self._traj_action_client.send_goal_async(goal)
+        self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(self.action_timeout_sec))
+        if not send_future.done():
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_goal_response_timeout={self.action_timeout_sec:.2f}s"),
+            )
+
+        goal_handle = send_future.result()
+        if goal_handle is None or not getattr(goal_handle, "accepted", False):
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", "action_goal_response=rejected"),
+            )
+
+        result_future = goal_handle.get_result_async()
+        result_wait_timeout = max(float(self.action_timeout_sec), float(point.time_from_start.sec) + 2.0)
+        try:
+            self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=result_wait_timeout)
+        except Exception as exc:
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_wait_exception={exc!r}"),
+            )
+        if not result_future.done():
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_result_timeout={result_wait_timeout:.2f}s"),
+            )
+
+        result_msg = result_future.result()
+        status = int(getattr(result_msg, "status", -1))
+        status_map = {
+            0: "UNKNOWN",
+            1: "ACCEPTED",
+            2: "EXECUTING",
+            3: "CANCELING",
+            4: "SUCCEEDED",
+            5: "CANCELED",
+            6: "ABORTED",
+        }
+        status_name = status_map.get(status, f"UNMAPPED_{status}")
+        status_ok = status == 4
+        return self._finalize_execution_result(
+            state=state,
+            q_runtime=q_runtime,
+            ee_runtime=ee_runtime,
+            base_logs=[
+                "L3_CHECK:ok",
+                f"safe_z_min={state.safe_z_min:.3f}",
+                "L3_EXEC:path=gazebo",
+                "L3_EXEC:mode=action",
+                send_log,
+                "action_goal_response=accepted",
+                f"action_result_status={status}",
+                f"action_result_status_name={status_name}",
+            ],
+            status_ok=status_ok,
         )
 
     def reset_arm_to_initial(
@@ -541,14 +748,27 @@ class GazeboRuntimeL3Executor:
         q_goal = np.zeros(n_joints, dtype=float) if target_q is None else np.asarray(target_q, dtype=float).copy()
         q_goal = np.clip(q_goal, self.q_min[:n_joints], self.q_max[:n_joints])
 
-        msg = self._JointTrajectory()
-        msg.joint_names = list(self._latest_joint_state.name[:n_joints])
-        msg.header.stamp = self._node.get_clock().now().to_msg()
-        point = self._JointTrajectoryPoint()
-        point.positions = q_goal.tolist()
-        point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
-        msg.points = [point]
-        self._traj_pub.publish(msg)
+        if self._traj_action_client.wait_for_server(timeout_sec=float(timeout_sec)):
+            goal = self._FollowJointTrajectory.Goal()
+            trajectory = self._JointTrajectory()
+            trajectory.joint_names = list(self._latest_joint_state.name[:n_joints])
+            trajectory.header.stamp = self._node.get_clock().now().to_msg()
+            point = self._JointTrajectoryPoint()
+            point.positions = q_goal.tolist()
+            point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
+            trajectory.points = [point]
+            goal.trajectory = trajectory
+            send_future = self._traj_action_client.send_goal_async(goal)
+            self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(timeout_sec))
+        else:
+            msg = self._JointTrajectory()
+            msg.joint_names = list(self._latest_joint_state.name[:n_joints])
+            msg.header.stamp = self._node.get_clock().now().to_msg()
+            point = self._JointTrajectoryPoint()
+            point.positions = q_goal.tolist()
+            point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
+            msg.points = [point]
+            self._traj_pub.publish(msg)
 
         deadline = time.time() + float(timeout_sec)
         while time.time() < deadline:
@@ -712,12 +932,35 @@ def run_task1_episode(
         )
     success = False
     term_reason: str | None = None
+    decision_ttl_steps = int((episode_debug_meta or {}).get("macro_ttl_steps", 4))
+    state_version = 0
+    macro_counter = 0
+    current_macro: MacroDecision | None = None
+    reject_count = 0
+    timeout_count = 0
+    decision_chunks: dict[str, dict[str, object]] = {}
 
     while not done and state.step < state.max_steps:
         obs_prev = build_task1_observation(state)
-        l2_action = l2_policy.decide_action(obs_prev)
-        delta_q_cmd = adapt_action_delta_q(l2_action, n_joints=cfg.n_joints, max_delta_q=cfg.max_delta_q)
-        l3_result = l3_executor.execute_with_safety(state, delta_q_cmd)
+        if current_macro is None or current_macro.ttl_steps <= 0:
+            l2_action = l2_policy.decide_action(obs_prev)
+            seed_delta_q = adapt_action_delta_q(l2_action, n_joints=cfg.n_joints, max_delta_q=cfg.max_delta_q)
+            decision_id = f"ep{episode_index}_d{macro_counter}"
+            macro_counter += 1
+            state_version += 1
+            target_q = np.clip(state.q + seed_delta_q * float(decision_ttl_steps), -np.inf, np.inf)
+            current_macro = MacroDecision(
+                decision_id=decision_id,
+                state_version=state_version,
+                ttl_steps=decision_ttl_steps,
+                target_q=target_q,
+                seed_delta_q=seed_delta_q,
+            )
+            if hasattr(l3_executor, "execute_macro_kickoff") and bool((episode_debug_meta or {}).get("macro_kickoff_action", False)):
+                l3_executor.execute_macro_kickoff(state, seed_delta_q)
+
+        micro_delta = np.clip(current_macro.target_q - state.q, -cfg.max_delta_q, cfg.max_delta_q)
+        l3_result = l3_executor.execute_with_safety(state, micro_delta)
 
         state = Task1State(
             q=l3_result.q_next.copy(),
@@ -729,28 +972,28 @@ def run_task1_episode(
             ee_proxy_xyz=l3_result.ee_proxy_xyz.copy() if l3_result.ee_proxy_xyz is not None else None,
         )
         obs_next = build_task1_observation(state)
+        current_macro = MacroDecision(
+            decision_id=current_macro.decision_id,
+            state_version=current_macro.state_version,
+            ttl_steps=current_macro.ttl_steps - 1,
+            target_q=current_macro.target_q,
+            seed_delta_q=current_macro.seed_delta_q,
+        )
 
         done, success, term_reason = check_done_success(state, obs_next, safety_violation=l3_result.safety_violation, cfg=cfg)
         step_reason = "accepted" if l3_result.accepted else "rejected"
         if l3_result.safety_violation > 0.0:
             step_reason = f"{step_reason}:unsafe"
-        if verbose_debug:
-            print(
-                f"[step-debug] ep={episode_index} step={state.step} ee_pos={state.ee_pos.tolist()} "
-                f"z_margin={obs_next.z_margin:.4f} d_pos={obs_next.d_pos:.4f} reason={step_reason}"
-            )
-            if term_reason == "unsafe":
-                print(
-                    "[unsafe-diagnostic] "
-                    f"ep={episode_index} step={state.step} safe_z_min={cfg.safe_z_min:.3f} "
-                    f"ee_pos={state.ee_pos.tolist()} z_margin={obs_next.z_margin:.4f} "
-                    f"l3_logs={' | '.join(l3_result.logs)}"
-                )
+        if not l3_result.accepted:
+            reject_count += 1
+        if any("timeout" in log for log in l3_result.logs):
+            timeout_count += 1
+
         reward = compose_task1_reward(
             mode=reward_mode,
             obs_prev=obs_prev,
             obs_next=obs_next,
-            delta_q_cmd=delta_q_cmd,
+            delta_q_cmd=micro_delta,
             safety_violation=l3_result.safety_violation,
             done=done,
             success=success,
@@ -759,15 +1002,34 @@ def run_task1_episode(
         total_reward += reward
         replay.append(ReplayTransition(d_pos_prev=obs_prev.d_pos, d_pos_next=obs_next.d_pos, reward=reward))
 
+        chunk = decision_chunks.setdefault(
+            current_macro.decision_id,
+            {
+                "decision_id": current_macro.decision_id,
+                "state_version": current_macro.state_version,
+                "ttl_steps": decision_ttl_steps,
+                "steps": 0,
+                "reward_sum": 0.0,
+                "d_pos_prev": float(obs_prev.d_pos),
+                "d_pos_next": float(obs_next.d_pos),
+            },
+        )
+        chunk["steps"] = int(chunk["steps"]) + 1
+        chunk["reward_sum"] = float(chunk["reward_sum"]) + float(reward)
+        chunk["d_pos_next"] = float(obs_next.d_pos)
+
         traj.append(
             {
                 "step": state.step,
                 "obs": obs_next.to_dict(),
-                "delta_q_cmd": delta_q_cmd.tolist(),
+                "delta_q_cmd": micro_delta.tolist(),
                 "reward": reward,
                 "done": done,
                 "success": success,
                 "term_reason": term_reason,
+                "decision_id": current_macro.decision_id,
+                "state_version": current_macro.state_version,
+                "decision_ttl": current_macro.ttl_steps,
                 "l3_logs": list(l3_result.logs),
                 "accepted": bool(l3_result.accepted),
                 "debug": {
@@ -779,18 +1041,37 @@ def run_task1_episode(
             }
         )
 
+    decision_replay = [
+        {
+            **chunk,
+            "reward_avg": float(chunk["reward_sum"]) / max(1, int(chunk["steps"])),
+        }
+        for chunk in decision_chunks.values()
+    ]
+    micro_steps = len(traj)
+    reject_rate = float(reject_count / micro_steps) if micro_steps else 0.0
+    episode_summary = {
+        "macro_decisions": len(decision_replay),
+        "micro_steps": micro_steps,
+        "reject_count": reject_count,
+        "timeout_count": timeout_count,
+        "reject_rate": reject_rate,
+    }
+
     return {
         "episode_index": episode_index,
         "reward_mode": reward_mode,
         "safe_z_min": float(cfg.safe_z_min),
         "episode_debug": episode_debug_meta or {},
         "total_reward": float(total_reward),
-        "steps": len(traj),
+        "steps": micro_steps,
         "success": bool(success),
         "term_reason": term_reason,
         "target_pose_xyz": state.target_pose_xyz.tolist(),
         "trajectory": traj,
         "replay": [asdict(r) for r in replay],
+        "replay_by_decision": decision_replay,
+        "episode_summary": episode_summary,
     }
 
 
@@ -817,9 +1098,15 @@ def run_task1_training(
     scene_reset_cmd: str | None = None,
     allow_ee_fallback: bool = False,
     verbose_debug: bool = False,
+    l3_exec_mode: Literal["action", "topic", "hybrid"] = "action",
+    action_timeout: float = 1.5,
+    action_server_timeout: float = 3.0,
+    macro_ttl_steps: int = 4,
+    macro_kickoff_action: bool = False,
+    target_pose_xyz: np.ndarray | None = None,
 ) -> list[dict[str, object]]:
     config = cfg or Task1Config()
-    l1 = HighPoseTargetProvider()
+    l1 = HighPoseTargetProvider(target_xyz=np.asarray(target_pose_xyz, dtype=float)) if target_pose_xyz is not None else HighPoseTargetProvider()
     l2 = LearnableL2Policy()
 
     runtime_l3: GazeboRuntimeL3Executor | None = None
@@ -832,6 +1119,10 @@ def run_task1_training(
             scene_reset_cmd=scene_reset_cmd,
             allow_ee_fallback=allow_ee_fallback,
             verbose_debug=verbose_debug,
+            l3_exec_mode=l3_exec_mode,
+            action_timeout_sec=float(action_timeout),
+            action_server_timeout_sec=float(action_server_timeout),
+            macro_kickoff_action=bool(macro_kickoff_action),
         )
         l3 = runtime_l3
     else:
@@ -929,6 +1220,8 @@ def run_task1_training(
                     "safe_z_min": float(config.safe_z_min),
                     "ee_source": runtime_l3.ee_source_name() if runtime_l3 is not None else "bootstrap_q_proxy",
                     "reset_summary": reset_meta,
+                    "macro_ttl_steps": int(macro_ttl_steps),
+                    "macro_kickoff_action": bool(macro_kickoff_action),
                 },
             )
             row["backend"] = backend
@@ -936,7 +1229,15 @@ def run_task1_training(
                 row["reset"] = reset_meta
             rows.append(row)
 
-            replay_samples = [ReplayTransition(**sample) for sample in row.get("replay", [])]
+            decision_replay_samples = [
+                ReplayTransition(
+                    d_pos_prev=float(sample["d_pos_prev"]),
+                    d_pos_next=float(sample["d_pos_next"]),
+                    reward=float(sample["reward_avg"]),
+                )
+                for sample in row.get("replay_by_decision", [])
+            ]
+            replay_samples = decision_replay_samples or [ReplayTransition(**sample) for sample in row.get("replay", [])]
             replay_bank.extend(replay_samples)
             l2.update_from_replay(replay_bank[-64:])
             row["l2_gain_after_update"] = l2.gain
@@ -973,11 +1274,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--safe-z-min", type=float, default=Task1Config.safe_z_min)
     parser.add_argument("--n-joints", type=int, default=None, help="Action/state joint dimension used by the trainer")
     parser.add_argument("--allow-ee-fallback", action="store_true", help="Allow q[:3] fallback when no EE pose topic/TF is available")
+    parser.add_argument("--l3-exec-mode", choices=["action", "topic", "hybrid"], default="action")
+    parser.add_argument("--action-timeout", type=float, default=1.5)
+    parser.add_argument("--action-server-timeout", type=float, default=3.0)
+    parser.add_argument("--macro-ttl-steps", type=int, default=4)
+    parser.add_argument("--macro-kickoff-action", action="store_true")
+    parser.add_argument("--target-x", type=float, default=None)
+    parser.add_argument("--target-y", type=float, default=None)
+    parser.add_argument("--target-z", type=float, default=None)
     parser.add_argument("--verbose-debug", action="store_true")
     args = parser.parse_args(argv)
 
     resolved_n_joints = _resolve_n_joints_for_backend(backend=args.backend, cli_n_joints=args.n_joints)
     cfg = Task1Config(n_joints=resolved_n_joints, safe_z_min=float(args.safe_z_min))
+
+    target_pose_xyz = None
+    if args.target_x is not None and args.target_y is not None and args.target_z is not None:
+        target_pose_xyz = np.array([float(args.target_x), float(args.target_y), float(args.target_z)], dtype=float)
 
     rows = run_task1_training(
         episodes=args.episodes,
@@ -990,6 +1303,12 @@ def main(argv: list[str] | None = None) -> int:
         scene_reset_cmd=args.scene_reset_cmd,
         allow_ee_fallback=bool(args.allow_ee_fallback),
         verbose_debug=bool(args.verbose_debug),
+        l3_exec_mode=args.l3_exec_mode,
+        action_timeout=float(args.action_timeout),
+        action_server_timeout=float(args.action_server_timeout),
+        macro_ttl_steps=int(args.macro_ttl_steps),
+        macro_kickoff_action=bool(args.macro_kickoff_action),
+        target_pose_xyz=target_pose_xyz,
     )
     success_count = sum(1 for row in rows if row["success"])
     mean_reward = float(np.mean([float(row["total_reward"]) for row in rows]))
