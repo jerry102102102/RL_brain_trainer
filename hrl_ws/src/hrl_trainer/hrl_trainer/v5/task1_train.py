@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 import time
+import warnings
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -23,6 +24,8 @@ import numpy as np
 
 RewardMode = Literal["task1_main", "no_shaping", "heuristic", "pbrs"]
 RuntimeBackend = Literal["gazebo"]
+
+_REWARD_MODE_ALIAS_WARNED: set[str] = set()
 
 
 @lru_cache(maxsize=1)
@@ -1310,7 +1313,27 @@ def compose_task1_reward(
     success: bool,
     cfg: Task1Config,
 ) -> float:
-    _ = (mode, delta_q_cmd, safety_violation, done, success)
+    _ = (delta_q_cmd, safety_violation)
+
+    effective_mode: RewardMode = mode
+    if mode in ("heuristic", "pbrs"):
+        effective_mode = "task1_main"
+        if mode not in _REWARD_MODE_ALIAS_WARNED:
+            warnings.warn(
+                f"reward_mode='{mode}' is deprecated alias of 'task1_main'; use --reward-mode task1_main",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            _REWARD_MODE_ALIAS_WARNED.add(mode)
+
+    if effective_mode == "no_shaping":
+        # Minimal baseline: sparse terminal reward (+ optional constant per-step cost).
+        reward = float(cfg.step_penalty)
+        if done:
+            reward += float(cfg.success_bonus if success else cfg.fail_penalty)
+        return float(reward)
+
+    # task1_main (and explicit aliases) keeps shaping: progress + saturation + no-motion.
     progress = float(obs_prev.d_pos - obs_next.d_pos)
     sat_threshold = float(np.clip(cfg.saturation_threshold, 0.0, 0.999))
     sat_component = max(0.0, float(sat_ratio) - sat_threshold) / max(1e-6, 1.0 - sat_threshold)
