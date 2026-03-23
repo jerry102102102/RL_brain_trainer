@@ -21,7 +21,7 @@ from typing import Callable, Literal, Protocol
 
 import numpy as np
 
-RewardMode = Literal["no_shaping", "heuristic", "pbrs"]
+RewardMode = Literal["task1_main", "no_shaping", "heuristic", "pbrs"]
 RuntimeBackend = Literal["gazebo"]
 
 
@@ -67,13 +67,15 @@ class Task1Config:
     n_joints: int = 6
     dt: float = 0.1
     max_steps: int = 40
-    max_delta_q: float = 0.05
-    # Contract-R defaults: keep j2 (index=1) more conservative than others.
-    dq_max_per_joint_default: tuple[float, ...] = (0.05, 0.03, 0.05, 0.05, 0.05, 0.05, 0.05)
+    max_delta_q: float = 0.03
+    # Task1 default delta-q limits: j2 (index=1) is more conservative.
+    delta_q_limit_default: float = 0.03
+    delta_q_limit_j2: float = 0.02
+    dq_max_per_joint_default: tuple[float, ...] = (0.03, 0.02, 0.03, 0.03, 0.03, 0.03, 0.03)
     feasibility_eps: float = 1e-6
     null_effect_eps: float = 1e-4
     feasible_threshold: float = 0.85
-    enable_feasibility_penalty: bool = True
+    enable_feasibility_penalty: bool = False
     lambda_inf: float = 0.08
     lambda_rep: float = 0.02
     lambda_sat: float = 0.01
@@ -81,9 +83,15 @@ class Task1Config:
     success_pos_tol: float = 0.03
     safe_z_min: float = 0.20
     safety_margin_min: float = 0.0
-    step_penalty: float = -0.01
-    success_bonus: float = 2.0
-    fail_penalty: float = -1.0
+    saturation_threshold: float = 0.95
+    epsilon_motion: float = 0.002
+    stuck_window: int = 3
+    reward_w_progress: float = 1.0
+    reward_w_sat: float = -0.3
+    reward_w_nomotion: float = -0.8
+    step_penalty: float = 0.0
+    success_bonus: float = 0.0
+    fail_penalty: float = 0.0
     gamma: float = 0.99
     j2_index: int = 1
     j2_effective_min: float = -1.20
@@ -163,6 +171,8 @@ class L3ExecutionResult:
     projection_gap: float = 0.0
     null_effect_step: bool = False
     sat_ratio: float = 0.0
+    encoder_delta: float = 0.0
+    no_motion_signal: bool = False
 
 
 @dataclass(frozen=True)
@@ -237,17 +247,56 @@ class SafetyConstrainedL3Executor:
     q_min: np.ndarray = field(default_factory=lambda: np.array([-0.70, -1.5, 0.0, -2.0, -2.0, -2.0, -2.0], dtype=float))
     q_max: np.ndarray = field(default_factory=lambda: np.array([0.70, 1.5, 1.2, 2.0, 2.0, 2.0, 2.0], dtype=float))
     max_dq_per_step: float = 0.05
+    dq_max_per_joint: np.ndarray | None = None
+    l3_smoothing_alpha: float = 0.25
+    epsilon_motion: float = 0.002
+    stuck_window: int = 3
     feasibility_eps: float = 1e-6
     null_effect_eps: float = 1e-4
+    _prev_l3_cmd: np.ndarray | None = None
+    _accepted_low_motion_streak: int = 0
+
+    def _normalize_cmd(self, delta_q_cmd: np.ndarray, n_joints: int) -> tuple[bool, np.ndarray, tuple[str, ...]]:
+        cmd = np.asarray(delta_q_cmd, dtype=float)
+        if cmd.shape != (n_joints,) or not np.all(np.isfinite(cmd)):
+            return False, np.zeros(n_joints, dtype=float), ("L3_CHECK:not_executable",)
+        if self.dq_max_per_joint is not None:
+            lim = np.asarray(self.dq_max_per_joint, dtype=float)
+            if lim.size < n_joints:
+                lim = np.pad(lim, (0, n_joints - lim.size), mode="edge")
+            lim = np.abs(lim[:n_joints])
+        else:
+            lim = np.full(n_joints, float(self.max_dq_per_step), dtype=float)
+        clamped = np.clip(cmd, -lim, lim)
+        prev = self._prev_l3_cmd if self._prev_l3_cmd is not None and self._prev_l3_cmd.shape == clamped.shape else np.zeros_like(clamped)
+        alpha = float(np.clip(self.l3_smoothing_alpha, 0.0, 1.0))
+        smoothed = (1.0 - alpha) * prev + alpha * clamped
+        self._prev_l3_cmd = smoothed.copy()
+        return True, smoothed, ("L3_CHECK:ok", "L3_FILTER:clamp_smooth")
 
     def execute_with_safety(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
         requested_delta_q = np.asarray(delta_q_cmd, dtype=float).copy()
-        limited_cmd = np.clip(requested_delta_q, -self.max_dq_per_step, self.max_dq_per_step)
+        executable, limited_cmd, exec_logs = self._normalize_cmd(requested_delta_q, state.q.size)
+        if not executable:
+            self._accepted_low_motion_streak = 0
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=state.q.copy(),
+                dq_next=np.zeros_like(state.q),
+                safety_violation=0.0,
+                ee_proxy_xyz=state.ee_proxy_xyz.copy() if state.ee_proxy_xyz is not None else None,
+                logs=exec_logs + ("L3_EXEC:rejected",),
+                limited_cmd=limited_cmd.copy(),
+                q_target_minus_runtime=np.zeros_like(state.q),
+                requested_delta_q=requested_delta_q,
+                executed_delta_q=np.zeros_like(state.q),
+            )
         q_candidate = np.clip(state.q + limited_cmd, self.q_min[: state.q.size], self.q_max[: state.q.size])
         dq_candidate = (q_candidate - state.q).copy()
 
         ee_z_next = float(q_candidate[2])
         if ee_z_next < state.safe_z_min:
+            self._accepted_low_motion_streak = 0
             executed_delta_q = np.zeros_like(state.dq)
             feasible_ratio, projection_gap, null_effect_step, sat_ratio = compute_feasibility_metrics(
                 requested_delta_q=requested_delta_q,
@@ -262,6 +311,7 @@ class SafetyConstrainedL3Executor:
                 safety_violation=float(state.safe_z_min - ee_z_next),
                 ee_proxy_xyz=None,
                 logs=(
+                    *exec_logs,
                     "L3_CHECK:z_under_safe_min",
                     f"safe_z_min={state.safe_z_min:.3f}",
                     f"ee_z_next={ee_z_next:.3f}",
@@ -283,18 +333,29 @@ class SafetyConstrainedL3Executor:
             eps=self.feasibility_eps,
             null_effect_eps=self.null_effect_eps,
         )
+        encoder_delta = float(np.max(np.abs(dq_candidate))) if dq_candidate.size else 0.0
+        low_motion = encoder_delta < float(self.epsilon_motion)
+        if low_motion:
+            self._accepted_low_motion_streak += 1
+        else:
+            self._accepted_low_motion_streak = 0
+        no_motion_signal = self._accepted_low_motion_streak >= int(self.stuck_window)
+        logs = [
+            *exec_logs,
+            "L3_EXEC:accepted",
+            "L3_EXEC:path=bootstrap",
+            f"post_action_joint_delta_max={float(np.max(np.abs(dq_candidate))):.6f}",
+            f"encoder_delta={encoder_delta:.6f}",
+        ]
+        if no_motion_signal:
+            logs.append("NO_MOTION_STREAK")
         return L3ExecutionResult(
             accepted=True,
             q_next=q_candidate,
             dq_next=dq_candidate,
             safety_violation=0.0,
             ee_proxy_xyz=None,
-            logs=(
-                "L3_CHECK:ok",
-                "L3_EXEC:accepted",
-                "L3_EXEC:path=bootstrap",
-                f"post_action_joint_delta_max={float(np.max(np.abs(dq_candidate))):.6f}",
-            ),
+            logs=tuple(logs),
             limited_cmd=limited_cmd.copy(),
             q_target_minus_runtime=(q_candidate - state.q).copy(),
             requested_delta_q=requested_delta_q,
@@ -303,6 +364,8 @@ class SafetyConstrainedL3Executor:
             projection_gap=projection_gap,
             null_effect_step=null_effect_step,
             sat_ratio=sat_ratio,
+            encoder_delta=encoder_delta,
+            no_motion_signal=no_motion_signal,
         )
 
 
@@ -318,6 +381,10 @@ class GazeboRuntimeL3Executor:
     """
 
     max_dq_per_step: float = 0.05
+    dq_max_per_joint: np.ndarray | None = None
+    l3_smoothing_alpha: float = 0.25
+    epsilon_motion: float = 0.002
+    stuck_window: int = 3
     feasibility_eps: float = 1e-6
     null_effect_eps: float = 1e-4
     command_topic: str = "/arm_controller/joint_trajectory"
@@ -338,6 +405,8 @@ class GazeboRuntimeL3Executor:
     verbose_debug: bool = False
     q_min: np.ndarray = field(default_factory=lambda: np.array([-0.70, -1.5, 0.0, -2.0, -2.0, -2.0, -2.0], dtype=float))
     q_max: np.ndarray = field(default_factory=lambda: np.array([0.70, 1.5, 1.2, 2.0, 2.0, 2.0, 2.0], dtype=float))
+    _prev_l3_cmd: np.ndarray | None = None
+    _accepted_low_motion_streak: int = 0
 
     def __post_init__(self) -> None:
         try:
@@ -404,6 +473,24 @@ class GazeboRuntimeL3Executor:
             self._node.destroy_node()
         if getattr(self, "_rclpy", None) is not None and self._rclpy.ok():
             self._rclpy.shutdown()
+
+    def _normalize_cmd(self, delta_q_cmd: np.ndarray, n_joints: int) -> tuple[bool, np.ndarray, tuple[str, ...]]:
+        cmd = np.asarray(delta_q_cmd, dtype=float)
+        if cmd.shape != (n_joints,) or not np.all(np.isfinite(cmd)):
+            return False, np.zeros(n_joints, dtype=float), ("L3_CHECK:not_executable",)
+        if self.dq_max_per_joint is not None:
+            lim = np.asarray(self.dq_max_per_joint, dtype=float)
+            if lim.size < n_joints:
+                lim = np.pad(lim, (0, n_joints - lim.size), mode="edge")
+            lim = np.abs(lim[:n_joints])
+        else:
+            lim = np.full(n_joints, float(self.max_dq_per_step), dtype=float)
+        clamped = np.clip(cmd, -lim, lim)
+        prev = self._prev_l3_cmd if self._prev_l3_cmd is not None and self._prev_l3_cmd.shape == clamped.shape else np.zeros_like(clamped)
+        alpha = float(np.clip(self.l3_smoothing_alpha, 0.0, 1.0))
+        smoothed = (1.0 - alpha) * prev + alpha * clamped
+        self._prev_l3_cmd = smoothed.copy()
+        return True, smoothed, ("L3_CHECK:ok", "L3_FILTER:clamp_smooth")
 
     def _spin_once(self, timeout_sec: float = 0.1) -> None:
         self._rclpy.spin_once(self._node, timeout_sec=timeout_sec)
@@ -571,11 +658,24 @@ class GazeboRuntimeL3Executor:
     def execute_with_safety(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
         q_runtime, _, ee_runtime = self.read_runtime_state(n_joints=state.q.size)
         requested_delta_q = np.asarray(delta_q_cmd, dtype=float).copy()
-        limited_cmd = np.clip(requested_delta_q, -self.max_dq_per_step, self.max_dq_per_step)
+        executable, limited_cmd, exec_logs = self._normalize_cmd(requested_delta_q, state.q.size)
+        if not executable:
+            self._accepted_low_motion_streak = 0
+            return L3ExecutionResult(
+                accepted=False,
+                q_next=q_runtime,
+                dq_next=np.zeros_like(q_runtime),
+                safety_violation=0.0,
+                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                logs=exec_logs + ("L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
+                requested_delta_q=requested_delta_q.copy(),
+                executed_delta_q=np.zeros_like(q_runtime),
+            )
         q_target = np.clip(q_runtime + limited_cmd, self.q_min[: q_runtime.size], self.q_max[: q_runtime.size])
 
         candidate_ee_z = float(ee_runtime[2]) if ee_runtime is not None else float(q_runtime[2])
         if candidate_ee_z < state.safe_z_min:
+            self._accepted_low_motion_streak = 0
             diag = (
                 f"unsafe reject: reason=z_under_safe_min safe_z_min={state.safe_z_min:.3f} "
                 f"candidate_ee_z={candidate_ee_z:.3f} margin={candidate_ee_z - state.safe_z_min:.3f} "
@@ -594,7 +694,7 @@ class GazeboRuntimeL3Executor:
                 dq_next=executed_delta_q,
                 safety_violation=float(state.safe_z_min - candidate_ee_z),
                 ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
-                logs=("L3_CHECK:z_under_safe_min", f"safe_z_min={state.safe_z_min:.3f}", diag, "L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
+                logs=(*exec_logs, "L3_CHECK:z_under_safe_min", f"safe_z_min={state.safe_z_min:.3f}", diag, "L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
                 limited_cmd=limited_cmd.copy(),
                 q_target_minus_runtime=(q_target - q_runtime).copy(),
                 requested_delta_q=requested_delta_q,
@@ -614,6 +714,7 @@ class GazeboRuntimeL3Executor:
             requested_delta_q=requested_delta_q,
             limited_cmd=limited_cmd,
             q_target_minus_runtime=q_target_minus_runtime,
+            pre_logs=exec_logs,
         )
 
     def _finalize_execution_result(
@@ -627,6 +728,7 @@ class GazeboRuntimeL3Executor:
         requested_delta_q: np.ndarray,
         limited_cmd: np.ndarray,
         q_target_minus_runtime: np.ndarray,
+        pre_logs: tuple[str, ...] = (),
     ) -> L3ExecutionResult:
         q_next, dq_next, ee_proxy = self.read_runtime_state(n_joints=state.q.size)
         q_delta = q_next - q_runtime
@@ -637,8 +739,11 @@ class GazeboRuntimeL3Executor:
         ee_delta_norm = float(np.linalg.norm(ee_delta))
         ee_z = float(ee_after[2])
         safety_violation = float(max(0.0, state.safe_z_min - ee_z))
-        moved = delta_max >= float(self.action_min_motion_tol)
-        accepted = bool(status_ok and moved)
+        encoder_delta = float(np.max(np.abs(q_delta))) if q_delta.size else 0.0
+        moved = encoder_delta >= float(self.epsilon_motion)
+        accepted = bool(status_ok)
+        self._accepted_low_motion_streak = self._accepted_low_motion_streak + 1 if accepted and not moved else 0
+        no_motion_signal = bool(accepted and self._accepted_low_motion_streak >= int(self.stuck_window))
 
         feasible_ratio, projection_gap, null_effect_step, sat_ratio = compute_feasibility_metrics(
             requested_delta_q=requested_delta_q,
@@ -647,7 +752,7 @@ class GazeboRuntimeL3Executor:
             null_effect_eps=self.null_effect_eps,
         )
 
-        logs = list(base_logs)
+        logs = list(pre_logs) + list(base_logs)
         logs.extend(
             [
                 f"post_action_joint_delta_max={delta_max:.6f}",
@@ -658,10 +763,13 @@ class GazeboRuntimeL3Executor:
                 f"projection_gap={projection_gap:.6f}",
                 f"null_effect_step={int(null_effect_step)}",
                 f"sat_ratio={sat_ratio:.6f}",
+                f"encoder_delta={encoder_delta:.6f}",
             ]
         )
         if not moved:
-            logs.append(f"L3_EXEC:no_motion min_motion_tol={self.action_min_motion_tol}")
+            logs.append(f"L3_EXEC:no_motion epsilon_motion={self.epsilon_motion}")
+        if no_motion_signal:
+            logs.append("NO_MOTION_STREAK")
         logs.append("L3_EXEC:accepted" if accepted else "L3_EXEC:rejected")
         return L3ExecutionResult(
             accepted=accepted,
@@ -678,6 +786,8 @@ class GazeboRuntimeL3Executor:
             projection_gap=projection_gap,
             null_effect_step=null_effect_step,
             sat_ratio=sat_ratio,
+            encoder_delta=encoder_delta,
+            no_motion_signal=no_motion_signal,
         )
 
     def _execute_via_action(
@@ -690,6 +800,7 @@ class GazeboRuntimeL3Executor:
         requested_delta_q: np.ndarray,
         limited_cmd: np.ndarray,
         q_target_minus_runtime: np.ndarray,
+        pre_logs: tuple[str, ...] = (),
     ) -> L3ExecutionResult:
         executed_zero = np.zeros_like(q_runtime)
         pre_feasible_ratio, pre_projection_gap, pre_null_effect_step, pre_sat_ratio = compute_feasibility_metrics(
@@ -842,6 +953,7 @@ class GazeboRuntimeL3Executor:
             requested_delta_q=requested_delta_q,
             limited_cmd=limited_cmd,
             q_target_minus_runtime=q_target_minus_runtime,
+            pre_logs=pre_logs,
         )
 
     def reset_arm_to_initial(
@@ -955,7 +1067,9 @@ def resolve_dq_max_per_joint(*, cfg: Task1Config, n_joints: int, dq_max_per_join
     if dq_max_per_joint is not None:
         vec = np.asarray(dq_max_per_joint, dtype=float)
     else:
-        vec = np.asarray(cfg.dq_max_per_joint_default, dtype=float)
+        vec = np.full(int(n_joints), float(cfg.delta_q_limit_default), dtype=float)
+        if int(cfg.j2_index) < int(n_joints):
+            vec[int(cfg.j2_index)] = float(cfg.delta_q_limit_j2)
     if vec.size < n_joints:
         pad_val = float(vec[-1]) if vec.size else float(cfg.max_delta_q)
         vec = np.pad(vec, (0, n_joints - vec.size), mode="constant", constant_values=pad_val)
@@ -1131,26 +1245,22 @@ def compose_task1_reward(
     obs_next: Task1Observation,
     delta_q_cmd: np.ndarray,
     safety_violation: float,
+    sat_ratio: float,
+    no_motion: bool,
     done: bool,
     success: bool,
     cfg: Task1Config,
 ) -> float:
-    smooth_penalty = -0.05 * float(np.linalg.norm(delta_q_cmd))
-    safety_penalty = -2.0 * float(max(0.0, safety_violation))
-
-    if mode == "no_shaping":
-        reward = cfg.step_penalty
-    elif mode == "heuristic":
-        reward = -obs_next.d_pos + smooth_penalty + safety_penalty
-    elif mode == "pbrs":
-        phi_prev = -obs_prev.d_pos
-        phi_next = -obs_next.d_pos
-        reward = cfg.gamma * phi_next - phi_prev + smooth_penalty + safety_penalty
-    else:
-        raise ValueError(f"Unsupported reward mode: {mode}")
-
-    if done:
-        reward += cfg.success_bonus if success else cfg.fail_penalty
+    _ = (mode, delta_q_cmd, safety_violation, done, success)
+    progress = float(obs_prev.d_pos - obs_next.d_pos)
+    sat_threshold = float(np.clip(cfg.saturation_threshold, 0.0, 0.999))
+    sat_component = max(0.0, float(sat_ratio) - sat_threshold) / max(1e-6, 1.0 - sat_threshold)
+    no_motion_component = 1.0 if bool(no_motion) else 0.0
+    reward = (
+        float(cfg.reward_w_progress) * progress
+        + float(cfg.reward_w_sat) * sat_component
+        + float(cfg.reward_w_nomotion) * no_motion_component
+    )
     return float(reward)
 
 
@@ -1224,7 +1334,6 @@ def run_task1_episode(
     accepted_no_motion_count = 0
     accepted_no_motion_streak = 0
     accepted_no_motion_streak_max = 0
-    no_motion_failfast_hint = False
     cmd_to_motion_gain_sum = 0.0
     j2_sat_sum = 0.0
     j2_sat_active_steps = 0
@@ -1249,7 +1358,7 @@ def run_task1_episode(
             )
 
         q_target_minus_runtime_pre = current_macro.target_q - state.q
-        micro_delta = np.clip(q_target_minus_runtime_pre, -dq_max_per_joint, dq_max_per_joint)
+        micro_delta = q_target_minus_runtime_pre.copy()
         micro_delta, j2_mask_triggered, j2_mask_logs = apply_limit_aware_j2_guard(
             state_q=state.q,
             micro_delta=micro_delta,
@@ -1326,7 +1435,8 @@ def run_task1_episode(
                 j2_sat_active_steps += 1
 
         post_action_joint_delta_max = float(np.max(np.abs(l3_result.dq_next))) if l3_result.dq_next.size else 0.0
-        effective_step = post_action_joint_delta_max > float(cfg.null_effect_eps)
+        encoder_delta = float(l3_result.encoder_delta)
+        effective_step = encoder_delta >= float(cfg.epsilon_motion)
         if l3_result.accepted:
             accepted_count += 1
             if not effective_step:
@@ -1335,8 +1445,6 @@ def run_task1_episode(
                 accepted_no_motion_streak_max = max(accepted_no_motion_streak_max, accepted_no_motion_streak)
             else:
                 accepted_no_motion_streak = 0
-        if accepted_no_motion_streak >= int(cfg.failfast_no_motion_streak):
-            no_motion_failfast_hint = True
         infeasible_step = feasible_ratio < float(cfg.feasible_threshold)
         effective_step_count += int(effective_step)
         infeasible_count += int(infeasible_step)
@@ -1357,6 +1465,7 @@ def run_task1_episode(
                 f"feasible_ratio={feasible_ratio:.4f} projection_gap={projection_gap:.6f} "
                 f"null_effect_step={int(null_effect_step)} sat_ratio={sat_ratio:.4f} "
                 f"post_action_joint_delta_max={post_action_joint_delta_max:.6f} "
+                f"encoder_delta={encoder_delta:.6f} "
                 f"j2_mask_triggered={int(j2_mask_triggered)}"
             )
 
@@ -1366,14 +1475,12 @@ def run_task1_episode(
             obs_next=obs_next,
             delta_q_cmd=micro_delta,
             safety_violation=l3_result.safety_violation,
+            sat_ratio=sat_ratio,
+            no_motion=bool(l3_result.accepted and not effective_step),
             done=done,
             success=success,
             cfg=cfg,
         )
-        if cfg.enable_feasibility_penalty:
-            reward -= float(cfg.lambda_inf) * max(0.0, 1.0 - feasible_ratio)
-            reward -= float(cfg.lambda_rep) * float(infeasible_streak)
-            reward -= float(cfg.lambda_sat) * max(0.0, sat_ratio)
         total_reward += reward
         replay.append(ReplayTransition(d_pos_prev=obs_prev.d_pos, d_pos_next=obs_next.d_pos, reward=reward))
 
@@ -1423,6 +1530,8 @@ def run_task1_episode(
                     "null_effect_step": bool(null_effect_step),
                     "sat_ratio": sat_ratio,
                     "post_action_joint_delta_max": float(post_action_joint_delta_max),
+                    "encoder_delta": float(encoder_delta),
+                    "no_motion_signal": bool(l3_result.no_motion_signal),
                     "j2_mask_triggered": bool(j2_mask_triggered),
                     "cmd_to_motion_gain": float(cmd_to_motion_gain),
                 },
@@ -1444,6 +1553,7 @@ def run_task1_episode(
         "reject_count": reject_count,
         "timeout_count": timeout_count,
         "reject_rate": reject_rate,
+        "effective_motion_rate": float(effective_step_count / micro_steps) if micro_steps else 0.0,
         "effective_step_rate": float(effective_step_count / micro_steps) if micro_steps else 0.0,
         "infeasible_step_rate": float(infeasible_count / micro_steps) if micro_steps else 0.0,
         "null_effect_rate": float(null_effect_count / micro_steps) if micro_steps else 0.0,
@@ -1452,7 +1562,7 @@ def run_task1_episode(
         "j2_saturation_ratio": float(j2_sat_sum / j2_sat_active_steps) if j2_sat_active_steps else 0.0,
         "cmd_to_motion_gain": float(cmd_to_motion_gain_sum / micro_steps) if micro_steps else 1.0,
         "accepted_no_motion_streak_max": int(accepted_no_motion_streak_max),
-        "failfast_no_motion_hint": bool(no_motion_failfast_hint),
+        "failfast_no_motion_hint": bool(accepted_no_motion_streak_max >= int(cfg.stuck_window)),
     }
 
     return {
@@ -1509,6 +1619,9 @@ def run_task1_training(
 
     runtime_l3 = GazeboRuntimeL3Executor(
         max_dq_per_step=float(np.max(resolved_dq_max_per_joint)),
+        dq_max_per_joint=resolved_dq_max_per_joint.copy(),
+        epsilon_motion=float(config.epsilon_motion),
+        stuck_window=int(config.stuck_window),
         feasibility_eps=float(config.feasibility_eps),
         null_effect_eps=float(config.null_effect_eps),
         reset_timeout_sec=reset_timeout,
@@ -1666,13 +1779,23 @@ def _parse_dq_max_per_joint(raw: str | None) -> np.ndarray | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run V5 Task-1 EE pose reaching training loop")
     parser.add_argument("--episodes", type=int, default=3)
-    parser.add_argument("--reward-mode", choices=["no_shaping", "heuristic", "pbrs"], default="heuristic")
+    parser.add_argument("--reward-mode", choices=["task1_main", "no_shaping", "heuristic", "pbrs"], default="task1_main")
     parser.add_argument("--auto-reset", dest="auto_reset", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--reset-timeout", type=float, default=4.0)
     parser.add_argument("--scene-reset-cmd", type=str, default=None)
     parser.add_argument("--artifact-output", type=str, default=None)
+    parser.add_argument("--baseline-artifact", type=str, default=None)
+    parser.add_argument("--comparison-output", type=str, default=None)
     parser.add_argument("--checkpoint-path", type=str, default=None)
     parser.add_argument("--safe-z-min", type=float, default=Task1Config.safe_z_min)
+    parser.add_argument("--delta-q-limit-default", type=float, default=Task1Config.delta_q_limit_default)
+    parser.add_argument("--delta-q-limit-j2", type=float, default=Task1Config.delta_q_limit_j2)
+    parser.add_argument("--saturation-threshold", type=float, default=Task1Config.saturation_threshold)
+    parser.add_argument("--epsilon-motion", type=float, default=Task1Config.epsilon_motion)
+    parser.add_argument("--stuck-window", type=int, default=Task1Config.stuck_window)
+    parser.add_argument("--reward-w-progress", type=float, default=Task1Config.reward_w_progress)
+    parser.add_argument("--reward-w-sat", type=float, default=Task1Config.reward_w_sat)
+    parser.add_argument("--reward-w-nomotion", type=float, default=Task1Config.reward_w_nomotion)
     parser.add_argument("--n-joints", type=int, default=None, help="Action/state joint dimension used by the trainer")
     parser.add_argument("--allow-ee-fallback", action="store_true", help="Allow q[:3] fallback when no EE pose topic/TF is available")
     parser.add_argument("--action-timeout", type=float, default=1.5)
@@ -1684,7 +1807,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Comma-separated per-joint Δq max vector for Contract-R (e.g., 0.05,0.03,0.05,0.05,0.05,0.05,0.05)",
     )
-    parser.add_argument("--enable-feasibility-penalty", dest="enable_feasibility_penalty", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--enable-feasibility-penalty", dest="enable_feasibility_penalty", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--lambda-inf", type=float, default=Task1Config.lambda_inf)
     parser.add_argument("--lambda-rep", type=float, default=Task1Config.lambda_rep)
     parser.add_argument("--lambda-sat", type=float, default=Task1Config.lambda_sat)
@@ -1715,6 +1838,14 @@ def main(argv: list[str] | None = None) -> int:
     cfg = Task1Config(
         n_joints=resolved_n_joints,
         safe_z_min=float(args.safe_z_min),
+        delta_q_limit_default=float(args.delta_q_limit_default),
+        delta_q_limit_j2=float(args.delta_q_limit_j2),
+        saturation_threshold=float(args.saturation_threshold),
+        epsilon_motion=float(args.epsilon_motion),
+        stuck_window=max(1, int(args.stuck_window)),
+        reward_w_progress=float(args.reward_w_progress),
+        reward_w_sat=float(args.reward_w_sat),
+        reward_w_nomotion=float(args.reward_w_nomotion),
         null_effect_eps=float(args.null_effect_eps),
         feasible_threshold=float(args.feasible_threshold),
         enable_feasibility_penalty=bool(args.enable_feasibility_penalty),
@@ -1765,6 +1896,44 @@ def main(argv: list[str] | None = None) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
         print(f"artifact_output={output_path}")
+    if args.baseline_artifact:
+        baseline_rows = json.loads(Path(args.baseline_artifact).read_text(encoding="utf-8"))
+        if not isinstance(baseline_rows, list):
+            raise ValueError("baseline_artifact must contain a JSON array of episode rows")
+
+        def _summary_metrics(items: list[dict[str, object]]) -> dict[str, float]:
+            if not items:
+                return {
+                    "j2_saturation_ratio": 0.0,
+                    "accepted_no_motion_ratio": 0.0,
+                    "effective_motion_rate": 0.0,
+                    "mean_reward": 0.0,
+                }
+            ep = [it.get("episode_summary", {}) if isinstance(it, dict) else {} for it in items]
+            vals = {
+                "j2_saturation_ratio": [float((s if isinstance(s, dict) else {}).get("j2_saturation_ratio", 0.0)) for s in ep],
+                "accepted_no_motion_ratio": [float((s if isinstance(s, dict) else {}).get("accepted_no_motion_ratio", 0.0)) for s in ep],
+                "effective_motion_rate": [
+                    float((s if isinstance(s, dict) else {}).get("effective_motion_rate", (s if isinstance(s, dict) else {}).get("effective_step_rate", 0.0)))
+                    for s in ep
+                ],
+                "mean_reward": [float((it if isinstance(it, dict) else {}).get("total_reward", 0.0)) for it in items],
+            }
+            return {k: float(np.mean(v)) if v else 0.0 for k, v in vals.items()}
+
+        baseline_metrics = _summary_metrics(baseline_rows)
+        new_metrics = _summary_metrics(rows)
+        comparison = {
+            "baseline": baseline_metrics,
+            "new": new_metrics,
+            "delta_new_minus_baseline": {k: float(new_metrics[k] - baseline_metrics[k]) for k in sorted(new_metrics.keys())},
+        }
+        print(f"baseline_new_comparison={json.dumps(comparison, ensure_ascii=True)}")
+        if args.comparison_output:
+            cmp_path = Path(args.comparison_output)
+            cmp_path.parent.mkdir(parents=True, exist_ok=True)
+            cmp_path.write_text(json.dumps(comparison, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+            print(f"comparison_output={cmp_path}")
     if args.checkpoint_path:
         print(f"checkpoint_output={args.checkpoint_path}")
     return 0
