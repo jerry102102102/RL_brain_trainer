@@ -3,7 +3,7 @@
 Task split alignment:
 - L1: target EE pose provider (high/safe pose by default)
 - L2: learnable policy layer (with replay/update/checkpoint support)
-- L3: safety + execution interface (bootstrap simulator or Gazebo runtime path)
+- L3: safety + execution interface (Gazebo runtime action path)
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import json
 import subprocess
 import sys
 import time
-import warnings
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -23,7 +22,7 @@ from typing import Callable, Literal, Protocol
 import numpy as np
 
 RewardMode = Literal["no_shaping", "heuristic", "pbrs"]
-RuntimeBackend = Literal["bootstrap", "gazebo"]
+RuntimeBackend = Literal["gazebo"]
 
 
 @lru_cache(maxsize=1)
@@ -273,8 +272,6 @@ class GazeboRuntimeL3Executor:
     joint_state_wait_sec: float = 3.0
     action_timeout_sec: float = 1.5
     action_server_timeout_sec: float = 3.0
-    l3_exec_mode: Literal["action", "topic", "hybrid"] = "action"
-    macro_kickoff_action: bool = False
     action_name: str = "/arm_controller/follow_joint_trajectory"
     action_min_motion_tol: float = 1e-4
     reset_timeout_sec: float = 4.0
@@ -345,8 +342,7 @@ class GazeboRuntimeL3Executor:
         )
 
         self._spin_until_discovery_or_fail()
-        if self.l3_exec_mode in {"action", "hybrid"} and self.macro_kickoff_action:
-            self._wait_for_action_server_or_fail()
+        self._wait_for_action_server_or_fail()
         self._wait_for_initial_joint_state_or_fail()
 
     def close(self) -> None:
@@ -363,21 +359,11 @@ class GazeboRuntimeL3Executor:
         while time.time() < deadline:
             self._spin_once(0.1)
             topics = {name: types for name, types in self._node.get_topic_names_and_types()}
-            has_joint_state = self.joint_state_topic in topics
-            has_cmd_topic = self.command_topic in topics
-            if self.l3_exec_mode == "action":
-                if has_joint_state:
-                    return
-            elif has_joint_state and has_cmd_topic:
+            if self.joint_state_topic in topics:
                 return
-        if self.l3_exec_mode == "action":
-            raise RuntimeError(
-                "backend=gazebo fail-fast: required topics missing. "
-                f"need {self.joint_state_topic} for l3_exec_mode=action"
-            )
         raise RuntimeError(
             "backend=gazebo fail-fast: required topics missing. "
-            f"need {self.joint_state_topic} and {self.command_topic}"
+            f"need {self.joint_state_topic} for action path"
         )
 
     def _wait_for_action_server_or_fail(self) -> None:
@@ -552,15 +538,6 @@ class GazeboRuntimeL3Executor:
             )
 
         q_target_minus_runtime = q_target - q_runtime
-        if self.l3_exec_mode in {"topic", "hybrid"}:
-            return self._execute_via_topic(
-                state=state,
-                q_runtime=q_runtime,
-                q_target=q_target,
-                ee_runtime=ee_runtime,
-                limited_cmd=limited_cmd,
-                q_target_minus_runtime=q_target_minus_runtime,
-            )
         return self._execute_via_action(
             state=state,
             q_runtime=q_runtime,
@@ -568,22 +545,6 @@ class GazeboRuntimeL3Executor:
             ee_runtime=ee_runtime,
             limited_cmd=limited_cmd,
             q_target_minus_runtime=q_target_minus_runtime,
-        )
-
-    def execute_macro_kickoff(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
-        if self.l3_exec_mode != "hybrid" or not self.macro_kickoff_action:
-            return self.execute_with_safety(state, delta_q_cmd)
-
-        q_runtime, _, ee_runtime = self.read_runtime_state(n_joints=state.q.size)
-        limited_cmd = np.clip(delta_q_cmd, -self.max_dq_per_step, self.max_dq_per_step)
-        q_target = np.clip(q_runtime + limited_cmd, self.q_min[: q_runtime.size], self.q_max[: q_runtime.size])
-        return self._execute_via_action(
-            state=state,
-            q_runtime=q_runtime,
-            q_target=q_target,
-            ee_runtime=ee_runtime,
-            limited_cmd=limited_cmd,
-            q_target_minus_runtime=(q_target - q_runtime),
         )
 
     def _finalize_execution_result(
@@ -628,51 +589,6 @@ class GazeboRuntimeL3Executor:
             safety_violation=safety_violation,
             ee_proxy_xyz=ee_proxy,
             logs=tuple(logs),
-            limited_cmd=limited_cmd.copy(),
-            q_target_minus_runtime=q_target_minus_runtime.copy(),
-        )
-
-    def _execute_via_topic(
-        self,
-        *,
-        state: Task1State,
-        q_runtime: np.ndarray,
-        q_target: np.ndarray,
-        ee_runtime: np.ndarray | None,
-        limited_cmd: np.ndarray,
-        q_target_minus_runtime: np.ndarray,
-    ) -> L3ExecutionResult:
-        msg = self._JointTrajectory()
-        msg.joint_names = list(self._latest_joint_state.name[: state.q.size])
-        msg.header.stamp = self._node.get_clock().now().to_msg()
-        point = self._JointTrajectoryPoint()
-        point.positions = q_target.tolist()
-        point.time_from_start.sec = max(1, int(np.ceil(state.max_steps * 0.0 + 1)))
-        msg.points = [point]
-        self._traj_pub.publish(msg)
-
-        stamp_before = self._latest_joint_stamp_ns
-        deadline = time.time() + float(self.action_timeout_sec)
-        while time.time() < deadline:
-            self._spin_once(0.05)
-            if self._latest_joint_stamp_ns is not None and self._latest_joint_stamp_ns != stamp_before:
-                return self._finalize_execution_result(
-                    state=state,
-                    q_runtime=q_runtime,
-                    ee_runtime=ee_runtime,
-                    base_logs=["L3_CHECK:ok", f"safe_z_min={state.safe_z_min:.3f}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"],
-                    status_ok=True,
-                    limited_cmd=limited_cmd,
-                    q_target_minus_runtime=q_target_minus_runtime,
-                )
-
-        return L3ExecutionResult(
-            accepted=False,
-            q_next=q_runtime,
-            dq_next=np.zeros_like(q_runtime),
-            safety_violation=0.0,
-            ee_proxy_xyz=state.ee_proxy_xyz,
-            logs=("L3_EXEC:timeout_or_no_motion", f"min_motion_tol={self.action_min_motion_tol}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"),
             limited_cmd=limited_cmd.copy(),
             q_target_minus_runtime=q_target_minus_runtime.copy(),
         )
@@ -1067,8 +983,6 @@ def run_task1_episode(
                 target_q=target_q,
                 seed_delta_q=seed_delta_q,
             )
-            if hasattr(l3_executor, "execute_macro_kickoff") and bool((episode_debug_meta or {}).get("macro_kickoff_action", False)):
-                l3_executor.execute_macro_kickoff(state, seed_delta_q)
 
         q_target_minus_runtime_pre = current_macro.target_q - state.q
         micro_delta = np.clip(q_target_minus_runtime_pre, -cfg.max_delta_q, cfg.max_delta_q)
@@ -1235,7 +1149,6 @@ def run_task1_training(
     *,
     episodes: int,
     reward_mode: RewardMode,
-    backend: RuntimeBackend = "gazebo",
     cfg: Task1Config | None = None,
     checkpoint_path: str | None = None,
     auto_reset: bool | None = None,
@@ -1243,58 +1156,35 @@ def run_task1_training(
     scene_reset_cmd: str | None = None,
     allow_ee_fallback: bool = False,
     verbose_debug: bool = False,
-    l3_exec_mode: Literal["action", "topic", "hybrid"] = "action",
     action_timeout: float = 1.5,
     action_server_timeout: float = 3.0,
     macro_ttl_steps: int = 4,
-    macro_kickoff_action: bool = False,
     target_pose_xyz: np.ndarray | None = None,
     l2_diagnostic_mode: Literal["default", "conservative_joint_map"] = "default",
 ) -> list[dict[str, object]]:
     config = cfg or Task1Config()
-    normalized_l3_exec_mode = _normalize_l3_exec_mode(str(l3_exec_mode))
-    normalized_macro_kickoff_action = _normalize_macro_kickoff_action(
-        bool(macro_kickoff_action), l3_exec_mode=normalized_l3_exec_mode
-    )
-    if backend == "bootstrap":
-        warnings.warn(
-            "[compat] backend=bootstrap is kept only for local smoke tests; recommended/default path is backend=gazebo + action",
-            stacklevel=2,
-        )
 
     l1 = HighPoseTargetProvider(target_xyz=np.asarray(target_pose_xyz, dtype=float)) if target_pose_xyz is not None else HighPoseTargetProvider()
     l2 = LearnableL2Policy(l2_diagnostic_mode=l2_diagnostic_mode)
 
-    runtime_l3: GazeboRuntimeL3Executor | None = None
-    if backend == "bootstrap":
-        l3: L3ExecutorContract = SafetyConstrainedL3Executor(max_dq_per_step=config.max_delta_q)
-    elif backend == "gazebo":
-        runtime_l3 = GazeboRuntimeL3Executor(
-            max_dq_per_step=config.max_delta_q,
-            reset_timeout_sec=reset_timeout,
-            scene_reset_cmd=scene_reset_cmd,
-            allow_ee_fallback=allow_ee_fallback,
-            verbose_debug=verbose_debug,
-            l3_exec_mode=normalized_l3_exec_mode,
-            action_timeout_sec=float(action_timeout),
-            action_server_timeout_sec=float(action_server_timeout),
-            macro_kickoff_action=normalized_macro_kickoff_action,
-        )
-        l3 = runtime_l3
-    else:
-        raise ValueError(f"Unsupported backend: {backend}")
+    runtime_l3 = GazeboRuntimeL3Executor(
+        max_dq_per_step=config.max_delta_q,
+        reset_timeout_sec=reset_timeout,
+        scene_reset_cmd=scene_reset_cmd,
+        allow_ee_fallback=allow_ee_fallback,
+        verbose_debug=verbose_debug,
+        action_timeout_sec=float(action_timeout),
+        action_server_timeout_sec=float(action_server_timeout),
+    )
+    l3: L3ExecutorContract = runtime_l3
 
     rows: list[dict[str, object]] = []
     replay_bank: list[ReplayTransition] = []
-    gazebo_auto_reset = bool(auto_reset) if auto_reset is not None else backend == "gazebo"
-    runtime_joint_names = (
-        runtime_l3.runtime_joint_names(config.n_joints)
-        if runtime_l3 is not None
-        else tuple(f"joint_{idx}" for idx in range(config.n_joints))
-    )
+    gazebo_auto_reset = bool(auto_reset) if auto_reset is not None else True
+    runtime_joint_names = runtime_l3.runtime_joint_names(config.n_joints)
     if verbose_debug:
         print(
-            f"[startup] backend={backend} resolved_n_joints={config.n_joints} "
+            f"[startup] backend=gazebo resolved_n_joints={config.n_joints} "
             f"runtime_joint_names={list(runtime_joint_names)} "
             f"l2_diagnostic_mode={l2_diagnostic_mode}"
         )
@@ -1304,62 +1194,61 @@ def run_task1_training(
             initial_dq = None
             initial_ee_proxy = None
             reset_meta: dict[str, object] | None = None
-            if runtime_l3 is not None:
-                if i == 0:
-                    initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
-                    reset_meta = {
-                        "applied": False,
-                        "success": True,
-                        "duration_ms": 0.0,
-                        "initial_state": {
-                            "q": initial_q.tolist(),
-                            "dq": initial_dq.tolist(),
-                            "ee_pose": initial_ee_proxy.tolist() if initial_ee_proxy is not None else None,
-                            "ee_source": runtime_l3.ee_source_name(),
-                        },
-                        "error": None,
-                        "skipped_reason": "episode_0_bootstrap_runtime_state",
-                    }
-                elif gazebo_auto_reset:
-                    try:
-                        reset_meta = runtime_l3.reset_episode(n_joints=config.n_joints, timeout_sec=reset_timeout)
-                        initial_state = reset_meta.get("initial_state")
-                        if not isinstance(initial_state, dict):
-                            raise RuntimeError("backend=gazebo fail-fast: reset_episode returned invalid initial_state")
-                        initial_q = np.asarray(initial_state.get("q"), dtype=float)
-                        initial_dq = np.asarray(initial_state.get("dq"), dtype=float)
-                        ee_proxy_raw = initial_state.get("ee_pose", initial_state.get("ee_proxy"))
-                        initial_ee_proxy = None if ee_proxy_raw is None else np.asarray(ee_proxy_raw, dtype=float)
-                    except Exception as exc:
-                        reset_meta = getattr(exc, "reset_meta", None)
-                        if not isinstance(reset_meta, dict):
-                            reset_meta = {
-                                "applied": True,
-                                "success": False,
-                                "duration_ms": 0.0,
-                                "initial_state": None,
-                                "error": str(exc),
-                            }
-                        rows.append({"episode_index": i, "backend": backend, "reset": reset_meta})
-                        raise RuntimeError(
-                            "backend=gazebo fail-fast: episode reset failed "
-                            f"before episode {i}: {reset_meta.get('error') or exc}"
-                        ) from exc
-                else:
-                    initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
-                    reset_meta = {
-                        "applied": False,
-                        "success": True,
-                        "duration_ms": 0.0,
-                        "initial_state": {
-                            "q": initial_q.tolist(),
-                            "dq": initial_dq.tolist(),
-                            "ee_pose": initial_ee_proxy.tolist() if initial_ee_proxy is not None else None,
-                            "ee_source": runtime_l3.ee_source_name(),
-                        },
-                        "error": None,
-                        "skipped_reason": "auto_reset_disabled",
-                    }
+            if i == 0:
+                initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
+                reset_meta = {
+                    "applied": False,
+                    "success": True,
+                    "duration_ms": 0.0,
+                    "initial_state": {
+                        "q": initial_q.tolist(),
+                        "dq": initial_dq.tolist(),
+                        "ee_pose": initial_ee_proxy.tolist() if initial_ee_proxy is not None else None,
+                        "ee_source": runtime_l3.ee_source_name(),
+                    },
+                    "error": None,
+                    "skipped_reason": "episode_0_runtime_state",
+                }
+            elif gazebo_auto_reset:
+                try:
+                    reset_meta = runtime_l3.reset_episode(n_joints=config.n_joints, timeout_sec=reset_timeout)
+                    initial_state = reset_meta.get("initial_state")
+                    if not isinstance(initial_state, dict):
+                        raise RuntimeError("backend=gazebo fail-fast: reset_episode returned invalid initial_state")
+                    initial_q = np.asarray(initial_state.get("q"), dtype=float)
+                    initial_dq = np.asarray(initial_state.get("dq"), dtype=float)
+                    ee_proxy_raw = initial_state.get("ee_pose", initial_state.get("ee_proxy"))
+                    initial_ee_proxy = None if ee_proxy_raw is None else np.asarray(ee_proxy_raw, dtype=float)
+                except Exception as exc:
+                    reset_meta = getattr(exc, "reset_meta", None)
+                    if not isinstance(reset_meta, dict):
+                        reset_meta = {
+                            "applied": True,
+                            "success": False,
+                            "duration_ms": 0.0,
+                            "initial_state": None,
+                            "error": str(exc),
+                        }
+                    rows.append({"episode_index": i, "backend": "gazebo", "reset": reset_meta})
+                    raise RuntimeError(
+                        "backend=gazebo fail-fast: episode reset failed "
+                        f"before episode {i}: {reset_meta.get('error') or exc}"
+                    ) from exc
+            else:
+                initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
+                reset_meta = {
+                    "applied": False,
+                    "success": True,
+                    "duration_ms": 0.0,
+                    "initial_state": {
+                        "q": initial_q.tolist(),
+                        "dq": initial_dq.tolist(),
+                        "ee_pose": initial_ee_proxy.tolist() if initial_ee_proxy is not None else None,
+                        "ee_source": runtime_l3.ee_source_name(),
+                    },
+                    "error": None,
+                    "skipped_reason": "auto_reset_disabled",
+                }
 
             row = run_task1_episode(
                 episode_index=i,
@@ -1373,16 +1262,15 @@ def run_task1_training(
                 initial_ee_proxy_xyz=initial_ee_proxy,
                 verbose_debug=verbose_debug,
                 episode_debug_meta={
-                    "backend": backend,
+                    "backend": "gazebo",
                     "safe_z_min": float(config.safe_z_min),
-                    "ee_source": runtime_l3.ee_source_name() if runtime_l3 is not None else "bootstrap_q_proxy",
+                    "ee_source": runtime_l3.ee_source_name(),
                     "reset_summary": reset_meta,
                     "macro_ttl_steps": int(macro_ttl_steps),
-                    "macro_kickoff_action": bool(macro_kickoff_action),
                     "l2_diagnostic_mode": l2_diagnostic_mode,
                 },
             )
-            row["backend"] = backend
+            row["backend"] = "gazebo"
             if reset_meta is not None:
                 row["reset"] = reset_meta
             rows.append(row)
@@ -1401,52 +1289,25 @@ def run_task1_training(
             row["l2_gain_after_update"] = l2.gain
 
         if checkpoint_path:
-            ckpt = _save_checkpoint(Path(checkpoint_path), l2=l2, episodes=rows, backend=backend)
+            ckpt = _save_checkpoint(Path(checkpoint_path), l2=l2, episodes=rows, backend="gazebo")
             for row in rows:
                 row["checkpoint_path"] = str(ckpt)
 
         return rows
     finally:
-        if runtime_l3 is not None:
-            runtime_l3.close()
+        runtime_l3.close()
 
 
-def _normalize_l3_exec_mode(mode: str) -> Literal["action"]:
-    if mode != "action":
-        warnings.warn(
-            f"[compat] --l3-exec-mode={mode} is deprecated; forcing action path (gazebo+action)",
-            stacklevel=2,
-        )
-    return "action"
-
-
-def _normalize_macro_kickoff_action(enabled: bool, *, l3_exec_mode: str) -> bool:
-    if enabled:
-        warnings.warn(
-            "[compat] --macro-kickoff-action requires legacy hybrid flow; disabling for single-path gazebo+action",
-            stacklevel=2,
-        )
-    return False
-
-
-def _resolve_n_joints_for_backend(*, backend: RuntimeBackend, cli_n_joints: int | None) -> int:
+def _resolve_n_joints_for_backend(*, cli_n_joints: int | None) -> int:
     if cli_n_joints is not None:
         return int(cli_n_joints)
-    if backend == "gazebo":
-        return 7
-    return int(Task1Config.n_joints)
+    return 7
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run V5 Task-1 EE pose reaching training loop")
     parser.add_argument("--episodes", type=int, default=3)
     parser.add_argument("--reward-mode", choices=["no_shaping", "heuristic", "pbrs"], default="heuristic")
-    parser.add_argument(
-        "--backend",
-        choices=["bootstrap", "gazebo"],
-        default="gazebo",
-        help="Default/recommended path is gazebo. bootstrap is compatibility-only for local smoke checks.",
-    )
     parser.add_argument("--auto-reset", dest="auto_reset", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--reset-timeout", type=float, default=4.0)
     parser.add_argument("--scene-reset-cmd", type=str, default=None)
@@ -1455,16 +1316,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--safe-z-min", type=float, default=Task1Config.safe_z_min)
     parser.add_argument("--n-joints", type=int, default=None, help="Action/state joint dimension used by the trainer")
     parser.add_argument("--allow-ee-fallback", action="store_true", help="Allow q[:3] fallback when no EE pose topic/TF is available")
-    parser.add_argument(
-        "--l3-exec-mode",
-        choices=["action", "topic", "hybrid"],
-        default="action",
-        help="compat flag; topic/hybrid are deprecated and will be translated to action with warning",
-    )
     parser.add_argument("--action-timeout", type=float, default=1.5)
     parser.add_argument("--action-server-timeout", type=float, default=3.0)
     parser.add_argument("--macro-ttl-steps", type=int, default=4)
-    parser.add_argument("--macro-kickoff-action", action="store_true")
     parser.add_argument("--target-x", type=float, default=None)
     parser.add_argument("--target-y", type=float, default=None)
     parser.add_argument("--target-z", type=float, default=None)
@@ -1477,7 +1331,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    resolved_n_joints = _resolve_n_joints_for_backend(backend=args.backend, cli_n_joints=args.n_joints)
+    resolved_n_joints = _resolve_n_joints_for_backend(cli_n_joints=args.n_joints)
     cfg = Task1Config(n_joints=resolved_n_joints, safe_z_min=float(args.safe_z_min))
 
     target_pose_xyz = None
@@ -1487,7 +1341,6 @@ def main(argv: list[str] | None = None) -> int:
     rows = run_task1_training(
         episodes=args.episodes,
         reward_mode=args.reward_mode,
-        backend=args.backend,
         cfg=cfg,
         checkpoint_path=args.checkpoint_path,
         auto_reset=args.auto_reset,
@@ -1495,18 +1348,16 @@ def main(argv: list[str] | None = None) -> int:
         scene_reset_cmd=args.scene_reset_cmd,
         allow_ee_fallback=bool(args.allow_ee_fallback),
         verbose_debug=bool(args.verbose_debug),
-        l3_exec_mode=args.l3_exec_mode,
         action_timeout=float(args.action_timeout),
         action_server_timeout=float(args.action_server_timeout),
         macro_ttl_steps=int(args.macro_ttl_steps),
-        macro_kickoff_action=bool(args.macro_kickoff_action),
         target_pose_xyz=target_pose_xyz,
         l2_diagnostic_mode=args.l2_diagnostic_mode,
     )
     success_count = sum(1 for row in rows if row["success"])
     mean_reward = float(np.mean([float(row["total_reward"]) for row in rows]))
     print(
-        f"backend={args.backend} episodes={len(rows)} "
+        f"backend=gazebo episodes={len(rows)} "
         f"reward_mode={args.reward_mode} safe_z_min={args.safe_z_min:.3f} "
         f"success={success_count}/{len(rows)} mean_reward={mean_reward:.4f}"
     )
