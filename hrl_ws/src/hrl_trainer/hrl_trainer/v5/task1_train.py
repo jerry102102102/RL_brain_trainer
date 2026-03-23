@@ -85,6 +85,14 @@ class Task1Config:
     success_bonus: float = 2.0
     fail_penalty: float = -1.0
     gamma: float = 0.99
+    j2_index: int = 1
+    j2_effective_min: float = -1.20
+    j2_effective_max: float = 1.20
+    j2_near_limit_buffer: float = 0.12
+    j2_near_limit_dq_scale: float = 0.50
+    j2_reset_buffer: float = 0.18
+    target_j2_bootstrap_buffer: float = 0.10
+    failfast_no_motion_streak: int = 10
 
 
 @dataclass
@@ -1024,6 +1032,98 @@ def build_command_saturated_warning(
     )
 
 
+
+def apply_limit_aware_j2_guard(
+    *,
+    state_q: np.ndarray,
+    micro_delta: np.ndarray,
+    dq_max_per_joint: np.ndarray,
+    cfg: Task1Config,
+) -> tuple[np.ndarray, bool, tuple[str, ...]]:
+    guarded = np.asarray(micro_delta, dtype=float).copy()
+    logs: list[str] = []
+    mask_triggered = False
+
+    j2 = int(cfg.j2_index)
+    if guarded.size <= j2 or state_q.size <= j2:
+        return guarded, False, tuple(logs)
+
+    qj2 = float(state_q[j2])
+    cmd_j2 = float(guarded[j2])
+    j2_min = float(cfg.j2_effective_min)
+    j2_max = float(cfg.j2_effective_max)
+    near_buf = float(max(0.0, cfg.j2_near_limit_buffer))
+
+    near_lower = qj2 <= (j2_min + near_buf)
+    near_upper = qj2 >= (j2_max - near_buf)
+
+    if near_lower and cmd_j2 < 0.0:
+        guarded[j2] = 0.0
+        mask_triggered = True
+        logs.append('j2_mask=near_lower_block_towards_limit')
+    elif near_upper and cmd_j2 > 0.0:
+        guarded[j2] = 0.0
+        mask_triggered = True
+        logs.append('j2_mask=near_upper_block_towards_limit')
+
+    cmd_j2 = float(guarded[j2])
+    if near_lower or near_upper:
+        j2_soft_max = float(dq_max_per_joint[j2]) * float(np.clip(cfg.j2_near_limit_dq_scale, 0.05, 1.0))
+        j2_soft_max = max(1e-6, j2_soft_max)
+        cmd_j2_soft = float(np.clip(cmd_j2, -j2_soft_max, j2_soft_max))
+        if abs(cmd_j2_soft - cmd_j2) > 1e-9:
+            logs.append(f'j2_guard=near_limit_scale soft_max={j2_soft_max:.6f}')
+        guarded[j2] = cmd_j2_soft
+
+    projected = qj2 + float(guarded[j2])
+    if projected < j2_min:
+        guarded[j2] = j2_min - qj2
+        logs.append('j2_guard=effective_min_clip')
+    elif projected > j2_max:
+        guarded[j2] = j2_max - qj2
+        logs.append('j2_guard=effective_max_clip')
+
+    if not mask_triggered:
+        logs.append('j2_mask=0')
+    else:
+        logs.append('j2_mask=1')
+    return guarded, mask_triggered, tuple(logs)
+
+
+def bootstrap_j2_away_from_limits(
+    *,
+    q: np.ndarray,
+    cfg: Task1Config,
+) -> tuple[np.ndarray, bool, str | None]:
+    q_boot = np.asarray(q, dtype=float).copy()
+    j2 = int(cfg.j2_index)
+    if q_boot.size <= j2:
+        return q_boot, False, None
+    lo = float(cfg.j2_effective_min + max(0.0, cfg.j2_reset_buffer))
+    hi = float(cfg.j2_effective_max - max(0.0, cfg.j2_reset_buffer))
+    if lo >= hi:
+        return q_boot, False, 'j2_bootstrap=invalid_range'
+    old = float(q_boot[j2])
+    q_boot[j2] = float(np.clip(old, lo, hi))
+    changed = abs(q_boot[j2] - old) > 1e-9
+    msg = f'j2_bootstrap={int(changed)} j2_before={old:.6f} j2_after={q_boot[j2]:.6f} range=[{lo:.6f},{hi:.6f}]'
+    return q_boot, changed, msg
+
+
+def bootstrap_macro_target_j2(*, state_q: np.ndarray, target_q: np.ndarray, cfg: Task1Config) -> tuple[np.ndarray, bool]:
+    tgt = np.asarray(target_q, dtype=float).copy()
+    j2 = int(cfg.j2_index)
+    if tgt.size <= j2 or state_q.size <= j2:
+        return tgt, False
+    lo = float(cfg.j2_effective_min + max(0.0, cfg.target_j2_bootstrap_buffer))
+    hi = float(cfg.j2_effective_max - max(0.0, cfg.target_j2_bootstrap_buffer))
+    if lo >= hi:
+        return tgt, False
+    old = float(tgt[j2])
+    tgt[j2] = float(np.clip(old, lo, hi))
+    return tgt, abs(tgt[j2] - old) > 1e-9
+
+
 def compose_task1_reward(
     *,
     mode: RewardMode,
@@ -1120,6 +1220,14 @@ def run_task1_episode(
     null_effect_count = 0
     effective_step_count = 0
     saturation_count = 0
+    accepted_count = 0
+    accepted_no_motion_count = 0
+    accepted_no_motion_streak = 0
+    accepted_no_motion_streak_max = 0
+    no_motion_failfast_hint = False
+    cmd_to_motion_gain_sum = 0.0
+    j2_sat_sum = 0.0
+    j2_sat_active_steps = 0
 
     while not done and state.step < state.max_steps:
         obs_prev = build_task1_observation(state)
@@ -1131,6 +1239,7 @@ def run_task1_episode(
             macro_counter += 1
             state_version += 1
             target_q = np.clip(state.q + seed_delta_q * float(decision_ttl_steps), -np.inf, np.inf)
+            target_q, _ = bootstrap_macro_target_j2(state_q=state.q, target_q=target_q, cfg=cfg)
             current_macro = MacroDecision(
                 decision_id=decision_id,
                 state_version=state_version,
@@ -1141,6 +1250,12 @@ def run_task1_episode(
 
         q_target_minus_runtime_pre = current_macro.target_q - state.q
         micro_delta = np.clip(q_target_minus_runtime_pre, -dq_max_per_joint, dq_max_per_joint)
+        micro_delta, j2_mask_triggered, j2_mask_logs = apply_limit_aware_j2_guard(
+            state_q=state.q,
+            micro_delta=micro_delta,
+            dq_max_per_joint=dq_max_per_joint,
+            cfg=cfg,
+        )
         l3_result = l3_executor.execute_with_safety(state, micro_delta)
 
         state = Task1State(
@@ -1200,9 +1315,28 @@ def run_task1_episode(
         projection_gap = float(l3_result.projection_gap)
         null_effect_step = bool(l3_result.null_effect_step)
         sat_ratio = float(l3_result.sat_ratio)
+        cmd_to_motion_gain = float(np.mean(np.abs(executed_delta_q) / (np.abs(requested_delta_q) + float(cfg.feasibility_eps)))) if requested_delta_q.size else 1.0
+        cmd_to_motion_gain_sum += cmd_to_motion_gain
+        if requested_delta_q.size > int(cfg.j2_index):
+            req_j2 = abs(float(requested_delta_q[int(cfg.j2_index)]))
+            if req_j2 > float(cfg.null_effect_eps):
+                exe_j2 = abs(float(executed_delta_q[int(cfg.j2_index)]))
+                j2_sat = float(np.clip(1.0 - min(1.0, exe_j2 / (req_j2 + float(cfg.feasibility_eps))), 0.0, 1.0))
+                j2_sat_sum += j2_sat
+                j2_sat_active_steps += 1
 
         post_action_joint_delta_max = float(np.max(np.abs(l3_result.dq_next))) if l3_result.dq_next.size else 0.0
         effective_step = post_action_joint_delta_max > float(cfg.null_effect_eps)
+        if l3_result.accepted:
+            accepted_count += 1
+            if not effective_step:
+                accepted_no_motion_count += 1
+                accepted_no_motion_streak += 1
+                accepted_no_motion_streak_max = max(accepted_no_motion_streak_max, accepted_no_motion_streak)
+            else:
+                accepted_no_motion_streak = 0
+        if accepted_no_motion_streak >= int(cfg.failfast_no_motion_streak):
+            no_motion_failfast_hint = True
         infeasible_step = feasible_ratio < float(cfg.feasible_threshold)
         effective_step_count += int(effective_step)
         infeasible_count += int(infeasible_step)
@@ -1222,7 +1356,8 @@ def run_task1_episode(
                 f"executed_delta_q={executed_delta_q.tolist()} "
                 f"feasible_ratio={feasible_ratio:.4f} projection_gap={projection_gap:.6f} "
                 f"null_effect_step={int(null_effect_step)} sat_ratio={sat_ratio:.4f} "
-                f"post_action_joint_delta_max={post_action_joint_delta_max:.6f}"
+                f"post_action_joint_delta_max={post_action_joint_delta_max:.6f} "
+                f"j2_mask_triggered={int(j2_mask_triggered)}"
             )
 
         reward = compose_task1_reward(
@@ -1270,7 +1405,7 @@ def run_task1_episode(
                 "decision_id": current_macro.decision_id,
                 "state_version": current_macro.state_version,
                 "decision_ttl": current_macro.ttl_steps,
-                "l3_logs": list(l3_result.logs) + ([command_saturated_warn] if command_saturated_warn else []),
+                "l3_logs": list(l3_result.logs) + list(j2_mask_logs) + ([command_saturated_warn] if command_saturated_warn else []),
                 "accepted": bool(l3_result.accepted),
                 "debug": {
                     "ee_pos": state.ee_pos.tolist(),
@@ -1288,6 +1423,8 @@ def run_task1_episode(
                     "null_effect_step": bool(null_effect_step),
                     "sat_ratio": sat_ratio,
                     "post_action_joint_delta_max": float(post_action_joint_delta_max),
+                    "j2_mask_triggered": bool(j2_mask_triggered),
+                    "cmd_to_motion_gain": float(cmd_to_motion_gain),
                 },
             }
         )
@@ -1311,6 +1448,11 @@ def run_task1_episode(
         "infeasible_step_rate": float(infeasible_count / micro_steps) if micro_steps else 0.0,
         "null_effect_rate": float(null_effect_count / micro_steps) if micro_steps else 0.0,
         "saturation_rate": float(saturation_count / micro_steps) if micro_steps else 0.0,
+        "accepted_no_motion_ratio": float(accepted_no_motion_count / accepted_count) if accepted_count else 0.0,
+        "j2_saturation_ratio": float(j2_sat_sum / j2_sat_active_steps) if j2_sat_active_steps else 0.0,
+        "cmd_to_motion_gain": float(cmd_to_motion_gain_sum / micro_steps) if micro_steps else 1.0,
+        "accepted_no_motion_streak_max": int(accepted_no_motion_streak_max),
+        "failfast_no_motion_hint": bool(no_motion_failfast_hint),
     }
 
     return {
@@ -1397,6 +1539,7 @@ def run_task1_training(
             reset_meta: dict[str, object] | None = None
             if i == 0:
                 initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
+                initial_q, _, j2_boot_msg = bootstrap_j2_away_from_limits(q=initial_q, cfg=config)
                 reset_meta = {
                     "applied": False,
                     "success": True,
@@ -1409,6 +1552,7 @@ def run_task1_training(
                     },
                     "error": None,
                     "skipped_reason": "episode_0_runtime_state",
+                    "j2_bootstrap": j2_boot_msg,
                 }
             elif gazebo_auto_reset:
                 try:
@@ -1418,6 +1562,8 @@ def run_task1_training(
                         raise RuntimeError("backend=gazebo fail-fast: reset_episode returned invalid initial_state")
                     initial_q = np.asarray(initial_state.get("q"), dtype=float)
                     initial_dq = np.asarray(initial_state.get("dq"), dtype=float)
+                    initial_q, _, j2_boot_msg = bootstrap_j2_away_from_limits(q=initial_q, cfg=config)
+                    reset_meta["j2_bootstrap"] = j2_boot_msg
                     ee_proxy_raw = initial_state.get("ee_pose", initial_state.get("ee_proxy"))
                     initial_ee_proxy = None if ee_proxy_raw is None else np.asarray(ee_proxy_raw, dtype=float)
                 except Exception as exc:
@@ -1437,6 +1583,7 @@ def run_task1_training(
                     ) from exc
             else:
                 initial_q, initial_dq, initial_ee_proxy = runtime_l3.read_runtime_state(n_joints=config.n_joints)
+                initial_q, _, j2_boot_msg = bootstrap_j2_away_from_limits(q=initial_q, cfg=config)
                 reset_meta = {
                     "applied": False,
                     "success": True,
@@ -1449,6 +1596,7 @@ def run_task1_training(
                     },
                     "error": None,
                     "skipped_reason": "auto_reset_disabled",
+                    "j2_bootstrap": j2_boot_msg,
                 }
 
             row = run_task1_episode(
@@ -1543,6 +1691,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--feasible-threshold", type=float, default=Task1Config.feasible_threshold)
     parser.add_argument("--null-effect-eps", type=float, default=Task1Config.null_effect_eps)
     parser.add_argument("--infeasible-streak-cap", type=int, default=Task1Config.infeasible_streak_cap)
+    parser.add_argument("--j2-effective-min", type=float, default=Task1Config.j2_effective_min)
+    parser.add_argument("--j2-effective-max", type=float, default=Task1Config.j2_effective_max)
+    parser.add_argument("--j2-near-limit-buffer", type=float, default=Task1Config.j2_near_limit_buffer)
+    parser.add_argument("--j2-near-limit-dq-scale", type=float, default=Task1Config.j2_near_limit_dq_scale)
+    parser.add_argument("--j2-reset-buffer", type=float, default=Task1Config.j2_reset_buffer)
+    parser.add_argument("--target-j2-bootstrap-buffer", type=float, default=Task1Config.target_j2_bootstrap_buffer)
+    parser.add_argument("--failfast-no-motion-streak", type=int, default=Task1Config.failfast_no_motion_streak)
     parser.add_argument("--target-x", type=float, default=None)
     parser.add_argument("--target-y", type=float, default=None)
     parser.add_argument("--target-z", type=float, default=None)
@@ -1567,6 +1722,13 @@ def main(argv: list[str] | None = None) -> int:
         lambda_rep=float(args.lambda_rep),
         lambda_sat=float(args.lambda_sat),
         infeasible_streak_cap=int(args.infeasible_streak_cap),
+        j2_effective_min=float(args.j2_effective_min),
+        j2_effective_max=float(args.j2_effective_max),
+        j2_near_limit_buffer=float(args.j2_near_limit_buffer),
+        j2_near_limit_dq_scale=float(args.j2_near_limit_dq_scale),
+        j2_reset_buffer=float(args.j2_reset_buffer),
+        target_j2_bootstrap_buffer=float(args.target_j2_bootstrap_buffer),
+        failfast_no_motion_streak=int(args.failfast_no_motion_streak),
     )
 
     target_pose_xyz = None
