@@ -1312,6 +1312,9 @@ def compose_task1_reward(
     done: bool,
     success: bool,
     cfg: Task1Config,
+    feasible_ratio: float = 1.0,
+    projection_gap: float = 0.0,
+    null_effect_step: bool = False,
 ) -> float:
     _ = (delta_q_cmd, safety_violation)
 
@@ -1343,6 +1346,22 @@ def compose_task1_reward(
         + float(cfg.reward_w_sat) * sat_component
         + float(cfg.reward_w_nomotion) * no_motion_component
     )
+
+    if bool(cfg.enable_feasibility_penalty):
+        feasible_threshold = max(float(cfg.feasible_threshold), 1e-6)
+        infeasible_component = max(0.0, feasible_threshold - float(feasible_ratio)) / feasible_threshold
+        reprojection_component = max(0.0, float(projection_gap))
+        saturation_component = max(0.0, float(sat_ratio))
+        if bool(null_effect_step):
+            infeasible_component = max(infeasible_component, 1.0)
+
+        feasibility_penalty = (
+            float(cfg.lambda_inf) * infeasible_component
+            + float(cfg.lambda_rep) * reprojection_component
+            + float(cfg.lambda_sat) * saturation_component
+        )
+        reward -= float(feasibility_penalty)
+
     return float(reward)
 
 
@@ -1562,6 +1581,9 @@ def run_task1_episode(
             done=done,
             success=success,
             cfg=cfg,
+            feasible_ratio=feasible_ratio,
+            projection_gap=projection_gap,
+            null_effect_step=null_effect_step,
         )
         total_reward += reward
         replay.append(ReplayTransition(d_pos_prev=obs_prev.d_pos, d_pos_next=obs_next.d_pos, reward=reward))
