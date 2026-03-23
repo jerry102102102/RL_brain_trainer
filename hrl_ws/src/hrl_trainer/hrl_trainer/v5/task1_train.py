@@ -1546,6 +1546,13 @@ def run_task1_episode(
                 accepted_no_motion_streak_max = max(accepted_no_motion_streak_max, accepted_no_motion_streak)
             else:
                 accepted_no_motion_streak = 0
+
+        failfast_streak = max(1, int(cfg.failfast_no_motion_streak))
+        if l3_result.accepted and accepted_no_motion_streak >= failfast_streak:
+            done = True
+            success = False
+            term_reason = "failfast_no_motion_streak"
+            step_reason = f"{step_reason}:failfast_no_motion_streak"
         infeasible_step = feasible_ratio < float(cfg.feasible_threshold)
         effective_step_count += int(effective_step)
         infeasible_count += int(infeasible_step)
@@ -1666,7 +1673,10 @@ def run_task1_episode(
         "j2_saturation_ratio": float(j2_sat_sum / j2_sat_active_steps) if j2_sat_active_steps else 0.0,
         "cmd_to_motion_gain": float(cmd_to_motion_gain_sum / micro_steps) if micro_steps else 1.0,
         "accepted_no_motion_streak_max": int(accepted_no_motion_streak_max),
-        "failfast_no_motion_hint": bool(accepted_no_motion_streak_max >= int(cfg.stuck_window)),
+        "failfast_no_motion_streak_threshold": max(1, int(cfg.failfast_no_motion_streak)),
+        "failfast_no_motion_hint": bool(accepted_no_motion_streak_max >= max(1, int(cfg.failfast_no_motion_streak))),
+        "failfast_no_motion_triggered": bool(term_reason == "failfast_no_motion_streak"),
+        "term_reason_counts": ({term_reason: 1} if term_reason is not None else {}),
     }
 
     return {
