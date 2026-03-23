@@ -137,6 +137,8 @@ class L3ExecutionResult:
     safety_violation: float
     ee_proxy_xyz: np.ndarray | None = None
     logs: tuple[str, ...] = ()
+    limited_cmd: np.ndarray | None = None
+    q_target_minus_runtime: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -172,11 +174,23 @@ class LearnableL2Policy:
     gain: float = 0.7
     gain_min: float = 0.1
     gain_max: float = 1.6
+    l2_diagnostic_mode: Literal["default", "conservative_joint_map"] = "default"
 
     def decide_action(self, obs: Task1Observation) -> L2Action:
-        cmd_xyz = self.gain * obs.delta_p
         raw = np.zeros_like(obs.q)
-        raw[:3] = cmd_xyz
+        if self.l2_diagnostic_mode == "conservative_joint_map":
+            # Diagnostic-only conservative joint-space proxy for first 3 axes.
+            raw[:3] = np.array(
+                [
+                    0.5 * self.gain * obs.delta_p[0],
+                    0.35 * self.gain * obs.delta_p[1],
+                    0.30 * self.gain * obs.delta_p[2],
+                ],
+                dtype=float,
+            )
+        else:
+            cmd_xyz = self.gain * obs.delta_p
+            raw[:3] = cmd_xyz
         return L2Action(delta_q_raw=raw)
 
     def update_from_replay(self, replay: list[ReplayTransition], lr: float = 0.05) -> None:
@@ -219,6 +233,8 @@ class SafetyConstrainedL3Executor:
                     f"ee_z_next={ee_z_next:.3f}",
                     "L3_EXEC:rejected",
                 ),
+                limited_cmd=limited_cmd.copy(),
+                q_target_minus_runtime=(q_candidate - state.q).copy(),
             )
 
         return L3ExecutionResult(
@@ -227,7 +243,14 @@ class SafetyConstrainedL3Executor:
             dq_next=dq_candidate,
             safety_violation=0.0,
             ee_proxy_xyz=None,
-            logs=("L3_CHECK:ok", "L3_EXEC:accepted", "L3_EXEC:path=bootstrap"),
+            logs=(
+                "L3_CHECK:ok",
+                "L3_EXEC:accepted",
+                "L3_EXEC:path=bootstrap",
+                f"post_action_joint_delta_max={float(np.max(np.abs(dq_candidate))):.6f}",
+            ),
+            limited_cmd=limited_cmd.copy(),
+            q_target_minus_runtime=(q_candidate - state.q).copy(),
         )
 
 
@@ -523,11 +546,28 @@ class GazeboRuntimeL3Executor:
                 safety_violation=float(state.safe_z_min - candidate_ee_z),
                 ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
                 logs=("L3_CHECK:z_under_safe_min", f"safe_z_min={state.safe_z_min:.3f}", diag, "L3_EXEC:rejected", "L3_EXEC:path=gazebo"),
+                limited_cmd=limited_cmd.copy(),
+                q_target_minus_runtime=(q_target - q_runtime).copy(),
             )
 
+        q_target_minus_runtime = q_target - q_runtime
         if self.l3_exec_mode in {"topic", "hybrid"}:
-            return self._execute_via_topic(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
-        return self._execute_via_action(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
+            return self._execute_via_topic(
+                state=state,
+                q_runtime=q_runtime,
+                q_target=q_target,
+                ee_runtime=ee_runtime,
+                limited_cmd=limited_cmd,
+                q_target_minus_runtime=q_target_minus_runtime,
+            )
+        return self._execute_via_action(
+            state=state,
+            q_runtime=q_runtime,
+            q_target=q_target,
+            ee_runtime=ee_runtime,
+            limited_cmd=limited_cmd,
+            q_target_minus_runtime=q_target_minus_runtime,
+        )
 
     def execute_macro_kickoff(self, state: Task1State, delta_q_cmd: np.ndarray) -> L3ExecutionResult:
         if self.l3_exec_mode != "hybrid" or not self.macro_kickoff_action:
@@ -536,7 +576,14 @@ class GazeboRuntimeL3Executor:
         q_runtime, _, ee_runtime = self.read_runtime_state(n_joints=state.q.size)
         limited_cmd = np.clip(delta_q_cmd, -self.max_dq_per_step, self.max_dq_per_step)
         q_target = np.clip(q_runtime + limited_cmd, self.q_min[: q_runtime.size], self.q_max[: q_runtime.size])
-        return self._execute_via_action(state=state, q_runtime=q_runtime, q_target=q_target, ee_runtime=ee_runtime)
+        return self._execute_via_action(
+            state=state,
+            q_runtime=q_runtime,
+            q_target=q_target,
+            ee_runtime=ee_runtime,
+            limited_cmd=limited_cmd,
+            q_target_minus_runtime=(q_target - q_runtime),
+        )
 
     def _finalize_execution_result(
         self,
@@ -546,6 +593,8 @@ class GazeboRuntimeL3Executor:
         ee_runtime: np.ndarray | None,
         base_logs: list[str],
         status_ok: bool,
+        limited_cmd: np.ndarray,
+        q_target_minus_runtime: np.ndarray,
     ) -> L3ExecutionResult:
         q_next, dq_next, ee_proxy = self.read_runtime_state(n_joints=state.q.size)
         q_delta = q_next - q_runtime
@@ -578,6 +627,8 @@ class GazeboRuntimeL3Executor:
             safety_violation=safety_violation,
             ee_proxy_xyz=ee_proxy,
             logs=tuple(logs),
+            limited_cmd=limited_cmd.copy(),
+            q_target_minus_runtime=q_target_minus_runtime.copy(),
         )
 
     def _execute_via_topic(
@@ -587,6 +638,8 @@ class GazeboRuntimeL3Executor:
         q_runtime: np.ndarray,
         q_target: np.ndarray,
         ee_runtime: np.ndarray | None,
+        limited_cmd: np.ndarray,
+        q_target_minus_runtime: np.ndarray,
     ) -> L3ExecutionResult:
         msg = self._JointTrajectory()
         msg.joint_names = list(self._latest_joint_state.name[: state.q.size])
@@ -608,6 +661,8 @@ class GazeboRuntimeL3Executor:
                     ee_runtime=ee_runtime,
                     base_logs=["L3_CHECK:ok", f"safe_z_min={state.safe_z_min:.3f}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"],
                     status_ok=True,
+                    limited_cmd=limited_cmd,
+                    q_target_minus_runtime=q_target_minus_runtime,
                 )
 
         return L3ExecutionResult(
@@ -617,6 +672,8 @@ class GazeboRuntimeL3Executor:
             safety_violation=0.0,
             ee_proxy_xyz=state.ee_proxy_xyz,
             logs=("L3_EXEC:timeout_or_no_motion", f"min_motion_tol={self.action_min_motion_tol}", "L3_EXEC:path=gazebo", "L3_EXEC:mode=topic"),
+            limited_cmd=limited_cmd.copy(),
+            q_target_minus_runtime=q_target_minus_runtime.copy(),
         )
 
     def _execute_via_action(
@@ -626,6 +683,8 @@ class GazeboRuntimeL3Executor:
         q_runtime: np.ndarray,
         q_target: np.ndarray,
         ee_runtime: np.ndarray | None,
+        limited_cmd: np.ndarray,
+        q_target_minus_runtime: np.ndarray,
     ) -> L3ExecutionResult:
         if not self._traj_action_client.wait_for_server(timeout_sec=float(self.action_server_timeout_sec)):
             return L3ExecutionResult(
@@ -641,6 +700,8 @@ class GazeboRuntimeL3Executor:
                     f"action_server_timeout={self.action_server_timeout_sec:.2f}s",
                     f"action_name={self.action_name}",
                 ),
+                limited_cmd=limited_cmd.copy(),
+                q_target_minus_runtime=q_target_minus_runtime.copy(),
             )
 
         goal = self._FollowJointTrajectory.Goal()
@@ -704,6 +765,8 @@ class GazeboRuntimeL3Executor:
                 safety_violation=0.0,
                 ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
                 logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_result_timeout={result_wait_timeout:.2f}s"),
+                limited_cmd=limited_cmd.copy(),
+                q_target_minus_runtime=q_target_minus_runtime.copy(),
             )
 
         result_msg = result_future.result()
@@ -734,6 +797,8 @@ class GazeboRuntimeL3Executor:
                 f"action_result_status_name={status_name}",
             ],
             status_ok=status_ok,
+            limited_cmd=limited_cmd,
+            q_target_minus_runtime=q_target_minus_runtime,
         )
 
     def reset_arm_to_initial(
@@ -850,6 +915,49 @@ def adapt_action_delta_q(action: L2Action, *, n_joints: int, max_delta_q: float)
     return np.clip(raw, -max_delta_q, max_delta_q)
 
 
+def build_command_saturated_warning(
+    *,
+    requested_cmd: np.ndarray,
+    limited_cmd: np.ndarray,
+    target_minus_runtime: np.ndarray,
+    eps: float = 1e-4,
+) -> str | None:
+    req = np.asarray(requested_cmd, dtype=float)
+    lim = np.asarray(limited_cmd, dtype=float)
+    tgt = np.asarray(target_minus_runtime, dtype=float)
+    if req.shape != lim.shape or req.shape != tgt.shape:
+        return None
+
+    req_mag = np.abs(req)
+    lim_mag = np.abs(lim)
+    tgt_mag = np.abs(tgt)
+
+    clipped_idx = np.where((req_mag > eps) & (np.abs(lim - req) > eps))[0]
+    joint_limit_idx = np.where((lim_mag > eps) & (np.abs(tgt - lim) > eps))[0]
+    near_zero_idx = np.where((req_mag > eps) & (tgt_mag <= eps))[0]
+
+    sat_ratio = np.zeros_like(req_mag)
+    active = req_mag > eps
+    sat_ratio[active] = np.clip(1.0 - (tgt_mag[active] / req_mag[active]), 0.0, 1.0)
+    severe_idx = np.where((req_mag > eps) & (sat_ratio >= 0.80))[0]
+
+    if clipped_idx.size == 0 and joint_limit_idx.size == 0 and near_zero_idx.size == 0 and severe_idx.size == 0:
+        return None
+
+    def _fmt(indices: np.ndarray) -> str:
+        return ",".join(str(int(i)) for i in indices.tolist()) if indices.size else "-"
+
+    severe_preview = ", ".join(
+        f"j{int(i)}:{sat_ratio[int(i)] * 100.0:.0f}%" for i in severe_idx[:4]
+    ) or "-"
+
+    return (
+        "[command_saturated] "
+        f"clip={_fmt(clipped_idx)} limit={_fmt(joint_limit_idx)} near_zero={_fmt(near_zero_idx)} "
+        f"severe={severe_preview}"
+    )
+
+
 def compose_task1_reward(
     *,
     mode: RewardMode,
@@ -939,11 +1047,13 @@ def run_task1_episode(
     reject_count = 0
     timeout_count = 0
     decision_chunks: dict[str, dict[str, object]] = {}
+    current_raw_delta_q = np.zeros(cfg.n_joints, dtype=float)
 
     while not done and state.step < state.max_steps:
         obs_prev = build_task1_observation(state)
         if current_macro is None or current_macro.ttl_steps <= 0:
             l2_action = l2_policy.decide_action(obs_prev)
+            current_raw_delta_q = np.asarray(l2_action.delta_q_raw, dtype=float).copy()
             seed_delta_q = adapt_action_delta_q(l2_action, n_joints=cfg.n_joints, max_delta_q=cfg.max_delta_q)
             decision_id = f"ep{episode_index}_d{macro_counter}"
             macro_counter += 1
@@ -959,7 +1069,8 @@ def run_task1_episode(
             if hasattr(l3_executor, "execute_macro_kickoff") and bool((episode_debug_meta or {}).get("macro_kickoff_action", False)):
                 l3_executor.execute_macro_kickoff(state, seed_delta_q)
 
-        micro_delta = np.clip(current_macro.target_q - state.q, -cfg.max_delta_q, cfg.max_delta_q)
+        q_target_minus_runtime_pre = current_macro.target_q - state.q
+        micro_delta = np.clip(q_target_minus_runtime_pre, -cfg.max_delta_q, cfg.max_delta_q)
         l3_result = l3_executor.execute_with_safety(state, micro_delta)
 
         state = Task1State(
@@ -988,6 +1099,34 @@ def run_task1_episode(
             reject_count += 1
         if any("timeout" in log for log in l3_result.logs):
             timeout_count += 1
+
+        raw_delta_q = current_raw_delta_q
+        adapted_delta_q = current_macro.seed_delta_q
+        limited_cmd = l3_result.limited_cmd if l3_result.limited_cmd is not None else micro_delta
+        q_target_minus_runtime = (
+            l3_result.q_target_minus_runtime if l3_result.q_target_minus_runtime is not None else q_target_minus_runtime_pre
+        )
+        command_saturated_warn = build_command_saturated_warning(
+            requested_cmd=micro_delta,
+            limited_cmd=limited_cmd,
+            target_minus_runtime=q_target_minus_runtime,
+        )
+        if command_saturated_warn:
+            print(
+                f"{command_saturated_warn} ep={episode_index} step={state.step} "
+                f"decision_id={current_macro.decision_id}"
+            )
+        post_action_joint_delta_max = float(np.max(np.abs(l3_result.dq_next))) if l3_result.dq_next.size else 0.0
+        if verbose_debug:
+            print(
+                "[diag-step] "
+                f"ep={episode_index} step={state.step} decision_id={current_macro.decision_id} "
+                f"raw_delta_q={raw_delta_q.tolist()} "
+                f"adapted_delta_q={adapted_delta_q.tolist()} "
+                f"limited_cmd={np.asarray(limited_cmd, dtype=float).tolist()} "
+                f"q_target_minus_runtime={np.asarray(q_target_minus_runtime, dtype=float).tolist()} "
+                f"post_action_joint_delta_max={post_action_joint_delta_max:.6f}"
+            )
 
         reward = compose_task1_reward(
             mode=reward_mode,
@@ -1030,13 +1169,18 @@ def run_task1_episode(
                 "decision_id": current_macro.decision_id,
                 "state_version": current_macro.state_version,
                 "decision_ttl": current_macro.ttl_steps,
-                "l3_logs": list(l3_result.logs),
+                "l3_logs": list(l3_result.logs) + ([command_saturated_warn] if command_saturated_warn else []),
                 "accepted": bool(l3_result.accepted),
                 "debug": {
                     "ee_pos": state.ee_pos.tolist(),
                     "z_margin": float(obs_next.z_margin),
                     "d_pos": float(obs_next.d_pos),
                     "reason": step_reason,
+                    "raw_delta_q": np.asarray(raw_delta_q, dtype=float).tolist(),
+                    "adapted_delta_q": np.asarray(adapted_delta_q, dtype=float).tolist(),
+                    "limited_cmd": np.asarray(limited_cmd, dtype=float).tolist(),
+                    "q_target_minus_runtime": np.asarray(q_target_minus_runtime, dtype=float).tolist(),
+                    "post_action_joint_delta_max": float(post_action_joint_delta_max),
                 },
             }
         )
@@ -1104,10 +1248,11 @@ def run_task1_training(
     macro_ttl_steps: int = 4,
     macro_kickoff_action: bool = False,
     target_pose_xyz: np.ndarray | None = None,
+    l2_diagnostic_mode: Literal["default", "conservative_joint_map"] = "default",
 ) -> list[dict[str, object]]:
     config = cfg or Task1Config()
     l1 = HighPoseTargetProvider(target_xyz=np.asarray(target_pose_xyz, dtype=float)) if target_pose_xyz is not None else HighPoseTargetProvider()
-    l2 = LearnableL2Policy()
+    l2 = LearnableL2Policy(l2_diagnostic_mode=l2_diagnostic_mode)
 
     runtime_l3: GazeboRuntimeL3Executor | None = None
     if backend == "bootstrap":
@@ -1139,7 +1284,8 @@ def run_task1_training(
     if verbose_debug:
         print(
             f"[startup] backend={backend} resolved_n_joints={config.n_joints} "
-            f"runtime_joint_names={list(runtime_joint_names)}"
+            f"runtime_joint_names={list(runtime_joint_names)} "
+            f"l2_diagnostic_mode={l2_diagnostic_mode}"
         )
     try:
         for i in range(max(1, int(episodes))):
@@ -1222,6 +1368,7 @@ def run_task1_training(
                     "reset_summary": reset_meta,
                     "macro_ttl_steps": int(macro_ttl_steps),
                     "macro_kickoff_action": bool(macro_kickoff_action),
+                    "l2_diagnostic_mode": l2_diagnostic_mode,
                 },
             )
             row["backend"] = backend
@@ -1283,6 +1430,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-y", type=float, default=None)
     parser.add_argument("--target-z", type=float, default=None)
     parser.add_argument("--verbose-debug", action="store_true")
+    parser.add_argument(
+        "--l2-diagnostic-mode",
+        choices=["default", "conservative_joint_map"],
+        default="default",
+        help="L2 diagnostic mapping mode for first 3 axes; default keeps legacy behavior.",
+    )
     args = parser.parse_args(argv)
 
     resolved_n_joints = _resolve_n_joints_for_backend(backend=args.backend, cli_n_joints=args.n_joints)
@@ -1309,6 +1462,7 @@ def main(argv: list[str] | None = None) -> int:
         macro_ttl_steps=int(args.macro_ttl_steps),
         macro_kickoff_action=bool(args.macro_kickoff_action),
         target_pose_xyz=target_pose_xyz,
+        l2_diagnostic_mode=args.l2_diagnostic_mode,
     )
     success_count = sum(1 for row in rows if row["success"])
     mean_reward = float(np.mean([float(row["total_reward"]) for row in rows]))
