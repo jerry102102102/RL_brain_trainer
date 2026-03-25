@@ -1165,6 +1165,22 @@ def adapt_action_delta_q(action: L2Action, *, n_joints: int, dq_max_per_joint: n
     return a_raw, a_raw * np.asarray(dq_max_per_joint, dtype=float)
 
 
+def compute_macro_micro_delta(
+    *,
+    target_q: np.ndarray,
+    state_q: np.ndarray,
+    ttl_steps_left: int,
+    dq_max_per_joint: np.ndarray,
+) -> np.ndarray:
+    remaining = max(1, int(ttl_steps_left))
+    residual = np.asarray(target_q, dtype=float) - np.asarray(state_q, dtype=float)
+    micro = residual / float(remaining)
+    lim = np.abs(np.asarray(dq_max_per_joint, dtype=float))
+    if lim.size < micro.size:
+        lim = np.pad(lim, (0, micro.size - lim.size), mode="edge")
+    return np.clip(micro, -lim[: micro.size], lim[: micro.size])
+
+
 def build_command_saturated_warning(
     *,
     requested_cmd: np.ndarray,
@@ -1459,7 +1475,12 @@ def run_task1_episode(
             )
 
         q_target_minus_runtime_pre = current_macro.target_q - state.q
-        micro_delta = q_target_minus_runtime_pre.copy()
+        micro_delta = compute_macro_micro_delta(
+            target_q=current_macro.target_q,
+            state_q=state.q,
+            ttl_steps_left=current_macro.ttl_steps,
+            dq_max_per_joint=dq_max_per_joint,
+        )
         micro_delta, j2_mask_triggered, j2_mask_logs = apply_limit_aware_j2_guard(
             state_q=state.q,
             micro_delta=micro_delta,
