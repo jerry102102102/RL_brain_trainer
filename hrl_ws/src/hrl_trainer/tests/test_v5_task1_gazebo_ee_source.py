@@ -187,14 +187,18 @@ class TestGazeboEeSource(unittest.TestCase):
         self.assertTrue(any("reason=predicted_z_under_safe_min" in s for s in out.logs))
 
     def test_safe_z_min_parameter_effective(self):
-        rows = run_task1_training(
-            episodes=1,
-            reward_mode="heuristic",
-            backend="bootstrap",
-            cfg=Task1Config(max_steps=1, safe_z_min=0.33),
-        )
-        self.assertEqual(len(rows), 1)
-        self.assertAlmostEqual(float(rows[0]["safe_z_min"]), 0.33)
+        captured_cfg = {}
+
+        def _fake_run_task1_training(*, cfg, **_kwargs):
+            captured_cfg["cfg"] = cfg
+            return [{"success": True, "total_reward": 0.0, "safe_z_min": float(cfg.safe_z_min)}]
+
+        with mock.patch.object(task1_train, "run_task1_training", side_effect=_fake_run_task1_training):
+            rc = task1_train.main(["--episodes", "1", "--safe-z-min", "0.33"])
+
+        self.assertEqual(rc, 0)
+        self.assertIn("cfg", captured_cfg)
+        self.assertAlmostEqual(float(captured_cfg["cfg"].safe_z_min), 0.33)
 
     def test_cli_n_joints_overrides_config(self):
         captured_cfg = {}
@@ -204,13 +208,13 @@ class TestGazeboEeSource(unittest.TestCase):
             return [{"success": True, "total_reward": 0.0}]
 
         with mock.patch.object(task1_train, "run_task1_training", side_effect=_fake_run_task1_training):
-            rc = task1_train.main(["--backend", "bootstrap", "--episodes", "1", "--n-joints", "7"])
+            rc = task1_train.main(["--episodes", "1", "--n-joints", "7"])
 
         self.assertEqual(rc, 0)
         self.assertIn("cfg", captured_cfg)
         self.assertEqual(captured_cfg["cfg"].n_joints, 7)
 
-    def test_cli_backend_default_n_joints_preserves_bootstrap_compat(self):
+    def test_cli_default_n_joints_is_7(self):
         captured_cfg = {}
 
         def _fake_run_task1_training(*, cfg, **_kwargs):
@@ -218,21 +222,7 @@ class TestGazeboEeSource(unittest.TestCase):
             return [{"success": True, "total_reward": 0.0}]
 
         with mock.patch.object(task1_train, "run_task1_training", side_effect=_fake_run_task1_training):
-            rc = task1_train.main(["--backend", "bootstrap", "--episodes", "1"])
-
-        self.assertEqual(rc, 0)
-        self.assertIn("cfg", captured_cfg)
-        self.assertEqual(captured_cfg["cfg"].n_joints, Task1Config.n_joints)
-
-    def test_cli_backend_default_n_joints_uses_7_for_gazebo(self):
-        captured_cfg = {}
-
-        def _fake_run_task1_training(*, cfg, **_kwargs):
-            captured_cfg["cfg"] = cfg
-            return [{"success": True, "total_reward": 0.0}]
-
-        with mock.patch.object(task1_train, "run_task1_training", side_effect=_fake_run_task1_training):
-            rc = task1_train.main(["--backend", "gazebo", "--episodes", "1"])
+            rc = task1_train.main(["--episodes", "1"])
 
         self.assertEqual(rc, 0)
         self.assertIn("cfg", captured_cfg)
