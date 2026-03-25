@@ -7,6 +7,7 @@ from hrl_trainer.v5.task1_train import (
     L3ExecutionResult,
     Task1Config,
     Task1State,
+    apply_limit_aware_j2_guard,
     compute_macro_micro_delta,
     run_task1_episode,
 )
@@ -63,6 +64,41 @@ class TestTask1J2SaturationFix(unittest.TestCase):
         )
 
         self.assertAlmostEqual(float(micro[1]), 0.02, places=6)
+
+    def test_j2_near_limit_scaling_shrinks_towards_edge(self):
+        cfg = Task1Config(
+            n_joints=7,
+            j2_effective_min=-1.2,
+            j2_effective_max=1.2,
+            j2_near_limit_buffer=0.12,
+            j2_near_limit_dq_scale=0.5,
+        )
+        dq_lim = np.array([0.03, 0.02, 0.03, 0.03, 0.03, 0.03, 0.03], dtype=float)
+        micro = np.zeros(7, dtype=float)
+        micro[1] = 0.02
+
+        # Near upper bound but not extremely close.
+        q_far = np.zeros(7, dtype=float)
+        q_far[1] = 1.10
+        guarded_far, _, _ = apply_limit_aware_j2_guard(
+            state_q=q_far,
+            micro_delta=micro,
+            dq_max_per_joint=dq_lim,
+            cfg=cfg,
+        )
+
+        # Very close to upper bound should allow less positive j2 motion.
+        q_near = np.zeros(7, dtype=float)
+        q_near[1] = 1.19
+        guarded_near, _, _ = apply_limit_aware_j2_guard(
+            state_q=q_near,
+            micro_delta=micro,
+            dq_max_per_joint=dq_lim,
+            cfg=cfg,
+        )
+
+        self.assertLess(float(abs(guarded_near[1])), float(abs(guarded_far[1])))
+        self.assertLess(float(abs(guarded_near[1])), 0.02)
 
     def test_episode_j2_saturation_ratio_drops_with_ttl_micro_step(self):
         cfg = Task1Config(

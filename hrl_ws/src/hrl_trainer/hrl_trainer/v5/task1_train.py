@@ -1161,7 +1161,8 @@ def adapt_action_delta_q(action: L2Action, *, n_joints: int, dq_max_per_joint: n
     raw = np.asarray(action.delta_q_raw, dtype=float)
     if raw.shape != (n_joints,):
         raise ValueError(f"delta_q_raw shape mismatch: expected {(n_joints,)}, got {raw.shape}")
-    a_raw = np.clip(raw, -1.0, 1.0)
+    # Model-level bounded action: map unbounded logits to [-1, 1] smoothly.
+    a_raw = np.tanh(raw)
     return a_raw, a_raw * np.asarray(dq_max_per_joint, dtype=float)
 
 
@@ -1249,22 +1250,30 @@ def apply_limit_aware_j2_guard(
     near_lower = qj2 <= (j2_min + near_buf)
     near_upper = qj2 >= (j2_max - near_buf)
 
-    if near_lower and cmd_j2 < 0.0:
-        guarded[j2] = 0.0
-        mask_triggered = True
-        logs.append('j2_mask=near_lower_block_towards_limit')
-    elif near_upper and cmd_j2 > 0.0:
-        guarded[j2] = 0.0
-        mask_triggered = True
-        logs.append('j2_mask=near_upper_block_towards_limit')
-
     cmd_j2 = float(guarded[j2])
     if near_lower or near_upper:
-        j2_soft_max = float(dq_max_per_joint[j2]) * float(np.clip(cfg.j2_near_limit_dq_scale, 0.05, 1.0))
-        j2_soft_max = max(1e-6, j2_soft_max)
+        base_lim = float(abs(dq_max_per_joint[j2]))
+        min_scale = float(np.clip(cfg.j2_near_limit_dq_scale, 0.05, 1.0))
+        dist_to_min = max(0.0, qj2 - j2_min)
+        dist_to_max = max(0.0, j2_max - qj2)
+
+        # Scale only when moving toward the nearest effective limit.
+        if cmd_j2 < 0.0:
+            directional_dist = dist_to_min
+        elif cmd_j2 > 0.0:
+            directional_dist = dist_to_max
+        else:
+            directional_dist = near_buf
+
+        progress = float(np.clip(directional_dist / max(near_buf, 1e-6), 0.0, 1.0))
+        dynamic_scale = min_scale + (1.0 - min_scale) * progress
+        j2_soft_max = max(1e-6, base_lim * dynamic_scale)
         cmd_j2_soft = float(np.clip(cmd_j2, -j2_soft_max, j2_soft_max))
         if abs(cmd_j2_soft - cmd_j2) > 1e-9:
-            logs.append(f'j2_guard=near_limit_scale soft_max={j2_soft_max:.6f}')
+            logs.append(
+                f'j2_guard=near_limit_scale soft_max={j2_soft_max:.6f} '
+                f'dyn_scale={dynamic_scale:.6f} dist={directional_dist:.6f}'
+            )
         guarded[j2] = cmd_j2_soft
 
     projected = qj2 + float(guarded[j2])

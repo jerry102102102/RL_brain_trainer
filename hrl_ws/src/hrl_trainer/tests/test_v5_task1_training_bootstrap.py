@@ -173,14 +173,14 @@ class TestV5Task1TrainingBootstrap(unittest.TestCase):
 
     def test_action_adapter_bounds(self):
         a_raw, bounded = adapt_action_delta_q(
-            L2Action(delta_q_raw=np.array([1.0, -1.0, 0.04, 0, 0, 0])),
+            L2Action(delta_q_raw=np.array([3.0, -3.0, 0.04, 0, 0, 0])),
             n_joints=6,
             dq_max_per_joint=np.full(6, 0.05, dtype=float),
         )
-        self.assertAlmostEqual(float(a_raw[0]), 1.0)
-        self.assertAlmostEqual(float(a_raw[1]), -1.0)
-        self.assertAlmostEqual(float(bounded[0]), 0.05)
-        self.assertAlmostEqual(float(bounded[1]), -0.05)
+        self.assertTrue(np.all(np.abs(a_raw) <= 1.0 + 1e-9))
+        self.assertTrue(np.all(np.abs(bounded) <= 0.05 + 1e-9))
+        self.assertAlmostEqual(float(a_raw[0]), float(np.tanh(3.0)), places=6)
+        self.assertAlmostEqual(float(a_raw[1]), float(np.tanh(-3.0)), places=6)
 
 
 if __name__ == "__main__":
