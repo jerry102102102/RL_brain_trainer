@@ -31,12 +31,14 @@ class _FakeActionClient:
     def __init__(self, *, wait_ok=True, send_future=None):
         self._wait_ok = wait_ok
         self._send_future = send_future
+        self.last_goal = None
 
     def wait_for_server(self, timeout_sec):
         _ = timeout_sec
         return self._wait_ok
 
-    def send_goal_async(self, _goal):
+    def send_goal_async(self, goal):
+        self.last_goal = goal
         return self._send_future
 
 
@@ -79,7 +81,16 @@ class TestTask1L3ActionExecution(unittest.TestCase):
         ex.l3_exec_mode = "action"
         ex.q_min = np.array([-1.0] * 7, dtype=float)
         ex.q_max = np.array([1.0] * 7, dtype=float)
-        ex._latest_joint_state = types.SimpleNamespace(name=[f"j{i}" for i in range(7)])
+        ex._external_canonical_joint_names = (
+            "Rack_joint",
+            "robot_base_joint",
+            "shoulder1_joint",
+            "shoulder2_joint",
+            "wr1_joint",
+            "wr2_joint",
+            "wr3_joint",
+        )
+        ex._latest_joint_state = types.SimpleNamespace(name=list(ex._external_canonical_joint_names))
         ex._fk_solver = None
         ex._JointTrajectory = _FakeJointTrajectory
         ex._JointTrajectoryPoint = _FakeJointTrajectoryPoint
@@ -168,6 +179,73 @@ class TestTask1L3ActionExecution(unittest.TestCase):
         self.assertTrue(out.no_effect_action)
         self.assertAlmostEqual(out.sat_ratio, 0.0)
         self.assertTrue(any("L3_EXEC:no_effect_action_readback_stale" in s for s in out.logs))
+
+    def test_runtime_state_uses_external_canonical_order_not_prefix_indices(self):
+        ex = self._build_executor()
+        ex._spin_once = lambda _timeout=0.05: None
+        ex._resolve_ee_pose_or_fail = lambda q: (np.array([0.1, 0.2, 0.3], dtype=float), "ee_pose_topic")
+        ex._latest_joint_state = types.SimpleNamespace(
+            name=[
+                "wr2_joint",
+                "shoulder2_joint",
+                "wr1_joint",
+                "Rack_joint",
+                "wr3_joint",
+                "robot_base_joint",
+                "shoulder1_joint",
+            ],
+            position=[6.0, 4.0, 5.0, 1.0, 7.0, 2.0, 3.0],
+            velocity=[0.6, 0.4, 0.5, 0.1, 0.7, 0.2, 0.3],
+        )
+        q, dq, _ = ex.read_runtime_state(7)
+        np.testing.assert_allclose(q, np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], dtype=float))
+        np.testing.assert_allclose(dq, np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], dtype=float))
+
+    def test_action_goal_joint_names_match_external_canonical_controller_joints(self):
+        ex = self._build_executor()
+        wrapped = types.SimpleNamespace(error_code=0, error_string="")
+        result_future = _FakeFuture(done=True, result_obj=types.SimpleNamespace(status=4, result=wrapped))
+        goal_handle = _FakeGoalHandle(accepted=True, result_future=result_future)
+        action_client = _FakeActionClient(wait_ok=True, send_future=_FakeFuture(done=True, result_obj=goal_handle))
+        ex._traj_action_client = action_client
+        q0 = np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        q1 = np.array([0.02, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        calls = [(q0, np.zeros(7), q0[:3].copy()), (q1, np.zeros(7), q1[:3].copy())]
+        ex.read_runtime_state = lambda n_joints: calls.pop(0)
+
+        out = ex.execute_with_safety(self._state(), np.array([0.02, 0, 0, 0, 0, 0, 0], dtype=float))
+        self.assertTrue(out.accepted)
+        self.assertIsNotNone(action_client.last_goal)
+        self.assertEqual(action_client.last_goal.trajectory.joint_names, list(ex._external_canonical_joint_names))
+
+    def test_readback_timestamp_uses_pre_send_stamp(self):
+        ex = self._build_executor()
+        wrapped = types.SimpleNamespace(error_code=0, error_string="")
+        result_future = _FakeFuture(done=True, result_obj=types.SimpleNamespace(status=4, result=wrapped))
+        goal_handle = _FakeGoalHandle(accepted=True, result_future=result_future)
+
+        class _StampAdvancingClient(_FakeActionClient):
+            def send_goal_async(self, goal):
+                self.last_goal = goal
+                ex._latest_joint_stamp_ns = 999
+                return self._send_future
+
+        ex._traj_action_client = _StampAdvancingClient(wait_ok=True, send_future=_FakeFuture(done=True, result_obj=goal_handle))
+        q0 = np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        q1 = np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        calls = [(q0, np.zeros(7), q0[:3].copy()), (q1, np.zeros(7), q1[:3].copy())]
+        ex.read_runtime_state = lambda n_joints: calls.pop(0)
+        ex._latest_joint_stamp_ns = 123
+        captured = {}
+
+        def _capture_wait(*, before_stamp_ns, timeout_sec):
+            captured["before"] = before_stamp_ns
+            _ = timeout_sec
+            return False
+
+        ex._wait_for_joint_state_advance = _capture_wait
+        _ = ex.execute_with_safety(self._state(), np.array([0.02, 0, 0, 0, 0, 0, 0], dtype=float))
+        self.assertEqual(captured.get("before"), 123)
 
     def test_gazebo_default_mode_resolves_to_action(self):
         captured = {}

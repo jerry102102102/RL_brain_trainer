@@ -468,6 +468,8 @@ class GazeboRuntimeL3Executor:
             "wr2_joint",
             "wr3_joint",
         )
+        # Task1 external canonical order (must be used consistently for state+action alignment).
+        self._external_canonical_joint_names = tuple(self._legacy_fk_joint_order)
 
         self._spin_until_discovery_or_fail()
         self._wait_for_action_server_or_fail()
@@ -641,28 +643,74 @@ class GazeboRuntimeL3Executor:
             return "joint_state_first3_fallback"
         return "unavailable"
 
-    def runtime_joint_names(self, n_joints: int) -> tuple[str, ...]:
+    def _canonical_joint_names_or_fail(self, n_joints: int) -> tuple[str, ...]:
+        n = int(n_joints)
+        if n <= 0:
+            return tuple()
+        canonical = tuple(
+            getattr(
+                self,
+                "_external_canonical_joint_names",
+                getattr(
+                    self,
+                    "_legacy_fk_joint_order",
+                    (
+                        "Rack_joint",
+                        "robot_base_joint",
+                        "shoulder1_joint",
+                        "shoulder2_joint",
+                        "wr1_joint",
+                        "wr2_joint",
+                        "wr3_joint",
+                    ),
+                ),
+            )
+        )
+        if len(canonical) < n:
+            raise RuntimeError(
+                "backend=gazebo fail-fast: external canonical joint list shorter than expected "
+                f"({len(canonical)} < {n})"
+            )
+        return canonical[:n]
+
+    def _read_joint_vectors_by_name_or_fail(self, *, joint_names: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:
         if self._latest_joint_state is None:
-            return tuple(f"joint_{idx}" for idx in range(int(n_joints)))
-        names = tuple(self._latest_joint_state.name[:n_joints]) if self._latest_joint_state.name else tuple()
-        if names:
-            return names
-        return tuple(f"joint_{idx}" for idx in range(int(n_joints)))
+            raise RuntimeError("backend=gazebo fail-fast: joint state stream dropped")
+        names = list(getattr(self._latest_joint_state, "name", []) or [])
+        pos = np.asarray(getattr(self._latest_joint_state, "position", []) or [], dtype=float)
+        vel_raw = list(getattr(self._latest_joint_state, "velocity", []) or [])
+        vel = np.asarray(vel_raw, dtype=float) if vel_raw else np.zeros(0, dtype=float)
+
+        if not names:
+            raise RuntimeError("backend=gazebo fail-fast: /joint_states has no joint names")
+        if pos.size < len(names):
+            raise RuntimeError(
+                "backend=gazebo fail-fast: /joint_states positions shorter than names "
+                f"({pos.size} < {len(names)})"
+            )
+
+        index_by_name = {name: idx for idx, name in enumerate(names)}
+        missing = [jn for jn in joint_names if jn not in index_by_name]
+        if missing:
+            raise RuntimeError(
+                "backend=gazebo fail-fast: /joint_states missing canonical joints "
+                f"missing={missing} available={names}"
+            )
+        ordered_idx = [index_by_name[jn] for jn in joint_names]
+        q = np.asarray([pos[idx] for idx in ordered_idx], dtype=float)
+
+        dq = np.zeros(len(joint_names), dtype=float)
+        if vel.size >= len(names):
+            dq = np.asarray([vel[idx] for idx in ordered_idx], dtype=float)
+        return q, dq
+
+    def runtime_joint_names(self, n_joints: int) -> tuple[str, ...]:
+        return self._canonical_joint_names_or_fail(n_joints)
 
     def read_runtime_state(self, n_joints: int) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
         self._spin_once(0.05)
-        if self._latest_joint_state is None:
-            raise RuntimeError("backend=gazebo fail-fast: joint state stream dropped")
-
-        pos = np.asarray(self._latest_joint_state.position, dtype=float)
-        vel = np.asarray(self._latest_joint_state.velocity, dtype=float) if self._latest_joint_state.velocity else np.zeros_like(pos)
-        if pos.size < n_joints:
-            raise RuntimeError(
-                "backend=gazebo fail-fast: /joint_states has fewer joints than expected "
-                f"({pos.size} < {n_joints})"
-            )
-        q = pos[:n_joints].copy()
-        dq = vel[:n_joints].copy() if vel.size >= n_joints else np.zeros(n_joints, dtype=float)
+        canonical_names = self._canonical_joint_names_or_fail(n_joints)
+        q, dq = self._read_joint_vectors_by_name_or_fail(joint_names=canonical_names)
 
         ee_proxy, ee_source = self._resolve_ee_pose_or_fail(q)
         if self.verbose_debug:
@@ -912,7 +960,8 @@ class GazeboRuntimeL3Executor:
 
         goal = self._FollowJointTrajectory.Goal()
         trajectory = self._JointTrajectory()
-        trajectory.joint_names = list(self._latest_joint_state.name[: state.q.size])
+        canonical_names = self._canonical_joint_names_or_fail(state.q.size)
+        trajectory.joint_names = list(canonical_names)
         trajectory.header.stamp = self._node.get_clock().now().to_msg()
         point = self._JointTrajectoryPoint()
         point.positions = q_target.tolist()
@@ -927,6 +976,7 @@ class GazeboRuntimeL3Executor:
             f"time_from_start_sec={point.time_from_start.sec}"
         )
 
+        before_goal_send_stamp_ns = self._latest_joint_stamp_ns
         send_future = self._traj_action_client.send_goal_async(goal)
         self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(self.action_timeout_sec))
         if not send_future.done():
@@ -1016,7 +1066,7 @@ class GazeboRuntimeL3Executor:
         status_name = status_map.get(status, f"UNMAPPED_{status}")
         status_ok = status == 4 and action_error_code == 0
         readback_advanced = self._wait_for_joint_state_advance(
-            before_stamp_ns=self._latest_joint_stamp_ns,
+            before_stamp_ns=before_goal_send_stamp_ns,
             timeout_sec=float(self.action_post_result_wait_sec),
         )
         out = self._finalize_execution_result(
@@ -1072,7 +1122,7 @@ class GazeboRuntimeL3Executor:
         if self._traj_action_client.wait_for_server(timeout_sec=float(timeout_sec)):
             goal = self._FollowJointTrajectory.Goal()
             trajectory = self._JointTrajectory()
-            trajectory.joint_names = list(self._latest_joint_state.name[:n_joints])
+            trajectory.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
             trajectory.header.stamp = self._node.get_clock().now().to_msg()
             point = self._JointTrajectoryPoint()
             point.positions = q_goal.tolist()
@@ -1083,7 +1133,7 @@ class GazeboRuntimeL3Executor:
             self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(timeout_sec))
         else:
             msg = self._JointTrajectory()
-            msg.joint_names = list(self._latest_joint_state.name[:n_joints])
+            msg.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
             msg.header.stamp = self._node.get_clock().now().to_msg()
             point = self._JointTrajectoryPoint()
             point.positions = q_goal.tolist()
