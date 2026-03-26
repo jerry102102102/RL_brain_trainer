@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Literal, Protocol
@@ -176,6 +176,7 @@ class L3ExecutionResult:
     sat_ratio: float = 0.0
     encoder_delta: float = 0.0
     no_motion_signal: bool = False
+    no_effect_action: bool = False
 
 
 @dataclass(frozen=True)
@@ -398,6 +399,7 @@ class GazeboRuntimeL3Executor:
     action_server_timeout_sec: float = 3.0
     action_name: str = "/arm_controller/follow_joint_trajectory"
     action_min_motion_tol: float = 1e-4
+    action_post_result_wait_sec: float = 0.25
     reset_timeout_sec: float = 4.0
     scene_reset_cmd: str | None = None
     reset_position_tol: float = 0.03
@@ -535,6 +537,19 @@ class GazeboRuntimeL3Executor:
 
     def _on_ee_pose(self, msg) -> None:
         self._latest_ee_pose_xyz = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z], dtype=float)
+
+    def _wait_for_joint_state_advance(self, *, before_stamp_ns: int | None, timeout_sec: float) -> bool:
+        if before_stamp_ns is None:
+            self._spin_once(min(0.05, max(0.0, float(timeout_sec))))
+            return self._latest_joint_state is not None
+        deadline = time.time() + max(0.0, float(timeout_sec))
+        while time.time() < deadline:
+            self._spin_once(0.02)
+            now_stamp = self._latest_joint_stamp_ns
+            if now_stamp is not None and int(now_stamp) > int(before_stamp_ns):
+                return True
+        now_stamp = self._latest_joint_stamp_ns
+        return bool(now_stamp is not None and int(now_stamp) > int(before_stamp_ns))
 
     def _lookup_ee_pose_from_tf(self) -> np.ndarray | None:
         if self._tf_buffer is None:
@@ -986,6 +1001,9 @@ class GazeboRuntimeL3Executor:
 
         result_msg = result_future.result()
         status = int(getattr(result_msg, "status", -1))
+        wrapped_result = getattr(result_msg, "result", None)
+        action_error_code = int(getattr(wrapped_result, "error_code", 0)) if wrapped_result is not None else 0
+        action_error_string = str(getattr(wrapped_result, "error_string", "") or "") if wrapped_result is not None else ""
         status_map = {
             0: "UNKNOWN",
             1: "ACCEPTED",
@@ -996,8 +1014,12 @@ class GazeboRuntimeL3Executor:
             6: "ABORTED",
         }
         status_name = status_map.get(status, f"UNMAPPED_{status}")
-        status_ok = status == 4
-        return self._finalize_execution_result(
+        status_ok = status == 4 and action_error_code == 0
+        readback_advanced = self._wait_for_joint_state_advance(
+            before_stamp_ns=self._latest_joint_stamp_ns,
+            timeout_sec=float(self.action_post_result_wait_sec),
+        )
+        out = self._finalize_execution_result(
             state=state,
             q_runtime=q_runtime,
             ee_runtime=ee_runtime,
@@ -1010,6 +1032,9 @@ class GazeboRuntimeL3Executor:
                 "action_goal_response=accepted",
                 f"action_result_status={status}",
                 f"action_result_status_name={status_name}",
+                f"action_result_error_code={action_error_code}",
+                f"action_result_error_string={action_error_string or '<empty>'}",
+                f"joint_state_advanced_after_result={int(readback_advanced)}",
             ],
             status_ok=status_ok,
             requested_delta_q=requested_delta_q,
@@ -1017,6 +1042,20 @@ class GazeboRuntimeL3Executor:
             q_target_minus_runtime=q_target_minus_runtime,
             pre_logs=pre_logs,
         )
+        requested_nonzero = float(np.max(np.abs(requested_delta_q))) >= float(self.null_effect_eps)
+        if status_ok and requested_nonzero and not readback_advanced and float(out.encoder_delta) < float(self.epsilon_motion):
+            patched_logs = tuple(list(out.logs) + ["L3_EXEC:no_effect_action_readback_stale", "L3_EXEC:rejected"])
+            return replace(
+                out,
+                accepted=False,
+                feasible_ratio=1.0,
+                projection_gap=0.0,
+                null_effect_step=False,
+                sat_ratio=0.0,
+                no_effect_action=True,
+                logs=patched_logs,
+            )
+        return out
 
     def reset_arm_to_initial(
         self,
@@ -1587,7 +1626,7 @@ def run_task1_episode(
         effective_step_count += int(effective_step)
         infeasible_count += int(infeasible_step)
         null_effect_count += int(null_effect_step)
-        saturation_count += int(sat_ratio > 1e-6 or command_saturated_warn is not None)
+        saturation_count += int((sat_ratio > 1e-6 or command_saturated_warn is not None) and not l3_result.no_effect_action)
         infeasible_streak = min(cfg.infeasible_streak_cap, infeasible_streak + 1) if infeasible_step else 0
 
         if verbose_debug:
@@ -1673,6 +1712,7 @@ def run_task1_episode(
                     "post_action_joint_delta_max": float(post_action_joint_delta_max),
                     "encoder_delta": float(encoder_delta),
                     "no_motion_signal": bool(l3_result.no_motion_signal),
+                    "no_effect_action": bool(l3_result.no_effect_action),
                     "j2_mask_triggered": bool(j2_mask_triggered),
                     "cmd_to_motion_gain": float(cmd_to_motion_gain),
                 },

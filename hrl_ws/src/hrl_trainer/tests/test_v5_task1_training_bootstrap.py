@@ -6,6 +6,9 @@ from hrl_trainer.v5.task1_train import (
     L2Action,
     Task1Config,
     Task1State,
+    L3ExecutionResult,
+    HighPoseTargetProvider,
+    run_task1_episode,
     adapt_action_delta_q,
     build_task1_observation,
     check_done_success,
@@ -181,6 +184,46 @@ class TestV5Task1TrainingBootstrap(unittest.TestCase):
         self.assertTrue(np.all(np.abs(bounded) <= 0.05 + 1e-9))
         self.assertAlmostEqual(float(a_raw[0]), float(np.tanh(3.0)), places=6)
         self.assertAlmostEqual(float(a_raw[1]), float(np.tanh(-3.0)), places=6)
+
+    def test_no_effect_action_does_not_count_as_saturation_rate(self):
+        cfg = Task1Config(max_steps=1, n_joints=6)
+
+        class _FixedL2:
+            def decide_action(self, _obs):
+                return L2Action(delta_q_raw=np.array([0.4, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float))
+
+        class _NoEffectL3:
+            def execute_with_safety(self, state, _delta_q_cmd):
+                return L3ExecutionResult(
+                    accepted=False,
+                    q_next=state.q.copy(),
+                    dq_next=np.zeros_like(state.q),
+                    safety_violation=0.0,
+                    ee_proxy_xyz=state.ee_proxy_xyz,
+                    requested_delta_q=np.array([0.02, 0, 0, 0, 0, 0], dtype=float),
+                    executed_delta_q=np.zeros(6, dtype=float),
+                    feasible_ratio=0.0,
+                    projection_gap=0.02,
+                    null_effect_step=True,
+                    sat_ratio=1.0,
+                    no_effect_action=True,
+                    logs=("L3_EXEC:no_effect_action_readback_stale",),
+                )
+
+        row = run_task1_episode(
+            episode_index=0,
+            reward_mode="task1_main",
+            cfg=cfg,
+            dq_max_per_joint=np.full(6, 0.05, dtype=float),
+            l1_provider=HighPoseTargetProvider(target_xyz=np.array([0.2, 0.0, 0.35], dtype=float)),
+            l2_policy=_FixedL2(),
+            l3_executor=_NoEffectL3(),
+            initial_q=np.array([0.1, -0.1, 0.3, 0.0, 0.0, 0.0], dtype=float),
+            initial_dq=np.zeros(6, dtype=float),
+            initial_ee_proxy_xyz=np.array([0.1, -0.1, 0.3], dtype=float),
+        )
+
+        self.assertEqual(row["episode_summary"]["saturation_rate"], 0.0)
 
 
 if __name__ == "__main__":
