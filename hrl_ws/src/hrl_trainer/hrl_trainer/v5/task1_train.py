@@ -400,6 +400,8 @@ class GazeboRuntimeL3Executor:
     action_name: str = "/arm_controller/follow_joint_trajectory"
     action_min_motion_tol: float = 1e-4
     action_post_result_wait_sec: float = 0.25
+    action_result_timeout_retries: int = 1
+    action_result_retry_wait_sec: float = 2.0
     reset_timeout_sec: float = 4.0
     scene_reset_cmd: str | None = None
     reset_position_tol: float = 0.03
@@ -962,7 +964,8 @@ class GazeboRuntimeL3Executor:
         trajectory = self._JointTrajectory()
         canonical_names = self._canonical_joint_names_or_fail(state.q.size)
         trajectory.joint_names = list(canonical_names)
-        trajectory.header.stamp = self._node.get_clock().now().to_msg()
+        # Keep stamp at zero so controller interprets as "start immediately".
+        # Non-zero stamp can drift against controller clock and cause goals to stall.
         point = self._JointTrajectoryPoint()
         point.positions = q_target.tolist()
         # Give controller enough execution window for action result feedback.
@@ -1014,31 +1017,98 @@ class GazeboRuntimeL3Executor:
 
         result_future = goal_handle.get_result_async()
         result_wait_timeout = max(float(self.action_timeout_sec), float(point.time_from_start.sec) + 2.0)
-        try:
-            self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=result_wait_timeout)
-        except Exception as exc:
-            return L3ExecutionResult(
-                accepted=False,
-                q_next=q_runtime,
-                dq_next=np.zeros_like(q_runtime),
-                safety_violation=0.0,
-                ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
-                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_wait_exception={exc!r}"),
-                requested_delta_q=requested_delta_q.copy(),
-                executed_delta_q=executed_zero.copy(),
-                feasible_ratio=pre_feasible_ratio,
-                projection_gap=pre_projection_gap,
-                null_effect_step=pre_null_effect_step,
-                sat_ratio=pre_sat_ratio,
-            )
+        retry_count = max(0, int(getattr(self, "action_result_timeout_retries", 1)))
+        retry_wait_sec = max(0.0, float(getattr(self, "action_result_retry_wait_sec", 2.0)))
+        wait_windows = [result_wait_timeout] + [retry_wait_sec] * retry_count
+        total_wait_budget = 0.0
+        for wait_idx, wait_sec in enumerate(wait_windows):
+            total_wait_budget += float(wait_sec)
+            try:
+                self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=float(wait_sec))
+            except Exception as exc:
+                return L3ExecutionResult(
+                    accepted=False,
+                    q_next=q_runtime,
+                    dq_next=np.zeros_like(q_runtime),
+                    safety_violation=0.0,
+                    ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
+                    logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_wait_exception={exc!r}"),
+                    requested_delta_q=requested_delta_q.copy(),
+                    executed_delta_q=executed_zero.copy(),
+                    feasible_ratio=pre_feasible_ratio,
+                    projection_gap=pre_projection_gap,
+                    null_effect_step=pre_null_effect_step,
+                    sat_ratio=pre_sat_ratio,
+                )
+            if result_future.done():
+                break
+            if wait_idx < retry_count:
+                self._spin_once(min(0.05, retry_wait_sec))
+
         if not result_future.done():
+            readback_advanced = self._wait_for_joint_state_advance(
+                before_stamp_ns=before_goal_send_stamp_ns,
+                timeout_sec=float(self.action_post_result_wait_sec),
+            )
+            q_after, dq_after, ee_after = self.read_runtime_state(n_joints=state.q.size)
+            executed_delta_q = np.asarray(q_after - q_runtime, dtype=float)
+            encoder_delta = float(np.max(np.abs(executed_delta_q))) if executed_delta_q.size else 0.0
+            if readback_advanced and encoder_delta >= float(self.epsilon_motion):
+                feasible_ratio, projection_gap, null_effect_step, sat_ratio = compute_feasibility_metrics(
+                    requested_delta_q=requested_delta_q,
+                    executed_delta_q=executed_delta_q,
+                    eps=self.feasibility_eps,
+                    null_effect_eps=self.null_effect_eps,
+                )
+                logs = (
+                    "L3_CHECK:ok",
+                    f"safe_z_min={state.safe_z_min:.3f}",
+                    "L3_EXEC:path=gazebo",
+                    "L3_EXEC:mode=action",
+                    send_log,
+                    f"action_result_timeout={result_wait_timeout:.2f}s",
+                    f"action_result_total_wait_budget={total_wait_budget:.2f}s",
+                    f"action_result_retries_exhausted={retry_count}",
+                    "action_result_timeout_fallback=readback_motion",
+                    f"joint_state_advanced_after_timeout={int(readback_advanced)}",
+                    f"post_action_joint_delta_max={float(np.max(np.abs(dq_after))):.6f}",
+                    f"encoder_delta={encoder_delta:.6f}",
+                    "L3_EXEC:accepted",
+                )
+                return L3ExecutionResult(
+                    accepted=True,
+                    q_next=q_after,
+                    dq_next=dq_after,
+                    safety_violation=0.0,
+                    ee_proxy_xyz=ee_after.copy() if ee_after is not None else (ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz),
+                    logs=logs,
+                    limited_cmd=limited_cmd.copy(),
+                    q_target_minus_runtime=q_target_minus_runtime.copy(),
+                    requested_delta_q=requested_delta_q.copy(),
+                    executed_delta_q=executed_delta_q.copy(),
+                    feasible_ratio=feasible_ratio,
+                    projection_gap=projection_gap,
+                    null_effect_step=null_effect_step,
+                    sat_ratio=sat_ratio,
+                    encoder_delta=encoder_delta,
+                )
+
             return L3ExecutionResult(
                 accepted=False,
                 q_next=q_runtime,
                 dq_next=np.zeros_like(q_runtime),
                 safety_violation=0.0,
                 ee_proxy_xyz=ee_runtime.copy() if ee_runtime is not None else state.ee_proxy_xyz,
-                logs=(send_log, "L3_EXEC:rejected", "L3_EXEC:mode=action", f"action_result_timeout={result_wait_timeout:.2f}s"),
+                logs=(
+                    send_log,
+                    "L3_EXEC:rejected",
+                    "L3_EXEC:mode=action",
+                    f"action_result_timeout={result_wait_timeout:.2f}s",
+                    f"action_result_total_wait_budget={total_wait_budget:.2f}s",
+                    f"action_result_retries_exhausted={retry_count}",
+                    f"joint_state_advanced_after_timeout={int(readback_advanced)}",
+                    f"encoder_delta={encoder_delta:.6f}",
+                ),
                 limited_cmd=limited_cmd.copy(),
                 q_target_minus_runtime=q_target_minus_runtime.copy(),
                 requested_delta_q=requested_delta_q.copy(),
@@ -1047,6 +1117,7 @@ class GazeboRuntimeL3Executor:
                 projection_gap=pre_projection_gap,
                 null_effect_step=pre_null_effect_step,
                 sat_ratio=pre_sat_ratio,
+                encoder_delta=encoder_delta,
             )
 
         result_msg = result_future.result()
@@ -1107,19 +1178,8 @@ class GazeboRuntimeL3Executor:
             )
         return out
 
-    def reset_arm_to_initial(
-        self,
-        *,
-        n_joints: int,
-        timeout_sec: float,
-        target_q: np.ndarray | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-        q_runtime, _, _ = self.read_runtime_state(n_joints=n_joints)
-        q_last = q_runtime.copy()
-        q_goal = np.zeros(n_joints, dtype=float) if target_q is None else np.asarray(target_q, dtype=float).copy()
-        q_goal = np.clip(q_goal, self.q_min[:n_joints], self.q_max[:n_joints])
-
-        if self._traj_action_client.wait_for_server(timeout_sec=float(timeout_sec)):
+    def _send_reset_target(self, *, n_joints: int, q_goal: np.ndarray, timeout_sec: float, use_action: bool) -> bool:
+        if use_action and self._traj_action_client.wait_for_server(timeout_sec=float(timeout_sec)):
             goal = self._FollowJointTrajectory.Goal()
             trajectory = self._JointTrajectory()
             trajectory.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
@@ -1131,27 +1191,68 @@ class GazeboRuntimeL3Executor:
             goal.trajectory = trajectory
             send_future = self._traj_action_client.send_goal_async(goal)
             self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(timeout_sec))
-        else:
-            msg = self._JointTrajectory()
-            msg.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
-            msg.header.stamp = self._node.get_clock().now().to_msg()
-            point = self._JointTrajectoryPoint()
-            point.positions = q_goal.tolist()
-            point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
-            msg.points = [point]
-            self._traj_pub.publish(msg)
+            return True
 
+        msg = self._JointTrajectory()
+        msg.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
+        msg.header.stamp = self._node.get_clock().now().to_msg()
+        point = self._JointTrajectoryPoint()
+        point.positions = q_goal.tolist()
+        point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
+        msg.points = [point]
+        self._traj_pub.publish(msg)
+        return False
+
+    def _wait_reset_convergence(
+        self,
+        *,
+        n_joints: int,
+        q_goal: np.ndarray,
+        timeout_sec: float,
+    ) -> tuple[bool, np.ndarray, np.ndarray, np.ndarray | None]:
+        q_last = q_goal.copy()
+        dq_last = np.zeros_like(q_goal)
+        ee_last = None
         deadline = time.time() + float(timeout_sec)
         while time.time() < deadline:
             self._spin_once(0.05)
             q_now, dq_now, ee_proxy_now = self.read_runtime_state(n_joints=n_joints)
-            q_last = q_now
+            q_last, dq_last, ee_last = q_now, dq_now, ee_proxy_now
             if float(np.max(np.abs(q_now - q_goal))) <= float(self.reset_position_tol):
-                return q_now, dq_now, ee_proxy_now
+                return True, q_now, dq_now, ee_proxy_now
+        return False, q_last, dq_last, ee_last
+
+    def reset_arm_to_initial(
+        self,
+        *,
+        n_joints: int,
+        timeout_sec: float,
+        target_q: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        q_runtime, _, _ = self.read_runtime_state(n_joints=n_joints)
+        q_goal = np.zeros(n_joints, dtype=float) if target_q is None else np.asarray(target_q, dtype=float).copy()
+        q_goal = np.clip(q_goal, self.q_min[:n_joints], self.q_max[:n_joints])
+
+        action_used = self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=timeout_sec, use_action=True)
+        ok, q_last, dq_last, ee_last = self._wait_reset_convergence(n_joints=n_joints, q_goal=q_goal, timeout_sec=timeout_sec)
+        if ok:
+            return q_last, dq_last, ee_last
+
+        # Fallback path: action goal accepted but no observable convergence; force a topic command once.
+        self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=max(0.2, float(timeout_sec) * 0.5), use_action=False)
+        ok_fallback, q_fb, dq_fb, ee_fb = self._wait_reset_convergence(
+            n_joints=n_joints,
+            q_goal=q_goal,
+            timeout_sec=max(0.3, float(timeout_sec) * 0.5),
+        )
+        if ok_fallback:
+            if self.verbose_debug:
+                print(f"[gazebo-debug] reset fallback recovered convergence action_used={int(action_used)}")
+            return q_fb, dq_fb, ee_fb
 
         raise RuntimeError(
             "backend=gazebo fail-fast: arm reset did not converge within "
-            f"{timeout_sec:.2f}s (max_abs_error={float(np.max(np.abs(q_last - q_goal))):.4f})"
+            f"{timeout_sec:.2f}s (after action+topic fallback, max_abs_error={float(np.max(np.abs(q_fb - q_goal))):.4f})"
         )
 
     def reset_episode(self, *, n_joints: int, timeout_sec: float | None = None) -> dict[str, object]:
