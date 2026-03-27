@@ -57,7 +57,7 @@ def run_pipeline_e2e(
         step_count = min(int(steps_per_episode), stage.step_budget)
 
         try:
-            logs = run_smoke(run_id=ep_id, steps=step_count, log_root=logs_root)
+            logs = run_smoke(run_id=ep_id, steps=step_count, log_root=logs_root, episode=ep)
         except Exception:
             reset_failures += 1
             break
