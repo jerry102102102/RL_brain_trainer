@@ -1,0 +1,20 @@
+{
+  "gate": {
+    "max_intervention_rate": 0.3,
+    "min_episodes": 3,
+    "min_success_rate": 0.7,
+    "name": "v5_1_min_exec_gate"
+  },
+  "result": {
+    "metrics": {
+      "episodes": 4.0,
+      "intervention_rate": 0.25,
+      "success_rate": 0.5
+    },
+    "passed": false,
+    "reasons": [
+      "success_rate<0.70"
+    ],
+    "score": 0.6666666666666667
+  }
+}
