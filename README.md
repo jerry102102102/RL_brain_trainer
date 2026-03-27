@@ -5,6 +5,24 @@
 
 ---
 
+## V5.1 current direction（快速入口）
+
+> 當前主軸已收斂到 **V5.1：L2 joint-space SAC + L3 deterministic safety execution**。
+
+- V5.1 正式計劃（主文檔）：`docs/V5_1_IMPLEMENTATION_PLAN.md`
+- V5.1 當前短總覽（可審核）：`docs/V5_1_STATUS_SUMMARY.md`
+- WP1.5 Runtime parity（關鍵風險與檢查）：`docs/WP1_5_RUNTIME_PARITY_CHECKER.md`
+- WP1.5 readiness / risk（關鍵風險報告）：`docs/WP1_5_READINESS_RISK_REPORT.md`
+- RBT 關鍵 rerun 報告（L3）：`reports/task1_real_l3_rerun_report_2026-03-22.md`
+
+建議閱讀順序：
+1. `docs/V5_1_STATUS_SUMMARY.md`
+2. `docs/V5_1_IMPLEMENTATION_PLAN.md`
+3. `docs/WP1_5_RUNTIME_PARITY_CHECKER.md`
+4. `reports/task1_real_l3_rerun_report_2026-03-22.md`
+
+---
+
 ## 中文（Current Truth）
 
 ## 1) 當前狀態（2026-03）
