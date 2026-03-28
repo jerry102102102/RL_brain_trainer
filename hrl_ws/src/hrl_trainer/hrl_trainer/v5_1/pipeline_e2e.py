@@ -6,14 +6,19 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
 from .curriculum import CurriculumManager
 from .gates import DEFAULT_GATE, GateEvaluator, write_gate_report
+from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig
 from .pipeline_smoke import run_smoke
 from .reward import RewardComposer, RewardTraceWriter
+from .runtime_ros2 import RuntimeROS2Adapter
+
+
+RuntimeFactory = Callable[..., RuntimeROS2Adapter]
 
 
 def _safe_rate(numerator: int, denominator: int) -> float:
@@ -32,6 +37,107 @@ def _obs_from_q_target(q: np.ndarray, target_q: np.ndarray) -> np.ndarray:
     return np.concatenate([q, err], axis=0)
 
 
+def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
+
+
+def _run_episode_gz(
+    *,
+    ep_id: str,
+    ep_index: int,
+    step_count: int,
+    logs_root: Path,
+    runtime: RuntimeROS2Adapter,
+    target_q: np.ndarray,
+    policy_fn: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]],
+) -> dict[str, Any]:
+    ts0 = time.time_ns()
+    executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1))
+
+    l1_path = logs_root / "l1" / f"{ep_id}.jsonl"
+    l2_path = logs_root / "l2" / f"{ep_id}.jsonl"
+    l3_path = logs_root / "l3" / f"{ep_id}.jsonl"
+
+    prev_q_des: np.ndarray | None = None
+    trace_steps: list[dict[str, Any]] = []
+
+    for step in range(max(1, int(step_count))):
+        now_ns = ts0 + step * 100_000_000
+        q_before = runtime.read_q()
+        goal_error_prev = float(np.linalg.norm(target_q - q_before))
+        action_raw, policy_name = policy_fn(q_before.copy(), target_q.copy())
+
+        l1_payload = {
+            "run_id": ep_id,
+            "episode": int(ep_index),
+            "step": int(step),
+            "ts": int(now_ns),
+            "observation": {"q": q_before.tolist(), "target_q": target_q.tolist(), "goal_error_l2": goal_error_prev},
+        }
+        _jsonl_append(l1_path, l1_payload)
+
+        exec_out = executor.compute_q_des(q_current=q_before, delta_q_cmd=action_raw, prev_q_des=prev_q_des)
+        prev_q_des = exec_out.q_des
+        saturation = bool(np.any(np.abs(exec_out.clamped_delta_q - exec_out.requested_delta_q) > 1e-12))
+
+        l2_payload = {
+            "run_id": ep_id,
+            "episode": int(ep_index),
+            "step": int(step),
+            "ts": int(now_ns),
+            "policy": policy_name,
+            "action_raw": exec_out.requested_delta_q.tolist(),
+            "action_clamped": exec_out.clamped_delta_q.tolist(),
+            "projection_applied": bool(exec_out.projection_applied),
+            "saturated": saturation,
+        }
+        _jsonl_append(l2_path, l2_payload)
+
+        rt = runtime.step(exec_out.q_des)
+        q_after = np.asarray(rt["q_after"], dtype=float)
+        goal_error_next = float(np.linalg.norm(target_q - q_after))
+
+        l3_payload = {
+            "run_id": ep_id,
+            "episode": int(ep_index),
+            "step": int(step),
+            "ts": int(now_ns),
+            "cmd_q": rt["cmd_q"],
+            "q_before": rt["q_before"],
+            "q_after": rt["q_after"],
+            "joint_delta_l2": float(rt["joint_delta_l2"]),
+            "goal_error_l2": goal_error_next,
+        }
+        _jsonl_append(l3_path, l3_payload)
+
+        trace_steps.append(
+            {
+                "step": int(step),
+                "obs_q": rt["q_before"],
+                "q_after": rt["q_after"],
+                "target_q": target_q.tolist(),
+                "action_raw": exec_out.requested_delta_q.tolist(),
+                "action_clamped": exec_out.clamped_delta_q.tolist(),
+                "goal_error_prev": goal_error_prev,
+                "goal_error_next": goal_error_next,
+                "intervention": "none",
+                "projection_applied": bool(exec_out.projection_applied),
+                "saturated": saturation,
+                "runtime": rt,
+            }
+        )
+
+    return {
+        "l1": str(l1_path),
+        "l2": str(l2_path),
+        "l3": str(l3_path),
+        "trace_steps": trace_steps,
+        "final_goal_error": float(trace_steps[-1]["goal_error_next"]) if trace_steps else 0.0,
+    }
+
+
 def run_pipeline_e2e(
     run_id: str,
     episodes: int,
@@ -40,6 +146,11 @@ def run_pipeline_e2e(
     enforce_gates: bool = False,
     policy_mode: str = "sac_torch",
     sac_seed: int = 0,
+    runtime_mode: str = "smoke",
+    runtime_factory: RuntimeFactory | None = None,
+    runtime_joint_names: list[str] | None = None,
+    trajectory_topic: str = "/arm_controller/joint_trajectory",
+    joint_state_topic: str = "/joint_states",
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_root)
     logs_root = artifact_root / "logs"
@@ -49,15 +160,31 @@ def run_pipeline_e2e(
     reward_trace = RewardTraceWriter(reward_trace_path)
     reward_composer = RewardComposer()
 
+    runtime_trace_path = artifact_root / "runtime_trace.jsonl"
+    runtime_trace_path.write_text("", encoding="utf-8")
+
     curriculum = CurriculumManager()
     gate_eval = GateEvaluator(DEFAULT_GATE)
 
     if policy_mode != "sac_torch":
         raise ValueError("V5.1 single-path only supports policy_mode=sac_torch")
+    if runtime_mode not in {"smoke", "gz"}:
+        raise ValueError("runtime_mode must be one of: smoke|gz")
 
     from .sac_torch import SACTorchAgent, SACTorchConfig
 
     agent: Any = SACTorchAgent(SACTorchConfig(obs_dim=12, action_dim=6), seed=sac_seed)
+
+    runtime = None
+    if runtime_mode == "gz":
+        if not runtime_joint_names:
+            raise ValueError("runtime_joint_names is required for runtime_mode=gz")
+        factory = runtime_factory or RuntimeROS2Adapter.from_ros2
+        runtime = factory(
+            joint_names=runtime_joint_names,
+            trajectory_topic=trajectory_topic,
+            joint_state_topic=joint_state_topic,
+        )
 
     episodes_requested = max(1, int(episodes))
     successes = 0
@@ -69,106 +196,165 @@ def run_pipeline_e2e(
     reset_failures = 0
     reward_totals: list[float] = []
     train_metrics: list[dict[str, float]] = []
+    episode_joint_delta_summary: list[dict[str, Any]] = []
 
-    for ep in range(episodes_requested):
-        stage = curriculum.current_stage
-        ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
-        step_count = min(int(steps_per_episode), stage.step_budget)
+    try:
+        for ep in range(episodes_requested):
+            stage = curriculum.current_stage
+            ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
+            step_count = min(int(steps_per_episode), stage.step_budget)
 
-        target_q = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
+            target_q = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
 
-        def _policy_fn(q: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, str]:
-            obs = _obs_from_q_target(q, target)
-            return agent.act(obs, stochastic=True), policy_mode
+            def _policy_fn(q: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, str]:
+                obs = _obs_from_q_target(q, target)
+                return agent.act(obs, stochastic=True), policy_mode
 
-        try:
-            logs = run_smoke(run_id=ep_id, steps=step_count, log_root=logs_root, episode=ep, policy_fn=_policy_fn)
-        except Exception:
-            reset_failures += 1
-            break
+            try:
+                if runtime_mode == "smoke":
+                    logs = run_smoke(
+                        run_id=ep_id,
+                        steps=step_count,
+                        log_root=logs_root,
+                        episode=ep,
+                        policy_fn=_policy_fn,
+                    )
+                else:
+                    logs = _run_episode_gz(
+                        ep_id=ep_id,
+                        ep_index=ep,
+                        step_count=step_count,
+                        logs_root=logs_root,
+                        runtime=runtime,
+                        target_q=target_q,
+                        policy_fn=_policy_fn,
+                    )
+            except Exception:
+                reset_failures += 1
+                break
 
-        expected_log_lines_per_layer += max(1, int(step_count))
+            expected_log_lines_per_layer += max(1, int(step_count))
 
-        episode_return = 0.0
-        ep_intervention = 0
-        prev_action = np.zeros(6, dtype=float)
-        trace_steps = logs.get("trace_steps", [])
+            episode_return = 0.0
+            ep_intervention = 0
+            prev_action = np.zeros(6, dtype=float)
+            trace_steps = logs.get("trace_steps", [])
 
-        for idx, step in enumerate(trace_steps):
-            action = np.asarray(step["action_raw"], dtype=float)
-            prev_error = float(step["goal_error_prev"])
-            curr_error = float(step["goal_error_next"])
-            intervention_now = step["intervention"] != "none"
-            clamp_or_projection = bool(step["saturated"] or step["projection_applied"])
+            ep_q_before = np.asarray(trace_steps[0]["runtime"]["q_before"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
+            ep_q_after = np.asarray(trace_steps[-1]["runtime"]["q_after"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
 
-            done = idx == len(trace_steps) - 1
-            done_reason = "running"
-            if done:
-                done_reason = "success" if curr_error < 0.08 else "timeout"
+            for idx, step in enumerate(trace_steps):
+                action = np.asarray(step["action_raw"], dtype=float)
+                prev_error = float(step["goal_error_prev"])
+                curr_error = float(step["goal_error_next"])
+                intervention_now = step["intervention"] != "none"
+                clamp_or_projection = bool(step["saturated"] or step["projection_applied"])
 
-            terms = reward_composer.compute(
-                prev_error=prev_error,
-                curr_error=curr_error,
-                action=action,
-                prev_action=prev_action,
-                intervention=intervention_now,
-                clamp_or_projection=clamp_or_projection,
-                done=done,
-                done_reason=done_reason,
-            )
-            prev_action = action
-            episode_return += terms.total
-            reward_totals.append(terms.total)
+                done = idx == len(trace_steps) - 1
+                done_reason = "running"
+                if done:
+                    done_reason = "success" if curr_error < 0.08 else "timeout"
 
-            reward_trace.append(
-                {
-                    "run_id": run_id,
-                    "episode": ep,
-                    "step": int(step["step"]),
-                    "policy_mode": policy_mode,
-                    "done": done,
-                    "done_reason": done_reason,
-                    "goal_error_prev": prev_error,
-                    "goal_error_next": curr_error,
-                    "components": terms.to_dict(),
-                }
-            )
+                terms = reward_composer.compute(
+                    prev_error=prev_error,
+                    curr_error=curr_error,
+                    action=action,
+                    prev_action=prev_action,
+                    intervention=intervention_now,
+                    clamp_or_projection=clamp_or_projection,
+                    done=done,
+                    done_reason=done_reason,
+                )
+                prev_action = action
+                episode_return += terms.total
+                reward_totals.append(terms.total)
 
-            if intervention_now:
-                ep_intervention = 1
+                reward_trace.append(
+                    {
+                        "run_id": run_id,
+                        "episode": ep,
+                        "step": int(step["step"]),
+                        "policy_mode": policy_mode,
+                        "runtime_mode": runtime_mode,
+                        "done": done,
+                        "done_reason": done_reason,
+                        "goal_error_prev": prev_error,
+                        "goal_error_next": curr_error,
+                        "components": terms.to_dict(),
+                    }
+                )
 
-            if agent is not None:
+                if runtime_mode == "gz":
+                    _jsonl_append(
+                        runtime_trace_path,
+                        {
+                            "run_id": run_id,
+                            "episode": ep,
+                            "step": int(step["step"]),
+                            "cmd_q": step["runtime"]["cmd_q"],
+                            "readback_q_before": step["runtime"]["q_before"],
+                            "readback_q_after": step["runtime"]["q_after"],
+                            "joint_delta": step["runtime"]["joint_delta"],
+                            "joint_delta_l2": step["runtime"]["joint_delta_l2"],
+                            "goal_error_prev": prev_error,
+                            "goal_error_next": curr_error,
+                            "timestamp_ns": step["runtime"]["timestamp_ns"],
+                        },
+                    )
+
+                if intervention_now:
+                    ep_intervention = 1
+
                 obs = _obs_from_q_target(np.asarray(step["obs_q"], dtype=float), target_q)
-                next_q = np.asarray(step["obs_q"], dtype=float) + np.asarray(step["action_clamped"], dtype=float)
+                if runtime_mode == "gz":
+                    next_q = np.asarray(step["q_after"], dtype=float)
+                else:
+                    next_q = np.asarray(step["obs_q"], dtype=float) + np.asarray(step["action_clamped"], dtype=float)
                 next_obs = _obs_from_q_target(next_q, target_q)
                 agent.remember(obs, action, terms.total, next_obs, done)
                 train_out = agent.train_step()
                 if train_out is not None:
                     train_metrics.append(train_out)
 
-        final_error = float(logs.get("final_goal_error", 1.0))
-        ep_success = 1 if final_error < 0.08 else 0
+            final_error = float(logs.get("final_goal_error", 1.0))
+            ep_success = 1 if final_error < 0.08 else 0
 
-        record = curriculum.record_episode(success_rate=float(ep_success))
-        successes += ep_success
-        interventions += ep_intervention
-        success_series.append(float(ep_success))
-        intervention_series.append(float(ep_intervention))
+            if runtime_mode == "gz" and ep_q_before is not None and ep_q_after is not None:
+                delta = ep_q_after - ep_q_before
+                episode_joint_delta_summary.append(
+                    {
+                        "episode": ep,
+                        "before_q": ep_q_before.tolist(),
+                        "after_q": ep_q_after.tolist(),
+                        "delta_q": delta.tolist(),
+                        "delta_q_l2": float(np.linalg.norm(delta)),
+                    }
+                )
 
-        episode_outputs.append(
-            {
-                "episode": ep,
-                "run_id": ep_id,
-                "stage": record.stage_name,
-                "success_rate": float(ep_success),
-                "promoted": record.promoted,
-                "logs": {k: v for k, v in logs.items() if k in {"l1", "l2", "l3"}},
-                "has_intervention": bool(ep_intervention),
-                "episode_return": float(episode_return),
-                "final_goal_error": final_error,
-                "policy_mode": policy_mode,
-            }
-        )
+            record = curriculum.record_episode(success_rate=float(ep_success))
+            successes += ep_success
+            interventions += ep_intervention
+            success_series.append(float(ep_success))
+            intervention_series.append(float(ep_intervention))
+
+            episode_outputs.append(
+                {
+                    "episode": ep,
+                    "run_id": ep_id,
+                    "stage": record.stage_name,
+                    "success_rate": float(ep_success),
+                    "promoted": record.promoted,
+                    "logs": {k: v for k, v in logs.items() if k in {"l1", "l2", "l3"}},
+                    "has_intervention": bool(ep_intervention),
+                    "episode_return": float(episode_return),
+                    "final_goal_error": final_error,
+                    "policy_mode": policy_mode,
+                    "runtime_mode": runtime_mode,
+                }
+            )
+    finally:
+        if runtime is not None:
+            runtime.close()
 
     metrics = {
         "episodes_requested": episodes_requested,
@@ -225,10 +411,13 @@ def run_pipeline_e2e(
             "gate": str(gate_path),
             "logs_root": str(logs_root),
             "reward_trace": str(reward_trace_path),
+            "runtime_trace": str(runtime_trace_path),
         },
         "policy_mode": policy_mode,
+        "runtime_mode": runtime_mode,
         "gate_overall_decision": gate_result.overall_decision,
         "gate_passed": gate_result.overall_decision == "GO",
+        "episode_joint_delta_summary": episode_joint_delta_summary,
     }
 
     if train_metrics:
@@ -248,6 +437,7 @@ def run_pipeline_e2e(
         "gate": str(gate_path),
         "logs_root": str(logs_root),
         "reward_trace": str(reward_trace_path),
+        "runtime_trace": str(runtime_trace_path),
         "status": status,
         "exit_code": exit_code,
     }
@@ -261,8 +451,14 @@ def main() -> int:
     parser.add_argument("--artifact-root", default="artifacts/v5_1/e2e")
     parser.add_argument("--enforce-gates", action="store_true")
     parser.add_argument("--policy-mode", choices=["sac_torch"], default="sac_torch")
+    parser.add_argument("--runtime-mode", choices=["smoke", "gz"], default="smoke")
+    parser.add_argument("--runtime-joint-names", default="")
+    parser.add_argument("--trajectory-topic", default="/arm_controller/joint_trajectory")
+    parser.add_argument("--joint-state-topic", default="/joint_states")
     parser.add_argument("--sac-seed", type=int, default=0)
     args = parser.parse_args()
+
+    joint_names = [x.strip() for x in args.runtime_joint_names.split(",") if x.strip()]
 
     outputs = run_pipeline_e2e(
         run_id=args.run_id,
@@ -272,6 +468,10 @@ def main() -> int:
         enforce_gates=args.enforce_gates,
         policy_mode=args.policy_mode,
         sac_seed=args.sac_seed,
+        runtime_mode=args.runtime_mode,
+        runtime_joint_names=joint_names,
+        trajectory_topic=args.trajectory_topic,
+        joint_state_topic=args.joint_state_topic,
     )
     print(json.dumps({"run_id": args.run_id, "outputs": outputs}, indent=2, sort_keys=True))
     return int(outputs.get("exit_code", 0))

@@ -34,6 +34,7 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(out["exit_code"], 0)
             self.assertTrue(summary_path.exists())
             self.assertTrue((tmp_path / "artifacts" / "reward_trace.jsonl").exists())
+            self.assertTrue((tmp_path / "artifacts" / "runtime_trace.jsonl").exists())
             self.assertTrue(curriculum_path.exists())
             self.assertTrue(gate_path.exists())
 
@@ -110,6 +111,68 @@ class TestV51PipelineE2E(unittest.TestCase):
                 self.assertEqual(gate_payload["overall_decision"], "HOLD")
         finally:
             pipeline_e2e.run_smoke = original
+
+    def test_pipeline_e2e_gz_mode_writes_runtime_trace(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _FakeRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": after.tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": float(_np.linalg.norm(after - before)),
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_gz",
+                episodes=2,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_gz",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _FakeRuntime(**kwargs),
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            runtime_trace = tmp_path / "artifacts_gz" / "runtime_trace.jsonl"
+            self.assertTrue(runtime_trace.exists())
+            self.assertGreater(len(runtime_trace.read_text(encoding="utf-8").strip().splitlines()), 0)
+
+            summary = json.loads((tmp_path / "artifacts_gz" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["runtime_mode"], "gz")
+            self.assertGreaterEqual(len(summary["episode_joint_delta_summary"]), 1)
+
+    def test_pipeline_e2e_gz_mode_requires_joint_names(self) -> None:
+        with self.assertRaises(ValueError):
+            run_pipeline_e2e(
+                run_id="test_e2e_gz_missing_names",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root="/tmp/unused",
+                runtime_mode="gz",
+            )
 
 
 if __name__ == "__main__":
