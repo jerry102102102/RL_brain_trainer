@@ -6,6 +6,8 @@ from .curriculum import CurriculumManager, CurriculumState, EpisodeRecord, Stage
 from .gates import DEFAULT_GATE, GateEvaluator, GateResult, GateSpec
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig, L3ExecutorResult
 from .safety_watchdog import Intervention, SafetyWatchdog, WatchdogDecision
+from .reward import RewardComposer, RewardConfig, RewardTerms
+from .sac_agent import SACAgent, SACConfig, ReplayBuffer
 
 __all__ = [
     "ActionCommand",
@@ -26,4 +28,10 @@ __all__ = [
     "GateResult",
     "GateEvaluator",
     "DEFAULT_GATE",
+    "RewardComposer",
+    "RewardConfig",
+    "RewardTerms",
+    "SACAgent",
+    "SACConfig",
+    "ReplayBuffer",
 ]

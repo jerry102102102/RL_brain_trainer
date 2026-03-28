@@ -6,7 +6,7 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -20,6 +20,8 @@ from .contracts import (
 )
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig
 from .safety_watchdog import Intervention, SafetyWatchdog
+
+PolicyFn = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]]
 
 
 def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
@@ -36,7 +38,13 @@ def _build_gate_snapshot(now_s: float, watchdog: SafetyWatchdog) -> dict[str, fl
     }
 
 
-def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict[str, str]:
+def run_smoke(
+    run_id: str,
+    steps: int,
+    log_root: Path,
+    episode: int = 0,
+    policy_fn: PolicyFn | None = None,
+) -> dict[str, Any]:
     ts0 = time.time_ns()
     q = np.zeros(6, dtype=float)
     dq = np.zeros(6, dtype=float)
@@ -50,8 +58,10 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
     l3_path = log_root / "l3" / f"{run_id}.jsonl"
 
     prev_q_des: np.ndarray | None = None
+    trace_steps: list[dict[str, Any]] = []
 
-    for step in range(max(1, int(steps))):
+    n_steps = max(1, int(steps))
+    for step in range(n_steps):
         now_ns = ts0 + step * 100_000_000
         now_s = step * 0.1
 
@@ -99,13 +109,18 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
             ),
         )
 
-        delta_q_raw = (target_q - q) * 0.5
+        if policy_fn is None:
+            delta_q_raw = (target_q - q) * 0.5
+            policy_name = "rule"
+        else:
+            delta_q_raw, policy_name = policy_fn(q.copy(), target_q.copy())
+
         action = ActionCommand(
             schema_version=SCHEMA_VERSION,
             run_id=run_id,
             step_index=step,
             timestamp_ns=now_ns,
-            source="l2_policy",
+            source=policy_name,
             delta_q=delta_q_raw.tolist(),
         )
         action_payload = to_payload(action)
@@ -123,7 +138,7 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
             "action_clipped": delta_q_clipped.tolist(),
             "delta_q": action_payload["delta_q"],
             "policy_status": {
-                "name": "l2_policy",
+                "name": policy_name,
                 "healthy": True,
                 "saturated": saturation,
             },
@@ -153,6 +168,8 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
         q = q_next
         prev_q_des = result.q_des
 
+        goal_err_next = float(np.linalg.norm(target_q - q_next))
+
         l3_payload = {
             "run_id": run_id,
             "episode": int(episode),
@@ -166,6 +183,7 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
             "clamped_delta_q": result.clamped_delta_q.tolist(),
             "limited_q_des": result.limited_q_des.tolist(),
             "projection_applied": result.projection_applied,
+            "goal_error_l2": goal_err_next,
             "gate_snapshot": _build_gate_snapshot(now_s=now_s, watchdog=watchdog),
         }
         _jsonl_append(
@@ -182,7 +200,28 @@ def run_smoke(run_id: str, steps: int, log_root: Path, episode: int = 0) -> dict
             ),
         )
 
-    return {"l1": str(l1_path), "l2": str(l2_path), "l3": str(l3_path)}
+        trace_steps.append(
+            {
+                "step": step,
+                "obs_q": obs.q,
+                "target_q": target_q.tolist(),
+                "action_raw": result.requested_delta_q.tolist(),
+                "action_clamped": result.clamped_delta_q.tolist(),
+                "goal_error_prev": goal_err,
+                "goal_error_next": goal_err_next,
+                "intervention": wd.intervention.value,
+                "projection_applied": bool(result.projection_applied),
+                "saturated": saturation,
+            }
+        )
+
+    return {
+        "l1": str(l1_path),
+        "l2": str(l2_path),
+        "l3": str(l3_path),
+        "trace_steps": trace_steps,
+        "final_goal_error": float(trace_steps[-1]["goal_error_next"]) if trace_steps else 0.0,
+    }
 
 
 def main() -> int:
