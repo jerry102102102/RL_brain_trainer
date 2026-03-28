@@ -10,6 +10,7 @@ from hrl_trainer.v5_1.pipeline_e2e import run_pipeline_e2e
 TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 
 
+@unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed in this environment")
 class TestV51PipelineE2E(unittest.TestCase):
     def test_pipeline_e2e_outputs_artifacts_and_logs(self) -> None:
         from pathlib import Path
@@ -22,7 +23,6 @@ class TestV51PipelineE2E(unittest.TestCase):
                 episodes=4,
                 steps_per_episode=3,
                 artifact_root=tmp_path / "artifacts",
-                policy_mode="rule",
             )
 
             summary_path = tmp_path / "artifacts" / "pipeline_summary.json"
@@ -42,6 +42,7 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("metrics", summary)
             self.assertIn("artifacts", summary)
             self.assertEqual(summary["gate_overall_decision"], "GO")
+            self.assertEqual(summary["policy_mode"], "sac_torch")
 
             gate_payload = json.loads(gate_path.read_text(encoding="utf-8"))
             self.assertEqual(gate_payload["overall_decision"], "GO")
@@ -51,7 +52,6 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertTrue((logs_root / "l2").exists())
             self.assertTrue((logs_root / "l3").exists())
 
-    @unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed in this environment")
     def test_pipeline_e2e_supports_sac_torch_policy_mode(self) -> None:
         from pathlib import Path
         import tempfile
@@ -73,6 +73,16 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("train_metrics", summary)
             self.assertGreaterEqual(len(summary["train_metrics"]), 1)
 
+    def test_pipeline_e2e_rejects_non_torch_policy_mode(self) -> None:
+        with self.assertRaises(ValueError):
+            run_pipeline_e2e(
+                run_id="test_e2e_bad_mode",
+                episodes=1,
+                steps_per_episode=2,
+                artifact_root="/tmp/unused",
+                policy_mode="rule",
+            )
+
     def test_pipeline_e2e_enforce_gates_returns_nonzero_on_fail(self) -> None:
         from pathlib import Path
         import tempfile
@@ -91,7 +101,6 @@ class TestV51PipelineE2E(unittest.TestCase):
                     steps_per_episode=3,
                     artifact_root=tmp_path / "artifacts",
                     enforce_gates=True,
-                    policy_mode="rule",
                 )
 
                 self.assertEqual(out["status"], "gates_blocked")

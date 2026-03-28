@@ -14,7 +14,6 @@ from .curriculum import CurriculumManager
 from .gates import DEFAULT_GATE, GateEvaluator, write_gate_report
 from .pipeline_smoke import run_smoke
 from .reward import RewardComposer, RewardTraceWriter
-from .sac_agent import SACAgent, SACConfig
 
 
 def _safe_rate(numerator: int, denominator: int) -> float:
@@ -53,13 +52,12 @@ def run_pipeline_e2e(
     curriculum = CurriculumManager()
     gate_eval = GateEvaluator(DEFAULT_GATE)
 
-    agent: Any | None = None
-    if policy_mode == "sac":
-        agent = SACAgent(SACConfig(obs_dim=12, action_dim=6), seed=sac_seed)
-    elif policy_mode == "sac_torch":
-        from .sac_torch import SACTorchAgent, SACTorchConfig
+    if policy_mode != "sac_torch":
+        raise ValueError("V5.1 single-path only supports policy_mode=sac_torch")
 
-        agent = SACTorchAgent(SACTorchConfig(obs_dim=12, action_dim=6), seed=sac_seed)
+    from .sac_torch import SACTorchAgent, SACTorchConfig
+
+    agent: Any = SACTorchAgent(SACTorchConfig(obs_dim=12, action_dim=6), seed=sac_seed)
 
     episodes_requested = max(1, int(episodes))
     successes = 0
@@ -80,8 +78,6 @@ def run_pipeline_e2e(
         target_q = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
 
         def _policy_fn(q: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, str]:
-            if policy_mode == "rule" or agent is None:
-                return (target - q) * 0.5, "rule"
             obs = _obs_from_q_target(q, target)
             return agent.act(obs, stochastic=True), policy_mode
 
@@ -264,7 +260,7 @@ def main() -> int:
     parser.add_argument("--steps-per-episode", type=int, default=5)
     parser.add_argument("--artifact-root", default="artifacts/v5_1/e2e")
     parser.add_argument("--enforce-gates", action="store_true")
-    parser.add_argument("--policy-mode", choices=["rule", "sac", "sac_torch"], default="sac_torch")
+    parser.add_argument("--policy-mode", choices=["sac_torch"], default="sac_torch")
     parser.add_argument("--sac-seed", type=int, default=0)
     args = parser.parse_args()
 

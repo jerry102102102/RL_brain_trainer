@@ -7,7 +7,6 @@ from .gates import DEFAULT_GATE, GateEvaluator, GateResult, GateSpec
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig, L3ExecutorResult
 from .safety_watchdog import Intervention, SafetyWatchdog, WatchdogDecision
 from .reward import RewardComposer, RewardConfig, RewardTerms
-from .sac_agent import SACAgent, SACConfig, ReplayBuffer
 
 try:
     from .sac_torch import SACTorchAgent, SACTorchConfig, TorchReplayBuffer
@@ -38,9 +37,6 @@ __all__ = [
     "RewardComposer",
     "RewardConfig",
     "RewardTerms",
-    "SACAgent",
-    "SACConfig",
-    "ReplayBuffer",
 ]
 
 if SACTorchAgent is not None:

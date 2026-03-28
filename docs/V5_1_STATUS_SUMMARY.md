@@ -1,6 +1,7 @@
 # V5.1 Status Summary（短版）
 
 - 日期：2026-03-27
+- 2026-03-27 晚間更新：V5.1 已收斂為單一路徑（ROS2 + venv + SAC Torch）
 - 範圍：RBT（RL_brain_trainer）V5.1 方向收斂與可交付狀態
 - 參考主文檔：`docs/V5_1_IMPLEMENTATION_PLAN.md`
 
@@ -9,7 +10,8 @@
 ## 1) 目前完成（Done）
 
 1. **方向凍結**
-   - V5.1 已明確採用：**L1 perception+decision / L2 joint-space RL（SAC baseline） / L3 deterministic execution+safety**。
+   - V5.1 已明確採用：**L1 perception+decision / L2 joint-space RL（SAC Torch） / L3 deterministic execution+safety**。
+   - 相容路線已移除：不再保留 numpy SAC / rule policy mode。
    - 主要契約與實驗門檻已在 `docs/V5_1_IMPLEMENTATION_PLAN.md` 定義。
 
 2. **前置工程基礎可用（沿用 V5/WP1.5）**

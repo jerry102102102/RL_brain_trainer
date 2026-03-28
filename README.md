@@ -11,9 +11,23 @@
 
 - V5.1 正式計劃（主文檔）：`docs/V5_1_IMPLEMENTATION_PLAN.md`
 - V5.1 當前短總覽（可審核）：`docs/V5_1_STATUS_SUMMARY.md`
+- V5.1 單一路線交付（ROS2+venv+SAC Torch）：`reports/V5_1_SINGLE_PATH_DELIVERY.md`
 - WP1.5 Runtime parity（關鍵風險與檢查）：`docs/WP1_5_RUNTIME_PARITY_CHECKER.md`
 - WP1.5 readiness / risk（關鍵風險報告）：`docs/WP1_5_READINESS_RISK_REPORT.md`
 - RBT 關鍵 rerun 報告（L3）：`reports/task1_real_l3_rerun_report_2026-03-22.md`
+
+## V5.1 開發入口（新）
+
+### V5.1 單一路線（固定）
+- 僅支援 `policy_mode=sac_torch`（不再保留 numpy SAC 與 rule fallback）。
+- 固定環境：ROS2 Jazzy + `hrl_ws/.venv/bin/python`。
+- 啟用環境：`source scripts/v5_1/activate_env.sh`
+- 環境檢查：`scripts/v5_1/env_check.sh`
+
+
+- 任務票（可直接執行）：`docs/V5_1_TASK_BOARD.md`
+- 結構約定（改用 `v5_1` 命名空間）：`docs/V5_1_STRUCTURE.md`
+- Pipeline bring-up + 分層記錄規範：`docs/V5_1_PIPELINE_CHECKLIST.md`
 
 建議閱讀順序：
 1. `docs/V5_1_STATUS_SUMMARY.md`
@@ -31,6 +45,10 @@
   - `tray_pose_adapter` 已加 deterministic gate，實測可達 `fallback_ratio=0.000`。
 - ✅ **controller auto bring-up 已修復**
   - 啟動後可自動 `LOAD -> CONFIGURE -> ACTIVATE`，不需手動 spawner。
+- ✅ **WP2（M2-7 ~ M2-9）closeout package 已完成（軟體路徑）**
+  - 已完成：training loop integration、baseline benchmark、eval harness、4-variant formal comparison、一鍵 rerun。
+  - 目前證據層級是 **real path（benchmark/eval harness）**，**不是實機/HIL**。
+  - 詳細說明見：`docs/WP2_IMPLEMENTATION_NOTE.md`
 - ✅ 健康檢查關鍵項目可通過
   - `/controller_manager/list_controllers`：`joint_state_broadcaster` + `arm_controller` active
   - `/tray1/pose` sample PASS
@@ -64,20 +82,32 @@ Gazebo / bridge / perception：
   - **L3 = 100–200 Hz**（deterministic + safety shield）
 - 互動策略：stale timeout + interpolation + predictive clamp + fail-safe fallback
 - M1：Rule-L2 v0 baseline（U-slot flow）
+- M2.1：RL action `v2` 已切為 **U-slot-first**；`gripper_cmd` 僅保留相容（deprecated），`OPEN/CLOSE` 的 gripper-only legacy 寫法在 `v2` 會被拒絕（`v1` 不變）
 
-## 5) 常用命令
-### 啟動場景（headless）
+## 5) 術語定義（避免誤解）
+- **real path**：指 repo 內 benchmark/eval harness 的真實程式路徑執行（非 placeholder/simulated rows）。
+- **real robot runtime**：指實體機器人控制器/硬體/HIL 的實機執行。
+- 本 repo 目前 WP2 M2-9 證據屬於前者（real path），尚未宣稱後者（real robot runtime）。
+
+## 6) 常用命令
+### 啟動場景（canonical）
 ```bash
 cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
 source /opt/ros/jazzy/setup.bash
-source external/ENPM662_Group4_FinalProject/src/install/setup.bash
-ros2 launch kitchen_robot_description gazebo.launch.py headless:=true use_software_renderer:=true
+scripts/v5/launch_kitchen_scene.sh --mode headless
+```
+
+GUI（需要桌面環境）
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source /opt/ros/jazzy/setup.bash
+scripts/v5/launch_kitchen_scene.sh --mode gui
 ```
 
 ### 快速健康檢查
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/external/ENPM662_Group4_FinalProject/src/install/setup.bash
+source /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/external/kitchen_scene/src/install/setup.bash
 
 ros2 service call /controller_manager/list_controllers controller_manager_msgs/srv/ListControllers "{}"
 ros2 topic echo /tray1/pose --qos-reliability best_effort --once
@@ -104,6 +134,7 @@ ros2 topic echo /v5/perception/object_pose_est --qos-reliability best_effort --o
 - `/v5/perception/object_pose_est` sample available (`tray1`)
 
 For detailed implementation milestones and constraints, see:
+- `docs/WP2_IMPLEMENTATION_NOTE.md` (M2-7~M2-9 closeout, terminology: real path vs real robot runtime)
 - `docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`
 - `docs/WP1_5_RUNTIME_PARITY_CHECKER.md`
 - `docs/V5_EXPERIMENT_LOG.md`
