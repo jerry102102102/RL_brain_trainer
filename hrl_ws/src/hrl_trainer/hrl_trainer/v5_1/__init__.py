@@ -9,6 +9,13 @@ from .safety_watchdog import Intervention, SafetyWatchdog, WatchdogDecision
 from .reward import RewardComposer, RewardConfig, RewardTerms
 from .sac_agent import SACAgent, SACConfig, ReplayBuffer
 
+try:
+    from .sac_torch import SACTorchAgent, SACTorchConfig, TorchReplayBuffer
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for torch path
+    SACTorchAgent = None
+    SACTorchConfig = None
+    TorchReplayBuffer = None
+
 __all__ = [
     "ActionCommand",
     "LayerLogRecord",
@@ -35,3 +42,6 @@ __all__ = [
     "SACConfig",
     "ReplayBuffer",
 ]
+
+if SACTorchAgent is not None:
+    __all__.extend(["SACTorchAgent", "SACTorchConfig", "TorchReplayBuffer"])

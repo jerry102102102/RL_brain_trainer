@@ -1,4 +1,7 @@
-"""Minimal NumPy SAC implementation for V5.1 pipeline smoke and train-step validation."""
+"""Legacy NumPy SAC implementation for V5.1.
+
+Kept for backward compatibility with older tests; mainline now uses `sac_torch.py`.
+"""
 
 from __future__ import annotations
 

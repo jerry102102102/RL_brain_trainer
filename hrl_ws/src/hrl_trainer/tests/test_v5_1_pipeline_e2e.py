@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import unittest
 
 from hrl_trainer.v5_1 import pipeline_e2e
 from hrl_trainer.v5_1.pipeline_e2e import run_pipeline_e2e
+
+TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 
 
 class TestV51PipelineE2E(unittest.TestCase):
@@ -48,7 +51,8 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertTrue((logs_root / "l2").exists())
             self.assertTrue((logs_root / "l3").exists())
 
-    def test_pipeline_e2e_supports_sac_policy_mode(self) -> None:
+    @unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed in this environment")
+    def test_pipeline_e2e_supports_sac_torch_policy_mode(self) -> None:
         from pathlib import Path
         import tempfile
 
@@ -59,13 +63,13 @@ class TestV51PipelineE2E(unittest.TestCase):
                 episodes=3,
                 steps_per_episode=12,
                 artifact_root=tmp_path / "artifacts_sac",
-                policy_mode="sac",
+                policy_mode="sac_torch",
                 sac_seed=11,
             )
 
             self.assertEqual(out["exit_code"], 0)
             summary = json.loads((tmp_path / "artifacts_sac" / "pipeline_summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["policy_mode"], "sac")
+            self.assertEqual(summary["policy_mode"], "sac_torch")
             self.assertIn("train_metrics", summary)
             self.assertGreaterEqual(len(summary["train_metrics"]), 1)
 
@@ -87,6 +91,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                     steps_per_episode=3,
                     artifact_root=tmp_path / "artifacts",
                     enforce_gates=True,
+                    policy_mode="rule",
                 )
 
                 self.assertEqual(out["status"], "gates_blocked")
