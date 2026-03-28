@@ -21,7 +21,7 @@ from .runtime_ros2 import RuntimeROS2Adapter
 RuntimeFactory = Callable[..., RuntimeROS2Adapter]
 
 _CONTROLLED_ACTION_DIM = 6
-_NO_EFFECT_EPS = 1e-6
+_NO_EFFECT_EPS = 1e-4
 _NO_EFFECT_STREAK_LIMIT = 3
 
 
@@ -128,7 +128,8 @@ def _run_episode_gz(
         goal_error_next = float(np.linalg.norm(target_q - q_after))
 
         rt_joint_delta_l2 = float(rt["joint_delta_l2"])
-        no_effect = rt_joint_delta_l2 < float(no_effect_epsilon)
+        rt_no_effect = rt.get("no_effect")
+        no_effect = bool(rt_no_effect) if rt_no_effect is not None else (rt_joint_delta_l2 < float(no_effect_epsilon))
         no_effect_streak = (no_effect_streak + 1) if no_effect else 0
 
         l3_payload = {
@@ -348,12 +349,16 @@ def run_pipeline_e2e(
                             "readback_q_after": step["runtime"]["q_after"],
                             "joint_delta": step["runtime"]["joint_delta"],
                             "joint_delta_l2": step["runtime"]["joint_delta_l2"],
+                            "cmd_delta_l2": step["runtime"].get("cmd_delta_l2"),
+                            "effect_ratio": step["runtime"].get("effect_ratio"),
                             "frame_before_stamp_ns": step["runtime"].get("frame_before_stamp_ns"),
                             "frame_after_stamp_ns": step["runtime"].get("frame_after_stamp_ns"),
                             "goal_error_prev": prev_error,
                             "goal_error_next": curr_error,
                             "no_effect": bool(step.get("no_effect", False)),
+                            "no_effect_reason": step["runtime"].get("no_effect_reason", "none"),
                             "no_effect_streak": int(step.get("no_effect_streak", 0)),
+                            "skipped_publish": bool(step["runtime"].get("skipped_publish", False)),
                             "timestamp_ns": step["runtime"]["timestamp_ns"],
                         },
                     )

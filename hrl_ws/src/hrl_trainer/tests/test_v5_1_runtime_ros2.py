@@ -73,6 +73,37 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = adapter.step(np.array([0.1], dtype=float))
 
+    def test_step_skips_publish_for_tiny_command(self) -> None:
+        io = _FakeIO()
+        adapter = RuntimeROS2Adapter(io=io, joint_names=["j1", "j2"], min_command_l2=1e-3)
+        out = adapter.step(np.array([1e-5, 1e-5], dtype=float))
+        self.assertEqual(len(io.published), 0)
+        self.assertTrue(bool(out["no_effect"]))
+        self.assertEqual(out["no_effect_reason"], "below_min_command")
+        self.assertTrue(bool(out["skipped_publish"]))
+
+    def test_step_detects_no_effect_by_ratio(self) -> None:
+        class _WeakEffectIO(_FakeIO):
+            def __init__(self) -> None:
+                self.published = []
+                self.frames = [
+                    JointStateFrame(names=["j1", "j2"], position=[0.0, 0.0], velocity=[0.0, 0.0], stamp_ns=20),
+                    JointStateFrame(names=["j1", "j2"], position=[0.001, 0.0], velocity=[0.0, 0.0], stamp_ns=21),
+                    JointStateFrame(names=["j1", "j2"], position=[0.001, 0.0], velocity=[0.0, 0.0], stamp_ns=22),
+                    JointStateFrame(names=["j1", "j2"], position=[0.001, 0.0], velocity=[0.0, 0.0], stamp_ns=23),
+                ]
+
+        adapter = RuntimeROS2Adapter(
+            io=_WeakEffectIO(),
+            joint_names=["j1", "j2"],
+            no_effect_l2=1e-6,
+            no_effect_ratio=0.2,
+            settle_hold_s=0.0,
+        )
+        out = adapter.step(np.array([0.5, 0.0], dtype=float))
+        self.assertTrue(bool(out["no_effect"]))
+        self.assertEqual(out["no_effect_reason"], "small_effect_ratio")
+
 
 if __name__ == "__main__":
     unittest.main()
