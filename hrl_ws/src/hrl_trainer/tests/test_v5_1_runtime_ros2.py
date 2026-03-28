@@ -53,6 +53,26 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = adapter.read_q()
 
+    def test_step_waits_for_newer_joint_state_frame(self) -> None:
+        class _StaleThenFreshIO(_FakeIO):
+            def __init__(self) -> None:
+                self.published = []
+                stale = JointStateFrame(names=["j1", "j2"], position=[0.0, 0.0], velocity=[0.0, 0.0], stamp_ns=10)
+                fresh = JointStateFrame(names=["j1", "j2"], position=[0.25, -0.1], velocity=[0.0, 0.0], stamp_ns=11)
+                self.frames = [stale, stale, fresh]
+
+        adapter = RuntimeROS2Adapter(io=_StaleThenFreshIO(), joint_names=["j1", "j2"], settle_timeout_s=0.3)
+        out = adapter.step(np.array([0.25, -0.1], dtype=float))
+        self.assertEqual(out["frame_before_stamp_ns"], 10)
+        self.assertEqual(out["frame_after_stamp_ns"], 11)
+        self.assertGreater(out["joint_delta_l2"], 1e-4)
+
+    def test_step_rejects_command_shape_mismatch(self) -> None:
+        io = _FakeIO()
+        adapter = RuntimeROS2Adapter(io=io, joint_names=["j1", "j2"])
+        with self.assertRaises(ValueError):
+            _ = adapter.step(np.array([0.1], dtype=float))
+
 
 if __name__ == "__main__":
     unittest.main()

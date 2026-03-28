@@ -129,20 +129,45 @@ class RuntimeROS2Adapter:
             raise ValueError(f"/joint_states missing joints: {missing}")
         return np.asarray([frame.position[idx[name]] for name in self.joint_names], dtype=float)
 
-    def read_q(self, timeout_s: float | None = None) -> np.ndarray:
+    def _read_frame(self, timeout_s: float | None = None) -> JointStateFrame:
         frame = self.io.wait_for_joint_state(timeout_s=self.settle_timeout_s if timeout_s is None else timeout_s)
+        _ = self._extract_q(frame)
+        return frame
+
+    def read_q(self, timeout_s: float | None = None) -> np.ndarray:
+        frame = self._read_frame(timeout_s=timeout_s)
         return self._extract_q(frame)
 
     def step(self, cmd_q: np.ndarray) -> dict[str, Any]:
-        q_before = self.read_q()
-        self.io.publish_joint_target(self.joint_names, np.asarray(cmd_q, dtype=float), self.command_duration_s)
-        q_after = self.read_q(timeout_s=self.settle_timeout_s)
+        cmd_q = np.asarray(cmd_q, dtype=float)
+        if cmd_q.shape != (len(self.joint_names),):
+            raise ValueError(
+                f"cmd_q shape mismatch: expected {(len(self.joint_names),)}, got {tuple(cmd_q.shape)}"
+            )
+
+        frame_before = self._read_frame()
+        q_before = self._extract_q(frame_before)
+
+        self.io.publish_joint_target(self.joint_names, cmd_q, self.command_duration_s)
+
+        deadline = time.monotonic() + self.settle_timeout_s
+        frame_after = frame_before
+        while time.monotonic() < deadline:
+            remaining = max(0.01, deadline - time.monotonic())
+            candidate = self._read_frame(timeout_s=remaining)
+            frame_after = candidate
+            if candidate.stamp_ns > frame_before.stamp_ns:
+                break
+
+        q_after = self._extract_q(frame_after)
         return {
             "q_before": q_before.tolist(),
             "q_after": q_after.tolist(),
-            "cmd_q": np.asarray(cmd_q, dtype=float).tolist(),
+            "cmd_q": cmd_q.tolist(),
             "joint_delta": (q_after - q_before).tolist(),
             "joint_delta_l2": float(np.linalg.norm(q_after - q_before)),
+            "frame_before_stamp_ns": int(frame_before.stamp_ns),
+            "frame_after_stamp_ns": int(frame_after.stamp_ns),
             "timestamp_ns": int(time.time_ns()),
         }
 

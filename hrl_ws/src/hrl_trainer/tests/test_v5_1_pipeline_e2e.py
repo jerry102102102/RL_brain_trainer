@@ -164,6 +164,108 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(summary["runtime_mode"], "gz")
             self.assertGreaterEqual(len(summary["episode_joint_delta_summary"]), 1)
 
+    def test_pipeline_e2e_gz_mode_supports_rack_joint_passthrough(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _FakeRuntime7:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 7
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": after.tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": float(_np.linalg.norm(after - before)),
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_gz_rack_passthrough",
+                episodes=1,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_gz_rack",
+                runtime_mode="gz",
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _FakeRuntime7(**kwargs),
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            runtime_trace = tmp_path / "artifacts_gz_rack" / "runtime_trace.jsonl"
+            rows = [json.loads(x) for x in runtime_trace.read_text(encoding="utf-8").splitlines() if x.strip()]
+            self.assertGreaterEqual(len(rows), 1)
+            self.assertEqual(len(rows[0]["cmd_q"]), 7)
+            self.assertAlmostEqual(float(rows[0]["cmd_q"][0]), 0.0, places=7)
+
+    def test_pipeline_e2e_gz_mode_failfast_no_effect(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _NoEffectRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+
+                before = _np.asarray(self._q, dtype=float)
+                # no movement regardless of command
+                after = before.copy()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": _np.asarray(cmd_q, dtype=float).tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": 0.0,
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_gz_no_effect",
+                episodes=1,
+                steps_per_episode=6,
+                artifact_root=tmp_path / "artifacts_gz_no_effect",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _NoEffectRuntime(**kwargs),
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            reward_rows = [
+                json.loads(x)
+                for x in (tmp_path / "artifacts_gz_no_effect" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                if x.strip()
+            ]
+            self.assertGreaterEqual(len(reward_rows), 3)
+            self.assertEqual(reward_rows[-1]["done_reason"], "no_effect")
+
     def test_pipeline_e2e_gz_mode_requires_joint_names(self) -> None:
         with self.assertRaises(ValueError):
             run_pipeline_e2e(
@@ -172,6 +274,18 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=1,
                 artifact_root="/tmp/unused",
                 runtime_mode="gz",
+            )
+
+    def test_pipeline_e2e_gz_mode_rejects_non_6_controlled_dofs(self) -> None:
+        with self.assertRaises(ValueError):
+            run_pipeline_e2e(
+                run_id="test_e2e_gz_bad_joint_dim",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root="/tmp/unused",
+                runtime_mode="gz",
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5"],
+                runtime_factory=lambda **kwargs: object(),
             )
 
 

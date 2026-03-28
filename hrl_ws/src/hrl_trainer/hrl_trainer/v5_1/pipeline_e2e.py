@@ -20,6 +20,10 @@ from .runtime_ros2 import RuntimeROS2Adapter
 
 RuntimeFactory = Callable[..., RuntimeROS2Adapter]
 
+_CONTROLLED_ACTION_DIM = 6
+_NO_EFFECT_EPS = 1e-6
+_NO_EFFECT_STREAK_LIMIT = 3
+
 
 def _safe_rate(numerator: int, denominator: int) -> float:
     return float(numerator) / float(denominator) if denominator else 0.0
@@ -43,6 +47,22 @@ def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
 
 
+def _controlled_joint_indices(runtime_joint_names: list[str]) -> list[int]:
+    indices = [i for i, name in enumerate(runtime_joint_names) if name.lower() != "rack_joint"]
+    if len(indices) != _CONTROLLED_ACTION_DIM:
+        raise ValueError(
+            "runtime_joint_names must resolve to exactly 6 controllable joints "
+            f"(excluding Rack_joint); got {len(indices)} from {runtime_joint_names}"
+        )
+    return indices
+
+
+def _expand_cmd_q(q_before_full: np.ndarray, controlled_indices: list[int], q_des_controlled: np.ndarray) -> np.ndarray:
+    cmd_full = np.asarray(q_before_full, dtype=float).copy()
+    cmd_full[np.asarray(controlled_indices, dtype=int)] = np.asarray(q_des_controlled, dtype=float)
+    return cmd_full
+
+
 def _run_episode_gz(
     *,
     ep_id: str,
@@ -51,7 +71,10 @@ def _run_episode_gz(
     logs_root: Path,
     runtime: RuntimeROS2Adapter,
     target_q: np.ndarray,
+    controlled_indices: list[int],
     policy_fn: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]],
+    no_effect_epsilon: float = _NO_EFFECT_EPS,
+    no_effect_streak_limit: int = _NO_EFFECT_STREAK_LIMIT,
 ) -> dict[str, Any]:
     ts0 = time.time_ns()
     executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1))
@@ -62,10 +85,13 @@ def _run_episode_gz(
 
     prev_q_des: np.ndarray | None = None
     trace_steps: list[dict[str, Any]] = []
+    controlled_idx_np = np.asarray(controlled_indices, dtype=int)
+    no_effect_streak = 0
 
     for step in range(max(1, int(step_count))):
         now_ns = ts0 + step * 100_000_000
-        q_before = runtime.read_q()
+        q_before_full = runtime.read_q()
+        q_before = q_before_full[controlled_idx_np]
         goal_error_prev = float(np.linalg.norm(target_q - q_before))
         action_raw, policy_name = policy_fn(q_before.copy(), target_q.copy())
 
@@ -95,9 +121,15 @@ def _run_episode_gz(
         }
         _jsonl_append(l2_path, l2_payload)
 
-        rt = runtime.step(exec_out.q_des)
-        q_after = np.asarray(rt["q_after"], dtype=float)
+        cmd_q_full = _expand_cmd_q(q_before_full=q_before_full, controlled_indices=controlled_indices, q_des_controlled=exec_out.q_des)
+        rt = runtime.step(cmd_q_full)
+        q_after_full = np.asarray(rt["q_after"], dtype=float)
+        q_after = q_after_full[controlled_idx_np]
         goal_error_next = float(np.linalg.norm(target_q - q_after))
+
+        rt_joint_delta_l2 = float(rt["joint_delta_l2"])
+        no_effect = rt_joint_delta_l2 < float(no_effect_epsilon)
+        no_effect_streak = (no_effect_streak + 1) if no_effect else 0
 
         l3_payload = {
             "run_id": ep_id,
@@ -107,27 +139,38 @@ def _run_episode_gz(
             "cmd_q": rt["cmd_q"],
             "q_before": rt["q_before"],
             "q_after": rt["q_after"],
-            "joint_delta_l2": float(rt["joint_delta_l2"]),
+            "joint_delta_l2": rt_joint_delta_l2,
             "goal_error_l2": goal_error_next,
+            "no_effect": bool(no_effect),
+            "no_effect_streak": int(no_effect_streak),
         }
         _jsonl_append(l3_path, l3_payload)
+
+        intervention = "none"
+        if no_effect_streak >= int(no_effect_streak_limit) and goal_error_next >= 0.08:
+            intervention = "no_effect"
 
         trace_steps.append(
             {
                 "step": int(step),
-                "obs_q": rt["q_before"],
-                "q_after": rt["q_after"],
+                "obs_q": q_before.tolist(),
+                "q_after": q_after.tolist(),
                 "target_q": target_q.tolist(),
                 "action_raw": exec_out.requested_delta_q.tolist(),
                 "action_clamped": exec_out.clamped_delta_q.tolist(),
                 "goal_error_prev": goal_error_prev,
                 "goal_error_next": goal_error_next,
-                "intervention": "none",
+                "intervention": intervention,
                 "projection_applied": bool(exec_out.projection_applied),
                 "saturated": saturation,
+                "no_effect": bool(no_effect),
+                "no_effect_streak": int(no_effect_streak),
                 "runtime": rt,
             }
         )
+
+        if intervention == "no_effect":
+            break
 
     return {
         "l1": str(l1_path),
@@ -173,12 +216,17 @@ def run_pipeline_e2e(
 
     from .sac_torch import SACTorchAgent, SACTorchConfig
 
-    agent: Any = SACTorchAgent(SACTorchConfig(obs_dim=12, action_dim=6), seed=sac_seed)
+    agent: Any = SACTorchAgent(
+        SACTorchConfig(obs_dim=_CONTROLLED_ACTION_DIM * 2, action_dim=_CONTROLLED_ACTION_DIM),
+        seed=sac_seed,
+    )
 
     runtime = None
+    runtime_controlled_indices: list[int] | None = None
     if runtime_mode == "gz":
         if not runtime_joint_names:
             raise ValueError("runtime_joint_names is required for runtime_mode=gz")
+        runtime_controlled_indices = _controlled_joint_indices(runtime_joint_names)
         factory = runtime_factory or RuntimeROS2Adapter.from_ros2
         runtime = factory(
             joint_names=runtime_joint_names,
@@ -227,6 +275,7 @@ def run_pipeline_e2e(
                         logs_root=logs_root,
                         runtime=runtime,
                         target_q=target_q,
+                        controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
                         policy_fn=_policy_fn,
                     )
             except Exception:
@@ -237,7 +286,7 @@ def run_pipeline_e2e(
 
             episode_return = 0.0
             ep_intervention = 0
-            prev_action = np.zeros(6, dtype=float)
+            prev_action = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
             trace_steps = logs.get("trace_steps", [])
 
             ep_q_before = np.asarray(trace_steps[0]["runtime"]["q_before"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
@@ -253,7 +302,10 @@ def run_pipeline_e2e(
                 done = idx == len(trace_steps) - 1
                 done_reason = "running"
                 if done:
-                    done_reason = "success" if curr_error < 0.08 else "timeout"
+                    if step["intervention"] == "no_effect":
+                        done_reason = "no_effect"
+                    else:
+                        done_reason = "success" if curr_error < 0.08 else "timeout"
 
                 terms = reward_composer.compute(
                     prev_error=prev_error,
@@ -296,8 +348,12 @@ def run_pipeline_e2e(
                             "readback_q_after": step["runtime"]["q_after"],
                             "joint_delta": step["runtime"]["joint_delta"],
                             "joint_delta_l2": step["runtime"]["joint_delta_l2"],
+                            "frame_before_stamp_ns": step["runtime"].get("frame_before_stamp_ns"),
+                            "frame_after_stamp_ns": step["runtime"].get("frame_after_stamp_ns"),
                             "goal_error_prev": prev_error,
                             "goal_error_next": curr_error,
+                            "no_effect": bool(step.get("no_effect", False)),
+                            "no_effect_streak": int(step.get("no_effect_streak", 0)),
                             "timestamp_ns": step["runtime"]["timestamp_ns"],
                         },
                     )
