@@ -144,7 +144,7 @@ class RuntimeROS2Adapter:
         trajectory_topic: str = "/arm_controller/joint_trajectory",
         joint_state_topic: str = "/joint_states",
         command_duration_s: float = 0.2,
-        settle_timeout_s: float = 0.8,
+        settle_timeout_s: float = 2.5,
         initial_warmup_timeout_s: float = 2.5,
         initial_read_fallback_timeout_s: float = 2.0,
         joint_state_qos: str = "sensor_data",
