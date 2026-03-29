@@ -26,7 +26,13 @@ class JointRuntimeIO(Protocol):
 class ROS2JointRuntimeIO:
     """ROS2 I/O backend using JointTrajectory publish + /joint_states subscribe."""
 
-    def __init__(self, trajectory_topic: str, joint_state_topic: str) -> None:
+    def __init__(
+        self,
+        trajectory_topic: str,
+        joint_state_topic: str,
+        joint_state_qos: str = "sensor_data",
+        joint_state_qos_depth: int = 10,
+    ) -> None:
         try:
             import rclpy
             from trajectory_msgs.msg import JointTrajectory
@@ -59,7 +65,15 @@ class ROS2JointRuntimeIO:
                 stamp_ns=stamp_ns,
             )
 
-        self._sub = self._node.create_subscription(JointState, joint_state_topic, _on_joint_state, 10)
+        sub_qos: Any = max(1, int(joint_state_qos_depth))
+        if joint_state_qos == "sensor_data":
+            try:
+                from rclpy.qos import qos_profile_sensor_data
+
+                sub_qos = qos_profile_sensor_data
+            except Exception:
+                sub_qos = max(1, int(joint_state_qos_depth))
+        self._sub = self._node.create_subscription(JointState, joint_state_topic, _on_joint_state, sub_qos)
 
     def publish_joint_target(self, joint_names: list[str], positions: np.ndarray, duration_s: float) -> None:
         from trajectory_msgs.msg import JointTrajectoryPoint
@@ -105,6 +119,8 @@ class RuntimeROS2Adapter:
         min_command_l2: float = 1e-4,
         no_effect_l2: float = 1e-4,
         no_effect_ratio: float = 0.1,
+        initial_warmup_timeout_s: float = 2.5,
+        initial_read_fallback_timeout_s: float = 2.0,
     ) -> None:
         self.io = io
         self.joint_names = list(joint_names)
@@ -115,6 +131,11 @@ class RuntimeROS2Adapter:
         self.min_command_l2 = max(0.0, float(min_command_l2))
         self.no_effect_l2 = max(0.0, float(no_effect_l2))
         self.no_effect_ratio = max(0.0, float(no_effect_ratio))
+        self.initial_warmup_timeout_s = max(0.0, float(initial_warmup_timeout_s))
+        self.initial_read_fallback_timeout_s = max(0.0, float(initial_read_fallback_timeout_s))
+        self._has_initial_frame = False
+
+        self._warmup_initial_frame()
 
     @classmethod
     def from_ros2(
@@ -124,12 +145,23 @@ class RuntimeROS2Adapter:
         joint_state_topic: str = "/joint_states",
         command_duration_s: float = 0.2,
         settle_timeout_s: float = 0.8,
+        initial_warmup_timeout_s: float = 2.5,
+        initial_read_fallback_timeout_s: float = 2.0,
+        joint_state_qos: str = "sensor_data",
+        joint_state_qos_depth: int = 10,
     ) -> "RuntimeROS2Adapter":
         return cls(
-            io=ROS2JointRuntimeIO(trajectory_topic=trajectory_topic, joint_state_topic=joint_state_topic),
+            io=ROS2JointRuntimeIO(
+                trajectory_topic=trajectory_topic,
+                joint_state_topic=joint_state_topic,
+                joint_state_qos=joint_state_qos,
+                joint_state_qos_depth=joint_state_qos_depth,
+            ),
             joint_names=joint_names,
             command_duration_s=command_duration_s,
             settle_timeout_s=settle_timeout_s,
+            initial_warmup_timeout_s=initial_warmup_timeout_s,
+            initial_read_fallback_timeout_s=initial_read_fallback_timeout_s,
         )
 
     def _extract_q(self, frame: JointStateFrame) -> np.ndarray:
@@ -139,10 +171,49 @@ class RuntimeROS2Adapter:
             raise ValueError(f"/joint_states missing joints: {missing}")
         return np.asarray([frame.position[idx[name]] for name in self.joint_names], dtype=float)
 
-    def _read_frame(self, timeout_s: float | None = None) -> JointStateFrame:
-        frame = self.io.wait_for_joint_state(timeout_s=self.settle_timeout_s if timeout_s is None else timeout_s)
+    def _warmup_initial_frame(self) -> None:
+        if self.initial_warmup_timeout_s <= 0.0:
+            return
+        try:
+            _ = self._read_frame_raw(timeout_s=self.initial_warmup_timeout_s)
+            self._has_initial_frame = True
+        except TimeoutError:
+            # Bounded warmup is best-effort; read path below will classify/extend timeout.
+            return
+
+    def _read_frame_raw(self, timeout_s: float) -> JointStateFrame:
+        frame = self.io.wait_for_joint_state(timeout_s=float(timeout_s))
         _ = self._extract_q(frame)
         return frame
+
+    def _read_frame(self, timeout_s: float | None = None) -> JointStateFrame:
+        primary_timeout_s = self.settle_timeout_s if timeout_s is None else float(timeout_s)
+
+        if not self._has_initial_frame:
+            try:
+                frame = self._read_frame_raw(timeout_s=primary_timeout_s)
+                self._has_initial_frame = True
+                return frame
+            except TimeoutError as exc:
+                if self.initial_read_fallback_timeout_s > 0.0:
+                    try:
+                        frame = self._read_frame_raw(timeout_s=self.initial_read_fallback_timeout_s)
+                        self._has_initial_frame = True
+                        return frame
+                    except TimeoutError as fallback_exc:
+                        raise TimeoutError(
+                            "joint_state_timeout_initial: "
+                            f"primary={primary_timeout_s:.2f}s fallback={self.initial_read_fallback_timeout_s:.2f}s; "
+                            f"err={fallback_exc}"
+                        ) from fallback_exc
+                raise TimeoutError(
+                    f"joint_state_timeout_initial: primary={primary_timeout_s:.2f}s err={exc}"
+                ) from exc
+
+        try:
+            return self._read_frame_raw(timeout_s=primary_timeout_s)
+        except TimeoutError as exc:
+            raise TimeoutError(f"joint_state_timeout_step: timeout={primary_timeout_s:.2f}s err={exc}") from exc
 
     def read_q(self, timeout_s: float | None = None) -> np.ndarray:
         frame = self._read_frame(timeout_s=timeout_s)
@@ -158,7 +229,7 @@ class RuntimeROS2Adapter:
                 return candidate
         if latest is not None:
             return latest
-        raise TimeoutError("timed out waiting for fresh joint state frame")
+        raise TimeoutError("joint_state_timeout_step: timed out waiting for fresh joint state frame")
 
     def _wait_until_settled(self, latest_frame: JointStateFrame, deadline: float) -> JointStateFrame:
         if self.settle_hold_s <= 0.0:
