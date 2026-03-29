@@ -16,6 +16,8 @@ class StageSpec:
     promote_success_rate: float
     reward_scale: float
     step_budget: int
+    action_limit: float = 0.05
+    controlled_dofs: int = 6
 
 
 @dataclass(frozen=True)
@@ -34,10 +36,29 @@ class CurriculumState:
 
 
 DEFAULT_STAGES: tuple[StageSpec, ...] = (
-    StageSpec(name="S0", min_episodes=2, promote_success_rate=0.60, reward_scale=0.5, step_budget=32),
-    StageSpec(name="S1", min_episodes=2, promote_success_rate=0.75, reward_scale=0.8, step_budget=48),
-    StageSpec(name="S2", min_episodes=2, promote_success_rate=0.90, reward_scale=1.0, step_budget=64),
+    StageSpec(name="S0", min_episodes=2, promote_success_rate=0.60, reward_scale=0.5, step_budget=32, action_limit=0.05),
+    StageSpec(name="S1", min_episodes=2, promote_success_rate=0.75, reward_scale=0.8, step_budget=48, action_limit=0.08),
+    StageSpec(name="S2", min_episodes=2, promote_success_rate=0.90, reward_scale=1.0, step_budget=64, action_limit=0.10),
 )
+
+S0_B_STAGES: tuple[StageSpec, ...] = (
+    StageSpec(name="S0_B", min_episodes=2, promote_success_rate=0.60, reward_scale=0.5, step_budget=32, action_limit=0.15),
+    StageSpec(name="S1", min_episodes=2, promote_success_rate=0.75, reward_scale=0.8, step_budget=48, action_limit=0.10),
+    StageSpec(name="S2", min_episodes=2, promote_success_rate=0.90, reward_scale=1.0, step_budget=64, action_limit=0.10),
+)
+
+
+STAGE_PROFILES: dict[str, tuple[StageSpec, ...]] = {
+    "default": DEFAULT_STAGES,
+    "s0_b": S0_B_STAGES,
+}
+
+
+def resolve_stages(profile: str = "default") -> tuple[StageSpec, ...]:
+    key = str(profile).strip().lower()
+    if key not in STAGE_PROFILES:
+        raise ValueError(f"unknown curriculum profile: {profile}")
+    return STAGE_PROFILES[key]
 
 
 class CurriculumManager:

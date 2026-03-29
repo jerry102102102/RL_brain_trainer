@@ -44,13 +44,14 @@ def run_smoke(
     log_root: Path,
     episode: int = 0,
     policy_fn: PolicyFn | None = None,
+    action_limit: float = 0.05,
 ) -> dict[str, Any]:
     ts0 = time.time_ns()
     q = np.zeros(6, dtype=float)
     dq = np.zeros(6, dtype=float)
     target_q = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
 
-    executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1))
+    executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1, delta_q_limit=(float(action_limit),) * 6))
     watchdog = SafetyWatchdog(timeout_s=0.35, timeout_action=Intervention.HOLD)
 
     l1_path = log_root / "l1" / f"{run_id}.jsonl"

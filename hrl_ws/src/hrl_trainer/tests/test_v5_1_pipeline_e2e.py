@@ -34,6 +34,7 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(out["exit_code"], 0)
             self.assertTrue(summary_path.exists())
             self.assertTrue((tmp_path / "artifacts" / "reward_trace.jsonl").exists())
+            self.assertTrue((tmp_path / "artifacts" / "episode_reward_summary.jsonl").exists())
             self.assertTrue((tmp_path / "artifacts" / "runtime_trace.jsonl").exists())
             self.assertTrue(curriculum_path.exists())
             self.assertTrue(gate_path.exists())
@@ -44,6 +45,39 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("artifacts", summary)
             self.assertEqual(summary["gate_overall_decision"], "GO")
             self.assertEqual(summary["policy_mode"], "sac_torch")
+            self.assertEqual(summary["stage_profile"], "default")
+
+            reward_rows = [
+                json.loads(x)
+                for x in (tmp_path / "artifacts" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                if x.strip()
+            ]
+            self.assertGreaterEqual(len(reward_rows), 1)
+            self.assertIn("episode_id", reward_rows[0])
+            self.assertIn("reward_total", reward_rows[0])
+            self.assertEqual(
+                set(reward_rows[0]["components"].keys()),
+                {
+                    "progress",
+                    "action",
+                    "jerk",
+                    "intervention",
+                    "clamp_or_projection",
+                    "timeout_or_reset",
+                    "success_bonus",
+                    "reward_total",
+                },
+            )
+
+            ep_summary_rows = [
+                json.loads(x)
+                for x in (tmp_path / "artifacts" / "episode_reward_summary.jsonl").read_text(encoding="utf-8").splitlines()
+                if x.strip()
+            ]
+            self.assertEqual(len(ep_summary_rows), 4)
+            self.assertIn("component_sums", ep_summary_rows[0])
+            self.assertIn("component_means", ep_summary_rows[0])
+            self.assertIn("total_reward", ep_summary_rows[0])
 
             gate_payload = json.loads(gate_path.read_text(encoding="utf-8"))
             self.assertEqual(gate_payload["overall_decision"], "GO")
@@ -52,6 +86,32 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertTrue((logs_root / "l1").exists())
             self.assertTrue((logs_root / "l2").exists())
             self.assertTrue((logs_root / "l3").exists())
+
+    def test_pipeline_e2e_supports_s0_b_stage_profile(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_s0b",
+                episodes=1,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_s0b",
+                stage_profile="s0_b",
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_s0b" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["stage_profile"], "s0_b")
+            self.assertEqual(summary["episodes"][0]["stage"], "S0_B")
+
+            l2_path = Path(summary["episodes"][0]["logs"]["l2"])
+            l2_rows = [json.loads(x) for x in l2_path.read_text(encoding="utf-8").splitlines() if x.strip()]
+            self.assertGreaterEqual(len(l2_rows), 1)
+            for row in l2_rows:
+                clipped = row["payload"]["action_clipped"]
+                self.assertTrue(all(abs(float(v)) <= 0.15 + 1e-9 for v in clipped))
 
     def test_pipeline_e2e_supports_sac_torch_policy_mode(self) -> None:
         from pathlib import Path

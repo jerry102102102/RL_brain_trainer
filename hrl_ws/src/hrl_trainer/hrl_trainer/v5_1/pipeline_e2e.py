@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .curriculum import CurriculumManager
+from .curriculum import CurriculumManager, resolve_stages
 from .gates import DEFAULT_GATE, GateEvaluator, write_gate_report
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig
 from .pipeline_smoke import run_smoke
@@ -73,11 +73,14 @@ def _run_episode_gz(
     target_q: np.ndarray,
     controlled_indices: list[int],
     policy_fn: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]],
+    action_limit: float,
     no_effect_epsilon: float = _NO_EFFECT_EPS,
     no_effect_streak_limit: int = _NO_EFFECT_STREAK_LIMIT,
 ) -> dict[str, Any]:
     ts0 = time.time_ns()
-    executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1))
+    executor = L3DeterministicExecutor(
+        L3ExecutorConfig(dt=0.1, delta_q_limit=(float(action_limit),) * _CONTROLLED_ACTION_DIM)
+    )
 
     l1_path = logs_root / "l1" / f"{ep_id}.jsonl"
     l2_path = logs_root / "l2" / f"{ep_id}.jsonl"
@@ -190,6 +193,7 @@ def run_pipeline_e2e(
     enforce_gates: bool = False,
     policy_mode: str = "sac_torch",
     sac_seed: int = 0,
+    stage_profile: str = "default",
     runtime_mode: str = "smoke",
     runtime_factory: RuntimeFactory | None = None,
     runtime_joint_names: list[str] | None = None,
@@ -203,11 +207,13 @@ def run_pipeline_e2e(
     reward_trace_path = artifact_root / "reward_trace.jsonl"
     reward_trace = RewardTraceWriter(reward_trace_path)
     reward_composer = RewardComposer()
+    episode_reward_summary_path = artifact_root / "episode_reward_summary.jsonl"
+    episode_reward_summary_path.write_text("", encoding="utf-8")
 
     runtime_trace_path = artifact_root / "runtime_trace.jsonl"
     runtime_trace_path.write_text("", encoding="utf-8")
 
-    curriculum = CurriculumManager()
+    curriculum = CurriculumManager(stages=resolve_stages(stage_profile))
     gate_eval = GateEvaluator(DEFAULT_GATE)
 
     if policy_mode != "sac_torch":
@@ -250,6 +256,8 @@ def run_pipeline_e2e(
     try:
         for ep in range(episodes_requested):
             stage = curriculum.current_stage
+            if int(stage.controlled_dofs) != _CONTROLLED_ACTION_DIM:
+                raise ValueError(f"unsupported controlled_dofs={stage.controlled_dofs}, expected {_CONTROLLED_ACTION_DIM}")
             ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
             step_count = min(int(steps_per_episode), stage.step_budget)
 
@@ -267,6 +275,7 @@ def run_pipeline_e2e(
                         log_root=logs_root,
                         episode=ep,
                         policy_fn=_policy_fn,
+                        action_limit=float(stage.action_limit),
                     )
                 else:
                     logs = _run_episode_gz(
@@ -278,6 +287,7 @@ def run_pipeline_e2e(
                         target_q=target_q,
                         controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
                         policy_fn=_policy_fn,
+                        action_limit=float(stage.action_limit),
                     )
             except Exception:
                 reset_failures += 1
@@ -289,6 +299,16 @@ def run_pipeline_e2e(
             ep_intervention = 0
             prev_action = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
             trace_steps = logs.get("trace_steps", [])
+            ep_component_sums: dict[str, float] = {
+                "progress": 0.0,
+                "action": 0.0,
+                "jerk": 0.0,
+                "intervention": 0.0,
+                "clamp_or_projection": 0.0,
+                "timeout_or_reset": 0.0,
+                "success_bonus": 0.0,
+                "reward_total": 0.0,
+            }
 
             ep_q_before = np.asarray(trace_steps[0]["runtime"]["q_before"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
             ep_q_after = np.asarray(trace_steps[-1]["runtime"]["q_after"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
@@ -319,13 +339,17 @@ def run_pipeline_e2e(
                     done_reason=done_reason,
                 )
                 prev_action = action
-                episode_return += terms.total
-                reward_totals.append(terms.total)
+                terms_dict = terms.to_dict()
+                episode_return += terms.reward_total
+                reward_totals.append(terms.reward_total)
+                for k in ep_component_sums:
+                    ep_component_sums[k] += float(terms_dict[k])
 
                 reward_trace.append(
                     {
                         "run_id": run_id,
                         "episode": ep,
+                        "episode_id": ep_id,
                         "step": int(step["step"]),
                         "policy_mode": policy_mode,
                         "runtime_mode": runtime_mode,
@@ -333,7 +357,8 @@ def run_pipeline_e2e(
                         "done_reason": done_reason,
                         "goal_error_prev": prev_error,
                         "goal_error_next": curr_error,
-                        "components": terms.to_dict(),
+                        "reward_total": float(terms.reward_total),
+                        "components": terms_dict,
                     }
                 )
 
@@ -372,7 +397,7 @@ def run_pipeline_e2e(
                 else:
                     next_q = np.asarray(step["obs_q"], dtype=float) + np.asarray(step["action_clamped"], dtype=float)
                 next_obs = _obs_from_q_target(next_q, target_q)
-                agent.remember(obs, action, terms.total, next_obs, done)
+                agent.remember(obs, action, terms.reward_total, next_obs, done)
                 train_out = agent.train_step()
                 if train_out is not None:
                     train_metrics.append(train_out)
@@ -397,6 +422,21 @@ def run_pipeline_e2e(
             interventions += ep_intervention
             success_series.append(float(ep_success))
             intervention_series.append(float(ep_intervention))
+
+            step_n = max(1, len(trace_steps))
+            ep_summary = {
+                "run_id": run_id,
+                "episode": ep,
+                "episode_id": ep_id,
+                "stage": record.stage_name,
+                "component_sums": ep_component_sums,
+                "component_means": {k: float(v) / float(step_n) for k, v in ep_component_sums.items()},
+                "total_reward": float(ep_component_sums["reward_total"]),
+                "success_count": int(ep_success),
+                "intervention_count": int(ep_intervention),
+                "no_effect_count": int(1 if trace_steps and trace_steps[-1]["intervention"] == "no_effect" else 0),
+            }
+            _jsonl_append(episode_reward_summary_path, ep_summary)
 
             episode_outputs.append(
                 {
@@ -472,10 +512,12 @@ def run_pipeline_e2e(
             "gate": str(gate_path),
             "logs_root": str(logs_root),
             "reward_trace": str(reward_trace_path),
+            "episode_reward_summary": str(episode_reward_summary_path),
             "runtime_trace": str(runtime_trace_path),
         },
         "policy_mode": policy_mode,
         "runtime_mode": runtime_mode,
+        "stage_profile": stage_profile,
         "gate_overall_decision": gate_result.overall_decision,
         "gate_passed": gate_result.overall_decision == "GO",
         "episode_joint_delta_summary": episode_joint_delta_summary,
@@ -498,6 +540,7 @@ def run_pipeline_e2e(
         "gate": str(gate_path),
         "logs_root": str(logs_root),
         "reward_trace": str(reward_trace_path),
+        "episode_reward_summary": str(episode_reward_summary_path),
         "runtime_trace": str(runtime_trace_path),
         "status": status,
         "exit_code": exit_code,
@@ -513,6 +556,7 @@ def main() -> int:
     parser.add_argument("--enforce-gates", action="store_true")
     parser.add_argument("--policy-mode", choices=["sac_torch"], default="sac_torch")
     parser.add_argument("--runtime-mode", choices=["smoke", "gz"], default="smoke")
+    parser.add_argument("--stage-profile", choices=["default", "s0_b"], default="default")
     parser.add_argument("--runtime-joint-names", default="")
     parser.add_argument("--trajectory-topic", default="/arm_controller/joint_trajectory")
     parser.add_argument("--joint-state-topic", default="/joint_states")
@@ -529,6 +573,7 @@ def main() -> int:
         enforce_gates=args.enforce_gates,
         policy_mode=args.policy_mode,
         sac_seed=args.sac_seed,
+        stage_profile=args.stage_profile,
         runtime_mode=args.runtime_mode,
         runtime_joint_names=joint_names,
         trajectory_topic=args.trajectory_topic,
