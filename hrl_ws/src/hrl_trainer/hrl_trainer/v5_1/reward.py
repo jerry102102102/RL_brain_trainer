@@ -20,6 +20,7 @@ class RewardConfig:
     timeout_penalty: float = -2.5
     reset_fail_penalty: float = -3.0
     success_bonus: float = 3.0
+    execution_fail_penalty: float = -3.0
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,20 @@ class RewardComposer:
         done: bool,
         done_reason: str,
     ) -> RewardTerms:
+        if done and done_reason == "execution_fail":
+            timeout_reset_term = self.config.execution_fail_penalty
+            total = timeout_reset_term
+            return RewardTerms(
+                progress=0.0,
+                action=0.0,
+                jerk=0.0,
+                intervention=0.0,
+                clamp_or_projection=0.0,
+                timeout_or_reset=timeout_reset_term,
+                success_bonus=0.0,
+                reward_total=float(total),
+            )
+
         progress = self.config.w_progress * float(prev_error - curr_error)
         action_term = self.config.w_action_norm * float(np.linalg.norm(action))
         jerk = self.config.w_jerk * float(np.linalg.norm(action - prev_action))

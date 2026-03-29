@@ -55,6 +55,10 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
         self.assertEqual(out["q_before"], [0.0, 0.0])
         self.assertEqual(out["q_after"], [0.1, -0.2])
         self.assertAlmostEqual(float(out["joint_delta_l2"]), float(np.linalg.norm(np.array([0.1, -0.2]))), places=6)
+        self.assertTrue(bool(out["accepted"]))
+        self.assertEqual(out["result_status"], "success")
+        self.assertTrue(bool(out["execution_ok"]))
+        self.assertEqual(out["fail_reason"], "none")
 
     def test_read_q_requires_requested_joint_names(self) -> None:
         io = _FakeIO(frames=[JointStateFrame(names=["j1"], position=[0.0], velocity=[0.0], stamp_ns=1)])
@@ -87,6 +91,10 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
         self.assertTrue(bool(out["no_effect"]))
         self.assertEqual(out["no_effect_reason"], "below_min_command")
         self.assertTrue(bool(out["skipped_publish"]))
+        self.assertFalse(bool(out["accepted"]))
+        self.assertEqual(out["result_status"], "fail")
+        self.assertFalse(bool(out["execution_ok"]))
+        self.assertEqual(out["fail_reason"], "below_min_command")
 
     def test_step_detects_no_effect_by_ratio(self) -> None:
         io = _FakeIO(

@@ -291,6 +291,13 @@ class RuntimeROS2Adapter:
         no_effect_by_ratio = cmd_delta_l2 >= self.min_command_l2 and effect_ratio < self.no_effect_ratio
         no_effect = bool(skipped_publish or no_effect_by_abs or no_effect_by_ratio)
 
+        no_effect_reason = (
+            "below_min_command"
+            if skipped_publish
+            else ("small_joint_delta" if no_effect_by_abs else ("small_effect_ratio" if no_effect_by_ratio else "none"))
+        )
+        execution_ok = bool(not no_effect)
+
         return {
             "q_before": q_before.tolist(),
             "q_after": q_after.tolist(),
@@ -300,12 +307,12 @@ class RuntimeROS2Adapter:
             "cmd_delta_l2": cmd_delta_l2,
             "effect_ratio": float(effect_ratio),
             "no_effect": no_effect,
-            "no_effect_reason": (
-                "below_min_command"
-                if skipped_publish
-                else ("small_joint_delta" if no_effect_by_abs else ("small_effect_ratio" if no_effect_by_ratio else "none"))
-            ),
+            "no_effect_reason": no_effect_reason,
             "skipped_publish": bool(skipped_publish),
+            "accepted": bool(not skipped_publish),
+            "result_status": "success" if execution_ok else "fail",
+            "execution_ok": execution_ok,
+            "fail_reason": "none" if execution_ok else no_effect_reason,
             "frame_before_stamp_ns": int(frame_before.stamp_ns),
             "frame_after_stamp_ns": int(frame_after.stamp_ns),
             "timestamp_ns": int(time.time_ns()),

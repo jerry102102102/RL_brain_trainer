@@ -147,6 +147,10 @@ def _run_episode_gz(
             "goal_error_l2": goal_error_next,
             "no_effect": bool(no_effect),
             "no_effect_streak": int(no_effect_streak),
+            "accepted": bool(rt.get("accepted", True)),
+            "result_status": rt.get("result_status", "success"),
+            "execution_ok": bool(rt.get("execution_ok", True)),
+            "fail_reason": rt.get("fail_reason", "none"),
         }
         _jsonl_append(l3_path, l3_payload)
 
@@ -319,10 +323,14 @@ def run_pipeline_e2e(
                 curr_error = float(step["goal_error_next"])
                 intervention_now = step["intervention"] != "none"
                 clamp_or_projection = bool(step["saturated"] or step["projection_applied"])
+                execution_ok = bool(step.get("runtime", {}).get("execution_ok", True))
 
                 done = idx == len(trace_steps) - 1
                 done_reason = "running"
-                if done:
+                if not execution_ok:
+                    done = True
+                    done_reason = "execution_fail"
+                elif done:
                     if step["intervention"] == "no_effect":
                         done_reason = "no_effect"
                     else:
@@ -384,6 +392,10 @@ def run_pipeline_e2e(
                             "no_effect_reason": step["runtime"].get("no_effect_reason", "none"),
                             "no_effect_streak": int(step.get("no_effect_streak", 0)),
                             "skipped_publish": bool(step["runtime"].get("skipped_publish", False)),
+                            "accepted": bool(step["runtime"].get("accepted", True)),
+                            "result_status": step["runtime"].get("result_status", "success"),
+                            "execution_ok": bool(step["runtime"].get("execution_ok", True)),
+                            "fail_reason": step["runtime"].get("fail_reason", "none"),
                             "timestamp_ns": step["runtime"]["timestamp_ns"],
                         },
                     )
@@ -401,6 +413,10 @@ def run_pipeline_e2e(
                 train_out = agent.train_step()
                 if train_out is not None:
                     train_metrics.append(train_out)
+
+                if done_reason == "execution_fail":
+                    ep_intervention = 1
+                    break
 
             final_error = float(logs.get("final_goal_error", 1.0))
             ep_success = 1 if final_error < 0.08 else 0
