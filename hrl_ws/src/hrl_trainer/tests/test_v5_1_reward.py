@@ -26,7 +26,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertLess(terms.jerk, 0.0)
         self.assertLess(terms.intervention, 0.0)
         self.assertLess(terms.clamp_or_projection, 0.0)
-        self.assertLess(terms.timeout_or_reset, 0.0)
+        self.assertEqual(terms.timeout_or_reset, -1.0)
         self.assertEqual(terms.success_bonus, 0.0)
 
     def test_reward_success_bonus_applied(self) -> None:
@@ -41,7 +41,7 @@ class TestV51Reward(unittest.TestCase):
             done=True,
             done_reason="success",
         )
-        self.assertGreater(terms.success_bonus, 0.0)
+        self.assertEqual(terms.success_bonus, 1.5)
 
     def test_execution_fail_applies_only_fail_penalty(self) -> None:
         terms = RewardComposer().compute(
@@ -59,7 +59,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertEqual(terms.jerk, 0.0)
         self.assertEqual(terms.intervention, 0.0)
         self.assertEqual(terms.clamp_or_projection, 0.0)
-        self.assertLess(terms.timeout_or_reset, 0.0)
+        self.assertEqual(terms.timeout_or_reset, -2.0)
 
     def test_reward_trace_component_schema(self) -> None:
         terms = RewardComposer().compute(
