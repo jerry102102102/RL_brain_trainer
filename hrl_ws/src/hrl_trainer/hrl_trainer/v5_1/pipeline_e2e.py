@@ -11,6 +11,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .curriculum import CurriculumManager, resolve_stages
+from .ee_fk import ee_pose6_from_q
 from .gates import DEFAULT_GATE, GateEvaluator, write_gate_report
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig
 from .pipeline_smoke import run_smoke
@@ -40,8 +41,7 @@ def _count_jsonl_lines(path: Path) -> int:
 
 
 def _ee_pose_from_q(q: np.ndarray) -> np.ndarray:
-    q = np.asarray(q, dtype=float)
-    return np.concatenate([q[:3], q[3:6]], axis=0)
+    return ee_pose6_from_q(np.asarray(q, dtype=float))
 
 
 def _ee_errors(ee_pose: np.ndarray, ee_target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -130,7 +130,7 @@ def _run_episode_gz(
         now_ns = ts0 + step * 100_000_000
         q_before_full = runtime.read_q()
         q_before = q_before_full[controlled_idx_np]
-        ee_pose_before = _ee_pose_from_q(q_before)
+        ee_pose_before = _ee_pose_from_q(q_before_full)
         ee_pos_err_prev, ee_ori_err_prev = _ee_errors(ee_pose_before, ee_target)
         goal_error_prev = RewardComposer.ee_error_norm(ee_pos_err_prev, ee_ori_err_prev)
         dq = (q_before - prev_q) if prev_q is not None else np.zeros_like(q_before)
@@ -168,7 +168,7 @@ def _run_episode_gz(
         rt = runtime.step(cmd_q_full)
         q_after_full = np.asarray(rt["q_after"], dtype=float)
         q_after = q_after_full[controlled_idx_np]
-        ee_pose_after = _ee_pose_from_q(q_after)
+        ee_pose_after = _ee_pose_from_q(q_after_full)
         ee_pos_err_next, ee_ori_err_next = _ee_errors(ee_pose_after, ee_target)
         goal_error_next = RewardComposer.ee_error_norm(ee_pos_err_next, ee_ori_err_next)
 
