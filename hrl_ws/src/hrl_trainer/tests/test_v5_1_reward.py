@@ -26,7 +26,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertLess(terms.jerk, 0.0)
         self.assertLess(terms.intervention, 0.0)
         self.assertLess(terms.clamp_or_projection, 0.0)
-        self.assertEqual(terms.timeout_or_reset, -1.0)
+        self.assertEqual(terms.timeout_or_reset, 0.0)
         self.assertEqual(terms.success_bonus, 0.0)
 
     def test_reward_success_bonus_applied(self) -> None:

@@ -13,11 +13,11 @@ import numpy as np
 @dataclass(frozen=True)
 class RewardConfig:
     w_progress: float = 1.0
-    w_action_norm: float = -0.08
-    w_jerk: float = -0.05
+    w_action_norm: float = -0.05
+    w_jerk: float = -0.03
     w_intervention: float = -0.4
     w_clamp_projection: float = -0.2
-    timeout_penalty: float = -1.0
+    timeout_penalty: float = 0.0
     reset_fail_penalty: float = -1.5
     success_bonus: float = 1.5
     execution_fail_penalty: float = -2.0
