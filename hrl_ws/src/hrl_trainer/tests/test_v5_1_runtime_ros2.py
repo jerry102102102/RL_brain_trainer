@@ -32,6 +32,27 @@ class _FakeIO:
         return next_item
 
 
+
+
+class _FakeActionIO(_FakeIO):
+    def __init__(self, action_result: dict[str, object], frames: list[JointStateFrame] | None = None) -> None:
+        super().__init__(frames=frames)
+        self.action_result = dict(action_result)
+        self.action_calls: list[dict[str, object]] = []
+
+    def execute_joint_target(
+        self, joint_names: list[str], positions: np.ndarray, duration_s: float, result_timeout_s: float
+    ) -> dict[str, object]:
+        self.action_calls.append(
+            {
+                "joint_names": list(joint_names),
+                "positions": positions.tolist(),
+                "duration_s": float(duration_s),
+                "result_timeout_s": float(result_timeout_s),
+            }
+        )
+        return dict(self.action_result)
+
 class TestRuntimeROS2Adapter(unittest.TestCase):
     def test_step_emits_cmd_and_readback(self) -> None:
         io = _FakeIO(
@@ -151,6 +172,56 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
 
         with self.assertRaisesRegex(TimeoutError, "joint_state_timeout_step"):
             _ = adapter.step(np.array([0.2, -0.1], dtype=float))
+
+    def test_step_uses_action_result_when_available(self) -> None:
+        io = _FakeActionIO(
+            action_result={
+                "path": "action",
+                "accepted": True,
+                "result_status": "success",
+                "execution_ok": True,
+                "fail_reason": "none",
+                "action_status": 4,
+                "action_error_code": 0,
+            },
+            frames=[
+                JointStateFrame(names=["j1", "j2"], position=[0.0, 0.0], velocity=[0.0, 0.0], stamp_ns=30),
+                JointStateFrame(names=["j1", "j2"], position=[0.2, 0.1], velocity=[0.0, 0.0], stamp_ns=31),
+            ],
+        )
+        adapter = RuntimeROS2Adapter(io=io, joint_names=["j1", "j2"], settle_timeout_s=0.2, initial_warmup_timeout_s=0.0)
+
+        out = adapter.step(np.array([0.2, 0.1], dtype=float))
+
+        self.assertEqual(len(io.action_calls), 1)
+        self.assertEqual(out["command_path"], "action")
+        self.assertEqual(out["result_status"], "success")
+        self.assertTrue(bool(out["execution_ok"]))
+        self.assertEqual(out["action_error_code"], 0)
+
+    def test_step_marks_failure_on_action_rejected(self) -> None:
+        io = _FakeActionIO(
+            action_result={
+                "path": "action",
+                "accepted": False,
+                "result_status": "rejected",
+                "execution_ok": False,
+                "fail_reason": "goal_rejected",
+                "action_status": None,
+                "action_error_code": None,
+            },
+            frames=[
+                JointStateFrame(names=["j1", "j2"], position=[0.0, 0.0], velocity=[0.0, 0.0], stamp_ns=40),
+            ],
+        )
+        adapter = RuntimeROS2Adapter(io=io, joint_names=["j1", "j2"], settle_timeout_s=0.2, initial_warmup_timeout_s=0.0)
+
+        out = adapter.step(np.array([0.2, 0.1], dtype=float))
+
+        self.assertFalse(bool(out["accepted"]))
+        self.assertFalse(bool(out["execution_ok"]))
+        self.assertEqual(out["result_status"], "rejected")
+        self.assertEqual(out["fail_reason"], "goal_rejected")
 
 
 if __name__ == "__main__":

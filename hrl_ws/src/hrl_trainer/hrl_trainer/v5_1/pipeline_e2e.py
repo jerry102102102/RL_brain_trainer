@@ -256,6 +256,7 @@ def run_pipeline_e2e(
     reward_totals: list[float] = []
     train_metrics: list[dict[str, float]] = []
     episode_joint_delta_summary: list[dict[str, Any]] = []
+    reset_failure_reasons: list[str] = []
 
     try:
         for ep in range(episodes_requested):
@@ -282,19 +283,30 @@ def run_pipeline_e2e(
                         action_limit=float(stage.action_limit),
                     )
                 else:
-                    logs = _run_episode_gz(
-                        ep_id=ep_id,
-                        ep_index=ep,
-                        step_count=step_count,
-                        logs_root=logs_root,
-                        runtime=runtime,
-                        target_q=target_q,
-                        controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
-                        policy_fn=_policy_fn,
-                        action_limit=float(stage.action_limit),
-                    )
-            except Exception:
+                    last_err: Exception | None = None
+                    for _attempt in range(2):
+                        try:
+                            logs = _run_episode_gz(
+                                ep_id=ep_id,
+                                ep_index=ep,
+                                step_count=step_count,
+                                logs_root=logs_root,
+                                runtime=runtime,
+                                target_q=target_q,
+                                controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
+                                policy_fn=_policy_fn,
+                                action_limit=float(stage.action_limit),
+                            )
+                            last_err = None
+                            break
+                        except Exception as e:  # transient startup/readback races
+                            last_err = e
+                            time.sleep(0.25)
+                    if last_err is not None:
+                        raise last_err
+            except Exception as e:
                 reset_failures += 1
+                reset_failure_reasons.append(f"ep={ep}:{type(e).__name__}:{e}")
                 break
 
             expected_log_lines_per_layer += max(1, int(step_count))
@@ -396,6 +408,9 @@ def run_pipeline_e2e(
                             "result_status": step["runtime"].get("result_status", "success"),
                             "execution_ok": bool(step["runtime"].get("execution_ok", True)),
                             "fail_reason": step["runtime"].get("fail_reason", "none"),
+                            "command_path": step["runtime"].get("command_path", "topic_fallback"),
+                            "action_status": step["runtime"].get("action_status"),
+                            "action_error_code": step["runtime"].get("action_error_code"),
                             "timestamp_ns": step["runtime"]["timestamp_ns"],
                         },
                     )
@@ -489,6 +504,8 @@ def run_pipeline_e2e(
         "reward_min": float(np.min(reward_totals)) if reward_totals else 0.0,
         "reward_max": float(np.max(reward_totals)) if reward_totals else 0.0,
     }
+    if reset_failure_reasons:
+        metrics["reset_failure_reasons"] = reset_failure_reasons[-5:]
 
     if train_metrics:
         metrics["train_actor_loss"] = float(np.mean([m["actor_loss"] for m in train_metrics]))

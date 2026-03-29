@@ -22,9 +22,13 @@ class JointRuntimeIO(Protocol):
 
     def wait_for_joint_state(self, timeout_s: float) -> JointStateFrame: ...
 
+    def execute_joint_target(
+        self, joint_names: list[str], positions: np.ndarray, duration_s: float, result_timeout_s: float
+    ) -> dict[str, Any]: ...
+
 
 class ROS2JointRuntimeIO:
-    """ROS2 I/O backend using JointTrajectory publish + /joint_states subscribe."""
+    """ROS2 I/O backend using FollowJointTrajectory action (primary) + topic fallback."""
 
     def __init__(
         self,
@@ -32,17 +36,25 @@ class ROS2JointRuntimeIO:
         joint_state_topic: str,
         joint_state_qos: str = "sensor_data",
         joint_state_qos_depth: int = 10,
+        action_name: str = "/arm_controller/follow_joint_trajectory",
+        use_action_primary: bool = True,
     ) -> None:
         try:
             import rclpy
             from trajectory_msgs.msg import JointTrajectory
             from sensor_msgs.msg import JointState
+            from control_msgs.action import FollowJointTrajectory
+            from rclpy.action import ActionClient
+            from action_msgs.msg import GoalStatus
         except ModuleNotFoundError as exc:  # pragma: no cover - exercised only in ROS2 env
             raise RuntimeError("ROS2 dependencies are missing; source ROS2 and install msgs") from exc
 
         self._rclpy = rclpy
         self._JointTrajectory = JointTrajectory
         self._JointState = JointState
+        self._FollowJointTrajectory = FollowJointTrajectory
+        self._ActionClient = ActionClient
+        self._GoalStatus = GoalStatus
 
         if not rclpy.ok():
             rclpy.init(args=None)
@@ -53,6 +65,8 @@ class ROS2JointRuntimeIO:
         self._node = rclpy.create_node("v5_1_runtime_adapter")
         self._pub = self._node.create_publisher(JointTrajectory, trajectory_topic, 10)
         self._latest: JointStateFrame | None = None
+        self._use_action_primary = bool(use_action_primary)
+        self._action_client = ActionClient(self._node, FollowJointTrajectory, action_name) if self._use_action_primary else None
 
         def _on_joint_state(msg: Any) -> None:
             stamp_ns = int(time.time_ns())
@@ -75,7 +89,7 @@ class ROS2JointRuntimeIO:
                 sub_qos = max(1, int(joint_state_qos_depth))
         self._sub = self._node.create_subscription(JointState, joint_state_topic, _on_joint_state, sub_qos)
 
-    def publish_joint_target(self, joint_names: list[str], positions: np.ndarray, duration_s: float) -> None:
+    def _build_joint_trajectory(self, joint_names: list[str], positions: np.ndarray, duration_s: float) -> Any:
         from trajectory_msgs.msg import JointTrajectoryPoint
 
         msg = self._JointTrajectory()
@@ -87,6 +101,103 @@ class ROS2JointRuntimeIO:
         pt.time_from_start.sec = sec
         pt.time_from_start.nanosec = nsec
         msg.points = [pt]
+        return msg
+
+    def execute_joint_target(
+        self, joint_names: list[str], positions: np.ndarray, duration_s: float, result_timeout_s: float
+    ) -> dict[str, Any]:
+        if self._action_client is None:
+            return {
+                "path": "topic_fallback",
+                "accepted": True,
+                "result_status": "unknown",
+                "execution_ok": True,
+                "fail_reason": "none",
+                "action_status": None,
+                "action_error_code": None,
+            }
+
+        if not self._action_client.wait_for_server(timeout_sec=max(0.01, float(result_timeout_s))):
+            return {
+                "path": "action",
+                "accepted": False,
+                "result_status": "rejected",
+                "execution_ok": False,
+                "fail_reason": "action_server_unavailable",
+                "action_status": None,
+                "action_error_code": None,
+            }
+
+        goal = self._FollowJointTrajectory.Goal()
+        goal.trajectory = self._build_joint_trajectory(joint_names, positions, duration_s)
+
+        send_future = self._action_client.send_goal_async(goal)
+        self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=max(0.01, float(result_timeout_s)))
+        if not send_future.done():
+            return {
+                "path": "action",
+                "accepted": False,
+                "result_status": "rejected",
+                "execution_ok": False,
+                "fail_reason": "goal_send_timeout",
+                "action_status": None,
+                "action_error_code": None,
+            }
+
+        goal_handle = send_future.result()
+        accepted = bool(goal_handle is not None and getattr(goal_handle, "accepted", False))
+        if not accepted:
+            return {
+                "path": "action",
+                "accepted": False,
+                "result_status": "rejected",
+                "execution_ok": False,
+                "fail_reason": "goal_rejected",
+                "action_status": None,
+                "action_error_code": None,
+            }
+
+        result_future = goal_handle.get_result_async()
+        self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=max(0.01, float(result_timeout_s)))
+        if not result_future.done():
+            return {
+                "path": "action",
+                "accepted": True,
+                "result_status": "fail",
+                "execution_ok": False,
+                "fail_reason": "action_result_timeout",
+                "action_status": None,
+                "action_error_code": None,
+            }
+
+        wrapped = result_future.result()
+        status = int(getattr(wrapped, "status", 0))
+        result = getattr(wrapped, "result", None)
+        error_code = int(getattr(result, "error_code", 0)) if result is not None else 0
+
+        status_ok = status == int(self._GoalStatus.STATUS_SUCCEEDED)
+        code_ok = error_code == int(getattr(self._FollowJointTrajectory.Result, "SUCCESSFUL", 0))
+        execution_ok = bool(status_ok and code_ok)
+
+        fail_reason = "none"
+        if not execution_ok:
+            if not status_ok:
+                fail_reason = f"action_status_{status}"
+            elif not code_ok:
+                fail_reason = f"action_error_code_{error_code}"
+
+        return {
+            "path": "action",
+            "accepted": True,
+            "result_status": "success" if execution_ok else "fail",
+            "execution_ok": execution_ok,
+            "fail_reason": fail_reason,
+            "action_status": status,
+            "action_error_code": error_code,
+        }
+
+    def publish_joint_target(self, joint_names: list[str], positions: np.ndarray, duration_s: float) -> None:
+        msg = self._build_joint_trajectory(joint_names, positions, duration_s)
         self._pub.publish(msg)
 
     def wait_for_joint_state(self, timeout_s: float) -> JointStateFrame:
@@ -149,6 +260,8 @@ class RuntimeROS2Adapter:
         initial_read_fallback_timeout_s: float = 2.0,
         joint_state_qos: str = "sensor_data",
         joint_state_qos_depth: int = 10,
+        action_name: str = "/arm_controller/follow_joint_trajectory",
+        use_action_primary: bool = True,
     ) -> "RuntimeROS2Adapter":
         return cls(
             io=ROS2JointRuntimeIO(
@@ -156,6 +269,8 @@ class RuntimeROS2Adapter:
                 joint_state_topic=joint_state_topic,
                 joint_state_qos=joint_state_qos,
                 joint_state_qos_depth=joint_state_qos_depth,
+                action_name=action_name,
+                use_action_primary=use_action_primary,
             ),
             joint_names=joint_names,
             command_duration_s=command_duration_s,
@@ -273,11 +388,36 @@ class RuntimeROS2Adapter:
         cmd_delta_l2 = float(np.linalg.norm(cmd_q - q_before))
 
         skipped_publish = cmd_delta_l2 < self.min_command_l2
-        if not skipped_publish:
-            self.io.publish_joint_target(self.joint_names, cmd_q, self.command_duration_s)
+        transport = {
+            "path": "topic_fallback",
+            "accepted": True,
+            "result_status": "success",
+            "execution_ok": None,
+            "fail_reason": "none",
+            "action_status": None,
+            "action_error_code": None,
+        }
+
+        if skipped_publish:
+            transport.update(
+                {
+                    "accepted": False,
+                    "result_status": "fail",
+                    "execution_ok": False,
+                    "fail_reason": "below_min_command",
+                }
+            )
+        else:
+            exec_fn = getattr(self.io, "execute_joint_target", None)
+            if callable(exec_fn):
+                transport = exec_fn(self.joint_names, cmd_q, self.command_duration_s, self.settle_timeout_s)
+                if str(transport.get("path")) == "topic_fallback":
+                    self.io.publish_joint_target(self.joint_names, cmd_q, self.command_duration_s)
+            else:
+                self.io.publish_joint_target(self.joint_names, cmd_q, self.command_duration_s)
 
         deadline = time.monotonic() + self.settle_timeout_s
-        if skipped_publish:
+        if skipped_publish or not bool(transport.get("accepted", True)):
             frame_after = frame_before
         else:
             fresh = self._wait_for_fresh_frame(older_than_stamp_ns=frame_before.stamp_ns, deadline=deadline)
@@ -296,7 +436,14 @@ class RuntimeROS2Adapter:
             if skipped_publish
             else ("small_joint_delta" if no_effect_by_abs else ("small_effect_ratio" if no_effect_by_ratio else "none"))
         )
-        execution_ok = bool(not no_effect)
+        transport_execution_ok = transport.get("execution_ok")
+        execution_ok = bool((not no_effect) if transport_execution_ok is None else transport_execution_ok)
+        fail_reason = str(transport.get("fail_reason", "none" if execution_ok else no_effect_reason))
+        result_status = str(transport.get("result_status", "success" if execution_ok else "fail"))
+        accepted = bool(transport.get("accepted", not skipped_publish))
+
+        if not execution_ok and fail_reason == "none":
+            fail_reason = no_effect_reason if no_effect else "execution_failed"
 
         return {
             "q_before": q_before.tolist(),
@@ -309,10 +456,13 @@ class RuntimeROS2Adapter:
             "no_effect": no_effect,
             "no_effect_reason": no_effect_reason,
             "skipped_publish": bool(skipped_publish),
-            "accepted": bool(not skipped_publish),
-            "result_status": "success" if execution_ok else "fail",
+            "accepted": accepted,
+            "result_status": result_status,
             "execution_ok": execution_ok,
-            "fail_reason": "none" if execution_ok else no_effect_reason,
+            "fail_reason": fail_reason,
+            "command_path": str(transport.get("path", "topic_fallback")),
+            "action_status": transport.get("action_status"),
+            "action_error_code": transport.get("action_error_code"),
             "frame_before_stamp_ns": int(frame_before.stamp_ns),
             "frame_after_stamp_ns": int(frame_after.stamp_ns),
             "timestamp_ns": int(time.time_ns()),
