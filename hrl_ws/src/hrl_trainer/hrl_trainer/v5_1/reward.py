@@ -13,8 +13,8 @@ import numpy as np
 @dataclass(frozen=True)
 class RewardConfig:
     w_progress: float = 1.0
-    w_action_norm: float = -0.05
-    w_jerk: float = -0.03
+    w_action_norm: float = 0.0
+    w_jerk: float = 0.0
     w_intervention: float = -0.4
     w_clamp_projection: float = -0.2
     timeout_penalty: float = 0.0
@@ -22,7 +22,8 @@ class RewardConfig:
     success_bonus: float = 1.5
     execution_fail_penalty: float = -2.0
     stall_penalty: float = -0.1
-    stall_joint_delta_eps: float = 1e-4
+    stall_joint_delta_eps: float = 3e-4
+    stall_effect_ratio_threshold: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,9 @@ class RewardComposer:
         if q_before is not None and q_after is not None:
             joint_delta_l2 = float(np.linalg.norm(np.asarray(q_after, dtype=float) - np.asarray(q_before, dtype=float)))
         low_joint_delta = bool(joint_delta_l2 is not None and joint_delta_l2 < float(self.config.stall_joint_delta_eps))
-        low_effect_ratio = bool(effect_ratio is not None and float(effect_ratio) < 0.1)
+        low_effect_ratio = bool(
+            effect_ratio is not None and float(effect_ratio) < float(self.config.stall_effect_ratio_threshold)
+        )
         stall_term = float(self.config.stall_penalty) if (low_joint_delta or low_effect_ratio) else 0.0
 
         total = (

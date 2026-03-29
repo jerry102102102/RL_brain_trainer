@@ -24,8 +24,8 @@ class TestV51Reward(unittest.TestCase):
         )
 
         self.assertGreater(terms.progress, 0.0)
-        self.assertLess(terms.action, 0.0)
-        self.assertLess(terms.jerk, 0.0)
+        self.assertEqual(terms.action, 0.0)
+        self.assertEqual(terms.jerk, 0.0)
         self.assertLess(terms.intervention, 0.0)
         self.assertLess(terms.clamp_or_projection, 0.0)
         self.assertEqual(terms.stall, 0.0)
@@ -132,6 +132,24 @@ class TestV51Reward(unittest.TestCase):
             effect_ratio=1.0,
         )
         self.assertEqual(terms.stall, 0.0)
+
+    def test_stall_penalty_triggers_on_low_effect_ratio_threshold(self) -> None:
+        terms = RewardComposer().compute(
+            prev_ee_pos_err=np.array([0.2, 0.0, 0.0]),
+            prev_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            curr_ee_pos_err=np.array([0.19, 0.0, 0.0]),
+            curr_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            action=np.zeros(6),
+            prev_action=np.zeros(6),
+            intervention=False,
+            clamp_or_projection=False,
+            done=False,
+            done_reason="running",
+            q_before=np.zeros(6),
+            q_after=np.full(6, 1e-2),
+            effect_ratio=0.2,
+        )
+        self.assertLess(terms.stall, 0.0)
 
 
 if __name__ == "__main__":

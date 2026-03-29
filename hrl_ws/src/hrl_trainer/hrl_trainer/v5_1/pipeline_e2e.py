@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -26,7 +28,60 @@ _OBS_DIM = 24
 _NO_EFFECT_EPS = 1e-4
 _NO_EFFECT_STREAK_LIMIT = 3
 _HOME_Q = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
-_EE_TARGET = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
+_EXTERNAL_TASK_LIBRARY_RELATIVE = Path(
+    "external/ENPM662_Group4_FinalProject/src/kitchen_robot_controller/kitchen_robot_controller/task_library.py"
+)
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def _resolve_ee_target_from_external_task(
+    *,
+    prop: str = "tray",
+    src_idx: int = 2,
+    dst_idx: int = 7,
+    waypoint_index: int = 2,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    external_file = _project_root() / _EXTERNAL_TASK_LIBRARY_RELATIVE
+    spec = importlib.util.spec_from_file_location("v5_1_external_task_library", external_file)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load external task library spec: {external_file}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    task_lib = module.MoveTaskLibrary()
+    trajectory = task_lib.move_from_to(prop=prop, src_idx=int(src_idx), dst_idx=int(dst_idx))
+    if not trajectory:
+        raise RuntimeError("external task trajectory is empty")
+
+    idx = max(0, min(int(waypoint_index), len(trajectory) - 1))
+    target_T = np.asarray(trajectory[idx], dtype=float)
+    R = target_T[:3, :3]
+    ee_target = np.array(
+        [
+            target_T[0, 3],
+            target_T[1, 3],
+            target_T[2, 3],
+            np.arctan2(R[2, 1], R[2, 2]),
+            np.arctan2(-R[2, 0], np.sqrt(R[0, 0] ** 2 + R[1, 0] ** 2)),
+            np.arctan2(R[1, 0], R[0, 0]),
+        ],
+        dtype=float,
+    )
+    source = {
+        "provider": "external_task_library.MoveTaskLibrary.move_from_to",
+        "external_file": str(external_file),
+        "prop": str(prop),
+        "src_idx": int(src_idx),
+        "dst_idx": int(dst_idx),
+        "waypoint_index": int(idx),
+        "trajectory_len": int(len(trajectory)),
+    }
+    return ee_target, source
 
 
 def _safe_rate(numerator: int, denominator: int) -> float:
@@ -278,6 +333,10 @@ def run_pipeline_e2e(
     ee_pos_success_threshold: float = 0.08,
     ee_ori_success_threshold: float = 0.12,
     reset_near_home_eps: float = 1e-4,
+    external_task_prop: str = "tray",
+    external_task_src_idx: int = 2,
+    external_task_dst_idx: int = 7,
+    external_task_waypoint_index: int = 2,
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_root)
     logs_root = artifact_root / "logs"
@@ -320,6 +379,13 @@ def run_pipeline_e2e(
             joint_state_topic=joint_state_topic,
         )
 
+    ee_target, ee_target_source = _resolve_ee_target_from_external_task(
+        prop=external_task_prop,
+        src_idx=external_task_src_idx,
+        dst_idx=external_task_dst_idx,
+        waypoint_index=external_task_waypoint_index,
+    )
+
     episodes_requested = max(1, int(episodes))
     successes = 0
     interventions = 0
@@ -340,8 +406,6 @@ def run_pipeline_e2e(
                 raise ValueError(f"unsupported controlled_dofs={stage.controlled_dofs}, expected {_CONTROLLED_ACTION_DIM}")
             ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
             step_count = min(int(steps_per_episode), stage.step_budget)
-
-            ee_target = _EE_TARGET.copy()
 
             def _policy_fn(obs: np.ndarray) -> tuple[np.ndarray, str]:
                 return agent.act(obs, stochastic=True), policy_mode
@@ -437,12 +501,14 @@ def run_pipeline_e2e(
 
             for idx, step in enumerate(trace_steps):
                 action = np.asarray(step["action_raw"], dtype=float)
-                prev_ee_pos_err = np.asarray(step["ee_target"][:3], dtype=float) - np.asarray(step["ee_pose"][:3], dtype=float)
-                prev_ee_ori_err = np.asarray(step["ee_target"][3:6], dtype=float) - np.asarray(step["ee_pose"][3:6], dtype=float)
-                curr_ee_pos_err = np.asarray(step["ee_pos_err"], dtype=float)
-                curr_ee_ori_err = np.asarray(step["ee_ori_err"], dtype=float)
-                prev_error = float(step["goal_error_prev"])
-                curr_error = float(step["goal_error_next"])
+                step_ee_target = np.asarray(step.get("ee_target", ee_target.tolist()), dtype=float)
+                step_ee_pose = np.asarray(step.get("ee_pose", np.zeros(6, dtype=float)), dtype=float)
+                prev_ee_pos_err = np.asarray(step_ee_target[:3], dtype=float) - np.asarray(step_ee_pose[:3], dtype=float)
+                prev_ee_ori_err = np.asarray(step_ee_target[3:6], dtype=float) - np.asarray(step_ee_pose[3:6], dtype=float)
+                curr_ee_pos_err = np.asarray(step.get("ee_pos_err", prev_ee_pos_err), dtype=float)
+                curr_ee_ori_err = np.asarray(step.get("ee_ori_err", prev_ee_ori_err), dtype=float)
+                prev_error = float(step.get("goal_error_prev", RewardComposer.ee_error_norm(prev_ee_pos_err, prev_ee_ori_err)))
+                curr_error = float(step.get("goal_error_next", RewardComposer.ee_error_norm(curr_ee_pos_err, curr_ee_ori_err)))
                 intervention_now = step["intervention"] != "none"
                 clamp_or_projection = bool(step["saturated"] or step["projection_applied"])
                 execution_ok = bool(step.get("runtime", {}).get("execution_ok", True))
@@ -458,6 +524,11 @@ def run_pipeline_e2e(
                     else:
                         done_reason = "success" if (float(np.linalg.norm(curr_ee_pos_err)) < float(ee_pos_success_threshold) and float(np.linalg.norm(curr_ee_ori_err)) < float(ee_ori_success_threshold)) else "timeout"
 
+                q_before_arr = np.asarray(step.get("obs_q", []), dtype=float)
+                q_after_arr = np.asarray(step.get("q_after", []), dtype=float)
+                q_before_for_stall = q_before_arr if q_before_arr.size > 0 and q_before_arr.shape == q_after_arr.shape else None
+                q_after_for_stall = q_after_arr if q_before_for_stall is not None else None
+
                 terms = reward_composer.compute(
                     prev_ee_pos_err=prev_ee_pos_err,
                     prev_ee_ori_err=prev_ee_ori_err,
@@ -469,8 +540,8 @@ def run_pipeline_e2e(
                     clamp_or_projection=clamp_or_projection,
                     done=done,
                     done_reason=done_reason,
-                    q_before=np.asarray(step.get("obs_q", []), dtype=float),
-                    q_after=np.asarray(step.get("q_after", []), dtype=float),
+                    q_before=q_before_for_stall,
+                    q_after=q_after_for_stall,
                     effect_ratio=(step.get("runtime", {}) or {}).get("effect_ratio"),
                 )
                 prev_action = action
@@ -688,6 +759,8 @@ def run_pipeline_e2e(
         "gate_overall_decision": gate_result.overall_decision,
         "gate_passed": gate_result.overall_decision == "GO",
         "episode_joint_delta_summary": episode_joint_delta_summary,
+        "ee_target": ee_target.tolist(),
+        "ee_target_source": ee_target_source,
     }
 
     if train_metrics:
@@ -730,6 +803,10 @@ def main() -> int:
     parser.add_argument("--sac-seed", type=int, default=0)
     parser.add_argument("--ee-pos-success-threshold", type=float, default=0.08)
     parser.add_argument("--ee-ori-success-threshold", type=float, default=0.12)
+    parser.add_argument("--external-task-prop", default="tray")
+    parser.add_argument("--external-task-src-idx", type=int, default=2)
+    parser.add_argument("--external-task-dst-idx", type=int, default=7)
+    parser.add_argument("--external-task-waypoint-index", type=int, default=2)
     args = parser.parse_args()
 
     joint_names = [x.strip() for x in args.runtime_joint_names.split(",") if x.strip()]
@@ -749,6 +826,10 @@ def main() -> int:
         joint_state_topic=args.joint_state_topic,
         ee_pos_success_threshold=args.ee_pos_success_threshold,
         ee_ori_success_threshold=args.ee_ori_success_threshold,
+        external_task_prop=args.external_task_prop,
+        external_task_src_idx=args.external_task_src_idx,
+        external_task_dst_idx=args.external_task_dst_idx,
+        external_task_waypoint_index=args.external_task_waypoint_index,
     )
     print(json.dumps({"run_id": args.run_id, "outputs": outputs}, indent=2, sort_keys=True))
     return int(outputs.get("exit_code", 0))

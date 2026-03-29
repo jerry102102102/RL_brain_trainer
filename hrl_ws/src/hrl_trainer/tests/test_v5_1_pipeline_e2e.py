@@ -271,9 +271,10 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(out["exit_code"], 0)
             runtime_trace = tmp_path / "artifacts_gz_rack" / "runtime_trace.jsonl"
             rows = [json.loads(x) for x in runtime_trace.read_text(encoding="utf-8").splitlines() if x.strip()]
-            self.assertGreaterEqual(len(rows), 1)
-            self.assertEqual(len(rows[0]["cmd_q"]), 7)
-            self.assertAlmostEqual(float(rows[0]["cmd_q"][0]), 0.0, places=7)
+            step_rows = [r for r in rows if "cmd_q" in r]
+            self.assertGreaterEqual(len(step_rows), 1)
+            self.assertEqual(len(step_rows[0]["cmd_q"]), 7)
+            self.assertAlmostEqual(float(step_rows[0]["cmd_q"][0]), 0.0, places=7)
 
     def test_pipeline_e2e_gz_mode_failfast_no_effect(self) -> None:
         from pathlib import Path
@@ -558,6 +559,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 runtime_mode="gz",
                 runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _ResetFailRuntime(**kwargs),
+                reset_near_home_eps=0.0,
             )
             self.assertEqual(out["exit_code"], 0)
             summary = json.loads((tmp_path / "artifacts_reset_fail" / "pipeline_summary.json").read_text(encoding="utf-8"))
@@ -700,6 +702,10 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("ee_target", step_rows[0])
             self.assertIn("ee_pos_err", step_rows[0])
             self.assertIn("ee_ori_err", step_rows[0])
+
+            summary = json.loads((tmp_path / "artifacts_ee_trace" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["ee_target_source"]["provider"], "external_task_library.MoveTaskLibrary.move_from_to")
+            self.assertTrue(summary["ee_target_source"]["external_file"].endswith("kitchen_robot_controller/task_library.py"))
 
 
 if __name__ == "__main__":
