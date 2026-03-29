@@ -51,10 +51,18 @@ class RewardComposer:
     def __init__(self, config: RewardConfig | None = None) -> None:
         self.config = config or RewardConfig()
 
+    @staticmethod
+    def ee_error_norm(ee_pos_err: np.ndarray, ee_ori_err: np.ndarray) -> float:
+        pos = float(np.linalg.norm(np.asarray(ee_pos_err, dtype=float)))
+        ori = float(np.linalg.norm(np.asarray(ee_ori_err, dtype=float)))
+        return float(pos + 0.5 * ori)
+
     def compute(
         self,
-        prev_error: float,
-        curr_error: float,
+        prev_ee_pos_err: np.ndarray,
+        prev_ee_ori_err: np.ndarray,
+        curr_ee_pos_err: np.ndarray,
+        curr_ee_ori_err: np.ndarray,
         action: np.ndarray,
         prev_action: np.ndarray,
         intervention: bool,
@@ -76,6 +84,8 @@ class RewardComposer:
                 reward_total=float(total),
             )
 
+        prev_error = self.ee_error_norm(prev_ee_pos_err, prev_ee_ori_err)
+        curr_error = self.ee_error_norm(curr_ee_pos_err, curr_ee_ori_err)
         progress = self.config.w_progress * float(prev_error - curr_error)
         action_term = self.config.w_action_norm * float(np.linalg.norm(action))
         jerk = self.config.w_jerk * float(np.linalg.norm(action - prev_action))

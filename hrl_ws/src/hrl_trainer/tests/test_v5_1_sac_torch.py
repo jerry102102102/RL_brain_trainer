@@ -12,7 +12,7 @@ TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 if TORCH_AVAILABLE:
     import torch
 
-from hrl_trainer.v5_1.pipeline_e2e import run_pipeline_e2e
+from hrl_trainer.v5_1.pipeline_e2e import _obs_from_state, run_pipeline_e2e
 
 if TORCH_AVAILABLE:
     from hrl_trainer.v5_1.sac_torch import SACTorchAgent, SACTorchConfig
@@ -28,6 +28,14 @@ class TestV51SACTorch(unittest.TestCase):
         action = agent.act(obs, stochastic=True)
 
         self.assertEqual(action.shape, (cfg.action_dim,))
+
+    def test_obs_builder_dim_matches_sac_interface(self) -> None:
+        q = np.zeros(6, dtype=np.float32)
+        dq = np.zeros(6, dtype=np.float32)
+        ee_err = np.zeros(6, dtype=np.float32)
+        prev_action = np.zeros(6, dtype=np.float32)
+        obs = _obs_from_state(q=q, dq=dq, ee_pose_err=ee_err, prev_action=prev_action)
+        self.assertEqual(obs.shape[0], 24)
 
     def test_train_step_updates_parameters(self) -> None:
         cfg = SACTorchConfig(obs_dim=12, action_dim=6, batch_size=8, replay_capacity=256, hidden_dim=64)

@@ -523,6 +523,122 @@ class TestV51PipelineE2E(unittest.TestCase):
                 runtime_factory=lambda **kwargs: object(),
             )
 
+    def test_pipeline_e2e_reset_fail_aborts_episode(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _ResetFailRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+                self.calls = 0
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                self.calls += 1
+                return {
+                    "q_before": list(self._q), "q_after": list(self._q), "cmd_q": list(cmd_q),
+                    "joint_delta": [0.0] * 6, "joint_delta_l2": 0.0, "timestamp_ns": 123,
+                    "accepted": False, "result_status": "rejected", "execution_ok": False, "fail_reason": "goal_rejected",
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_reset_fail",
+                episodes=2,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_reset_fail",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _ResetFailRuntime(**kwargs),
+            )
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_reset_fail" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["metrics"]["reset_failures"], 1)
+            self.assertEqual(summary["metrics"]["episodes_completed"], 0)
+
+    def test_pipeline_e2e_reset_success_recorded(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _OkRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {"q_before": before.tolist(), "q_after": after.tolist(), "cmd_q": after.tolist(), "joint_delta": (after - before).tolist(), "joint_delta_l2": float(_np.linalg.norm(after-before)), "timestamp_ns": 123, "accepted": True, "result_status": "success", "execution_ok": True, "fail_reason": "none"}
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            run_pipeline_e2e(
+                run_id="test_e2e_reset_ok",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root=tmp_path / "artifacts_reset_ok",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _OkRuntime(**kwargs),
+            )
+            summary = json.loads((tmp_path / "artifacts_reset_ok" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["episodes"][0]["reset_result"]["result_status"], "success")
+
+    def test_pipeline_e2e_runtime_trace_includes_ee_fields(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _OkRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {"q_before": before.tolist(), "q_after": after.tolist(), "cmd_q": after.tolist(), "joint_delta": (after - before).tolist(), "joint_delta_l2": float(_np.linalg.norm(after-before)), "timestamp_ns": 123, "accepted": True, "result_status": "success", "execution_ok": True, "fail_reason": "none"}
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            run_pipeline_e2e(
+                run_id="test_e2e_ee_trace",
+                episodes=1,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_ee_trace",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _OkRuntime(**kwargs),
+            )
+            rows = [json.loads(x) for x in (tmp_path / "artifacts_ee_trace" / "runtime_trace.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+            step_rows = [r for r in rows if r.get("step", 0) >= 0]
+            self.assertIn("ee_pose", step_rows[0])
+            self.assertIn("ee_target", step_rows[0])
+            self.assertIn("ee_pos_err", step_rows[0])
+            self.assertIn("ee_ori_err", step_rows[0])
+
 
 if __name__ == "__main__":
     unittest.main()

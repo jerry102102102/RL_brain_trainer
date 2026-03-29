@@ -21,8 +21,11 @@ from .runtime_ros2 import RuntimeROS2Adapter
 RuntimeFactory = Callable[..., RuntimeROS2Adapter]
 
 _CONTROLLED_ACTION_DIM = 6
+_OBS_DIM = 24
 _NO_EFFECT_EPS = 1e-4
 _NO_EFFECT_STREAK_LIMIT = 3
+_HOME_Q = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
+_EE_TARGET = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
 
 
 def _safe_rate(numerator: int, denominator: int) -> float:
@@ -36,9 +39,19 @@ def _count_jsonl_lines(path: Path) -> int:
         return sum(1 for _ in f)
 
 
-def _obs_from_q_target(q: np.ndarray, target_q: np.ndarray) -> np.ndarray:
-    err = target_q - q
-    return np.concatenate([q, err], axis=0)
+def _ee_pose_from_q(q: np.ndarray) -> np.ndarray:
+    q = np.asarray(q, dtype=float)
+    return np.concatenate([q[:3], q[3:6]], axis=0)
+
+
+def _ee_errors(ee_pose: np.ndarray, ee_target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    ee_pose = np.asarray(ee_pose, dtype=float)
+    ee_target = np.asarray(ee_target, dtype=float)
+    return ee_target[:3] - ee_pose[:3], ee_target[3:6] - ee_pose[3:6]
+
+
+def _obs_from_state(q: np.ndarray, dq: np.ndarray, ee_pose_err: np.ndarray, prev_action: np.ndarray) -> np.ndarray:
+    return np.concatenate([q, dq, ee_pose_err, prev_action], axis=0)
 
 
 def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
@@ -63,6 +76,26 @@ def _expand_cmd_q(q_before_full: np.ndarray, controlled_indices: list[int], q_de
     return cmd_full
 
 
+def _reset_episode_home(
+    runtime: RuntimeROS2Adapter,
+    controlled_indices: list[int],
+    home_q: np.ndarray,
+) -> dict[str, Any]:
+    q_before_full = runtime.read_q()
+    cmd_q_full = _expand_cmd_q(q_before_full=q_before_full, controlled_indices=controlled_indices, q_des_controlled=home_q)
+    out = runtime.step(cmd_q_full)
+    return {
+        "accepted": bool(out.get("accepted", False)),
+        "result_status": str(out.get("result_status", "fail")),
+        "execution_ok": bool(out.get("execution_ok", False)),
+        "fail_reason": str(out.get("fail_reason", "unknown")),
+        "command_path": str(out.get("command_path", "unknown")),
+        "home_q": np.asarray(home_q, dtype=float).tolist(),
+        "q_after": out.get("q_after", []),
+        "runtime": out,
+    }
+
+
 def _run_episode_gz(
     *,
     ep_id: str,
@@ -70,9 +103,9 @@ def _run_episode_gz(
     step_count: int,
     logs_root: Path,
     runtime: RuntimeROS2Adapter,
-    target_q: np.ndarray,
+    ee_target: np.ndarray,
     controlled_indices: list[int],
-    policy_fn: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]],
+    policy_fn: Callable[[np.ndarray], tuple[np.ndarray, str]],
     action_limit: float,
     no_effect_epsilon: float = _NO_EFFECT_EPS,
     no_effect_streak_limit: int = _NO_EFFECT_STREAK_LIMIT,
@@ -90,20 +123,27 @@ def _run_episode_gz(
     trace_steps: list[dict[str, Any]] = []
     controlled_idx_np = np.asarray(controlled_indices, dtype=int)
     no_effect_streak = 0
+    prev_action = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
+    prev_q: np.ndarray | None = None
 
     for step in range(max(1, int(step_count))):
         now_ns = ts0 + step * 100_000_000
         q_before_full = runtime.read_q()
         q_before = q_before_full[controlled_idx_np]
-        goal_error_prev = float(np.linalg.norm(target_q - q_before))
-        action_raw, policy_name = policy_fn(q_before.copy(), target_q.copy())
+        ee_pose_before = _ee_pose_from_q(q_before)
+        ee_pos_err_prev, ee_ori_err_prev = _ee_errors(ee_pose_before, ee_target)
+        goal_error_prev = RewardComposer.ee_error_norm(ee_pos_err_prev, ee_ori_err_prev)
+        dq = (q_before - prev_q) if prev_q is not None else np.zeros_like(q_before)
+        obs = _obs_from_state(q=q_before, dq=dq, ee_pose_err=np.concatenate([ee_pos_err_prev, ee_ori_err_prev]), prev_action=prev_action)
+        action_raw, policy_name = policy_fn(obs)
+        prev_q = q_before.copy()
 
         l1_payload = {
             "run_id": ep_id,
             "episode": int(ep_index),
             "step": int(step),
             "ts": int(now_ns),
-            "observation": {"q": q_before.tolist(), "target_q": target_q.tolist(), "goal_error_l2": goal_error_prev},
+            "observation": {"q": q_before.tolist(), "ee_target": ee_target.tolist(), "goal_error_l2": goal_error_prev},
         }
         _jsonl_append(l1_path, l1_payload)
 
@@ -128,7 +168,9 @@ def _run_episode_gz(
         rt = runtime.step(cmd_q_full)
         q_after_full = np.asarray(rt["q_after"], dtype=float)
         q_after = q_after_full[controlled_idx_np]
-        goal_error_next = float(np.linalg.norm(target_q - q_after))
+        ee_pose_after = _ee_pose_from_q(q_after)
+        ee_pos_err_next, ee_ori_err_next = _ee_errors(ee_pose_after, ee_target)
+        goal_error_next = RewardComposer.ee_error_norm(ee_pos_err_next, ee_ori_err_next)
 
         rt_joint_delta_l2 = float(rt["joint_delta_l2"])
         rt_no_effect = rt.get("no_effect")
@@ -155,7 +197,7 @@ def _run_episode_gz(
         _jsonl_append(l3_path, l3_payload)
 
         intervention = "none"
-        if no_effect_streak >= int(no_effect_streak_limit) and goal_error_next >= 0.08:
+        if no_effect_streak >= int(no_effect_streak_limit) and float(np.linalg.norm(ee_pos_err_next)) >= 0.08:
             intervention = "no_effect"
 
         trace_steps.append(
@@ -163,7 +205,10 @@ def _run_episode_gz(
                 "step": int(step),
                 "obs_q": q_before.tolist(),
                 "q_after": q_after.tolist(),
-                "target_q": target_q.tolist(),
+                "ee_pose": ee_pose_before.tolist(),
+                "ee_target": ee_target.tolist(),
+                "ee_pos_err": ee_pos_err_next.tolist(),
+                "ee_ori_err": ee_ori_err_next.tolist(),
                 "action_raw": exec_out.requested_delta_q.tolist(),
                 "action_clamped": exec_out.clamped_delta_q.tolist(),
                 "goal_error_prev": goal_error_prev,
@@ -176,6 +221,8 @@ def _run_episode_gz(
                 "runtime": rt,
             }
         )
+
+        prev_action = np.asarray(exec_out.requested_delta_q, dtype=float)
 
         if intervention == "no_effect":
             break
@@ -203,6 +250,8 @@ def run_pipeline_e2e(
     runtime_joint_names: list[str] | None = None,
     trajectory_topic: str = "/arm_controller/joint_trajectory",
     joint_state_topic: str = "/joint_states",
+    ee_pos_success_threshold: float = 0.08,
+    ee_ori_success_threshold: float = 0.12,
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_root)
     logs_root = artifact_root / "logs"
@@ -228,7 +277,7 @@ def run_pipeline_e2e(
     from .sac_torch import SACTorchAgent, SACTorchConfig
 
     agent: Any = SACTorchAgent(
-        SACTorchConfig(obs_dim=_CONTROLLED_ACTION_DIM * 2, action_dim=_CONTROLLED_ACTION_DIM),
+        SACTorchConfig(obs_dim=_OBS_DIM, action_dim=_CONTROLLED_ACTION_DIM),
         seed=sac_seed,
     )
 
@@ -266,23 +315,42 @@ def run_pipeline_e2e(
             ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
             step_count = min(int(steps_per_episode), stage.step_budget)
 
-            target_q = np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
+            ee_target = _EE_TARGET.copy()
 
-            def _policy_fn(q: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, str]:
-                obs = _obs_from_q_target(q, target)
+            def _policy_fn(obs: np.ndarray) -> tuple[np.ndarray, str]:
                 return agent.act(obs, stochastic=True), policy_mode
 
+            reset_info = {"status": "skipped", "accepted": True, "execution_ok": True, "result_status": "skipped"}
             try:
                 if runtime_mode == "smoke":
+                    def _smoke_policy_fn(q: np.ndarray, target_q: np.ndarray) -> tuple[np.ndarray, str]:
+                        ee_pose = _ee_pose_from_q(q)
+                        ee_pos_err, ee_ori_err = _ee_errors(ee_pose, ee_target)
+                        obs = _obs_from_state(q=q, dq=np.zeros_like(q), ee_pose_err=np.concatenate([ee_pos_err, ee_ori_err]), prev_action=np.zeros_like(q))
+                        return _policy_fn(obs)
+
                     logs = run_smoke(
                         run_id=ep_id,
                         steps=step_count,
                         log_root=logs_root,
                         episode=ep,
-                        policy_fn=_policy_fn,
+                        policy_fn=_smoke_policy_fn,
                         action_limit=float(stage.action_limit),
                     )
                 else:
+                    reset_info = _reset_episode_home(
+                        runtime=runtime,
+                        controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
+                        home_q=_HOME_Q,
+                    )
+                    _jsonl_append(runtime_trace_path, {"run_id": run_id, "episode": ep, "step": -1, "event": "reset", **reset_info})
+                    if not (reset_info["accepted"] and reset_info["execution_ok"] and reset_info["result_status"] == "success"):
+                        reset_failures += 1
+                        reset_failure_reasons.append(
+                            f"ep={ep}:reset:{reset_info.get('fail_reason','unknown')}"
+                        )
+                        _jsonl_append(episode_reward_summary_path, {"run_id": run_id, "episode": ep, "episode_id": ep_id, "reset_result": reset_info, "reset_fail": True})
+                        break
                     last_err: Exception | None = None
                     for _attempt in range(2):
                         try:
@@ -292,7 +360,7 @@ def run_pipeline_e2e(
                                 step_count=step_count,
                                 logs_root=logs_root,
                                 runtime=runtime,
-                                target_q=target_q,
+                                ee_target=ee_target,
                                 controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
                                 policy_fn=_policy_fn,
                                 action_limit=float(stage.action_limit),
@@ -331,6 +399,10 @@ def run_pipeline_e2e(
 
             for idx, step in enumerate(trace_steps):
                 action = np.asarray(step["action_raw"], dtype=float)
+                prev_ee_pos_err = np.asarray(step["ee_target"][:3], dtype=float) - np.asarray(step["ee_pose"][:3], dtype=float)
+                prev_ee_ori_err = np.asarray(step["ee_target"][3:6], dtype=float) - np.asarray(step["ee_pose"][3:6], dtype=float)
+                curr_ee_pos_err = np.asarray(step["ee_pos_err"], dtype=float)
+                curr_ee_ori_err = np.asarray(step["ee_ori_err"], dtype=float)
                 prev_error = float(step["goal_error_prev"])
                 curr_error = float(step["goal_error_next"])
                 intervention_now = step["intervention"] != "none"
@@ -346,11 +418,13 @@ def run_pipeline_e2e(
                     if step["intervention"] == "no_effect":
                         done_reason = "no_effect"
                     else:
-                        done_reason = "success" if curr_error < 0.08 else "timeout"
+                        done_reason = "success" if (float(np.linalg.norm(curr_ee_pos_err)) < float(ee_pos_success_threshold) and float(np.linalg.norm(curr_ee_ori_err)) < float(ee_ori_success_threshold)) else "timeout"
 
                 terms = reward_composer.compute(
-                    prev_error=prev_error,
-                    curr_error=curr_error,
+                    prev_ee_pos_err=prev_ee_pos_err,
+                    prev_ee_ori_err=prev_ee_ori_err,
+                    curr_ee_pos_err=curr_ee_pos_err,
+                    curr_ee_ori_err=curr_ee_ori_err,
                     action=action,
                     prev_action=prev_action,
                     intervention=intervention_now,
@@ -377,6 +451,10 @@ def run_pipeline_e2e(
                         "done_reason": done_reason,
                         "goal_error_prev": prev_error,
                         "goal_error_next": curr_error,
+                        "ee_pose": step.get("ee_pose"),
+                        "ee_target": step.get("ee_target"),
+                        "ee_pos_err": step.get("ee_pos_err"),
+                        "ee_ori_err": step.get("ee_ori_err"),
                         "reward_total": float(terms.reward_total),
                         "components": terms_dict,
                     }
@@ -400,6 +478,10 @@ def run_pipeline_e2e(
                             "frame_after_stamp_ns": step["runtime"].get("frame_after_stamp_ns"),
                             "goal_error_prev": prev_error,
                             "goal_error_next": curr_error,
+                            "ee_pose": step.get("ee_pose"),
+                            "ee_target": step.get("ee_target"),
+                            "ee_pos_err": step.get("ee_pos_err"),
+                            "ee_ori_err": step.get("ee_ori_err"),
                             "no_effect": bool(step.get("no_effect", False)),
                             "no_effect_reason": step["runtime"].get("no_effect_reason", "none"),
                             "no_effect_streak": int(step.get("no_effect_streak", 0)),
@@ -418,12 +500,14 @@ def run_pipeline_e2e(
                 if intervention_now:
                     ep_intervention = 1
 
-                obs = _obs_from_q_target(np.asarray(step["obs_q"], dtype=float), target_q)
-                if runtime_mode == "gz":
-                    next_q = np.asarray(step["q_after"], dtype=float)
-                else:
-                    next_q = np.asarray(step["obs_q"], dtype=float) + np.asarray(step["action_clamped"], dtype=float)
-                next_obs = _obs_from_q_target(next_q, target_q)
+                q_now = np.asarray(step["obs_q"], dtype=float)
+                q_next = np.asarray(step["q_after"], dtype=float) if runtime_mode == "gz" else (q_now + np.asarray(step["action_clamped"], dtype=float))
+                dq_now = np.zeros_like(q_now) if idx == 0 else (q_now - np.asarray(trace_steps[idx - 1]["obs_q"], dtype=float))
+                dq_next = q_next - q_now
+                ee_pose_err_now = np.concatenate([prev_ee_pos_err, prev_ee_ori_err])
+                ee_pose_err_next = np.concatenate([curr_ee_pos_err, curr_ee_ori_err])
+                obs = _obs_from_state(q=q_now, dq=dq_now, ee_pose_err=ee_pose_err_now, prev_action=prev_action)
+                next_obs = _obs_from_state(q=q_next, dq=dq_next, ee_pose_err=ee_pose_err_next, prev_action=action)
                 agent.remember(obs, action, terms.reward_total, next_obs, done)
                 train_out = agent.train_step()
                 if train_out is not None:
@@ -434,7 +518,13 @@ def run_pipeline_e2e(
                     break
 
             final_error = float(logs.get("final_goal_error", 1.0))
-            ep_success = 1 if final_error < 0.08 else 0
+            if trace_steps:
+                last = trace_steps[-1]
+                pos_ok = float(np.linalg.norm(np.asarray(last.get("ee_pos_err", [9, 9, 9]), dtype=float))) < float(ee_pos_success_threshold)
+                ori_ok = float(np.linalg.norm(np.asarray(last.get("ee_ori_err", [9, 9, 9]), dtype=float))) < float(ee_ori_success_threshold)
+                ep_success = 1 if (pos_ok and ori_ok) else 0
+            else:
+                ep_success = 0
 
             if runtime_mode == "gz" and ep_q_before is not None and ep_q_after is not None:
                 delta = ep_q_after - ep_q_before
@@ -466,6 +556,7 @@ def run_pipeline_e2e(
                 "success_count": int(ep_success),
                 "intervention_count": int(ep_intervention),
                 "no_effect_count": int(1 if trace_steps and trace_steps[-1]["intervention"] == "no_effect" else 0),
+                "reset_result": reset_info,
             }
             _jsonl_append(episode_reward_summary_path, ep_summary)
 
@@ -482,6 +573,7 @@ def run_pipeline_e2e(
                     "final_goal_error": final_error,
                     "policy_mode": policy_mode,
                     "runtime_mode": runtime_mode,
+                    "reset_result": reset_info,
                 }
             )
     finally:
@@ -594,6 +686,8 @@ def main() -> int:
     parser.add_argument("--trajectory-topic", default="/arm_controller/joint_trajectory")
     parser.add_argument("--joint-state-topic", default="/joint_states")
     parser.add_argument("--sac-seed", type=int, default=0)
+    parser.add_argument("--ee-pos-success-threshold", type=float, default=0.08)
+    parser.add_argument("--ee-ori-success-threshold", type=float, default=0.12)
     args = parser.parse_args()
 
     joint_names = [x.strip() for x in args.runtime_joint_names.split(",") if x.strip()]
@@ -611,6 +705,8 @@ def main() -> int:
         runtime_joint_names=joint_names,
         trajectory_topic=args.trajectory_topic,
         joint_state_topic=args.joint_state_topic,
+        ee_pos_success_threshold=args.ee_pos_success_threshold,
+        ee_ori_success_threshold=args.ee_ori_success_threshold,
     )
     print(json.dumps({"run_id": args.run_id, "outputs": outputs}, indent=2, sort_keys=True))
     return int(outputs.get("exit_code", 0))

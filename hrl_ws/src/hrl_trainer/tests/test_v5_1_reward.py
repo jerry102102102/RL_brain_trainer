@@ -11,8 +11,10 @@ class TestV51Reward(unittest.TestCase):
     def test_reward_components_have_expected_signs(self) -> None:
         composer = RewardComposer()
         terms = composer.compute(
-            prev_error=0.5,
-            curr_error=0.4,
+            prev_ee_pos_err=np.array([0.5,0,0]),
+            prev_ee_ori_err=np.array([0.0,0,0]),
+            curr_ee_pos_err=np.array([0.4,0,0]),
+            curr_ee_ori_err=np.array([0.0,0,0]),
             action=np.array([0.05, 0.0, 0.0, 0.0, 0.0, 0.0]),
             prev_action=np.zeros(6),
             intervention=True,
@@ -32,8 +34,10 @@ class TestV51Reward(unittest.TestCase):
     def test_reward_success_bonus_applied(self) -> None:
         composer = RewardComposer()
         terms = composer.compute(
-            prev_error=0.2,
-            curr_error=0.01,
+            prev_ee_pos_err=np.array([0.2,0,0]),
+            prev_ee_ori_err=np.array([0.0,0,0]),
+            curr_ee_pos_err=np.array([0.01,0,0]),
+            curr_ee_ori_err=np.array([0.0,0,0]),
             action=np.zeros(6),
             prev_action=np.zeros(6),
             intervention=False,
@@ -45,8 +49,10 @@ class TestV51Reward(unittest.TestCase):
 
     def test_execution_fail_applies_only_fail_penalty(self) -> None:
         terms = RewardComposer().compute(
-            prev_error=0.2,
-            curr_error=0.1,
+            prev_ee_pos_err=np.array([0.2,0,0]),
+            prev_ee_ori_err=np.array([0.0,0,0]),
+            curr_ee_pos_err=np.array([0.1,0,0]),
+            curr_ee_ori_err=np.array([0.0,0,0]),
             action=np.ones(6),
             prev_action=np.zeros(6),
             intervention=True,
@@ -63,8 +69,10 @@ class TestV51Reward(unittest.TestCase):
 
     def test_reward_trace_component_schema(self) -> None:
         terms = RewardComposer().compute(
-            prev_error=0.2,
-            curr_error=0.18,
+            prev_ee_pos_err=np.array([0.2,0,0]),
+            prev_ee_ori_err=np.array([0.0,0,0]),
+            curr_ee_pos_err=np.array([0.18,0,0]),
+            curr_ee_ori_err=np.array([0.0,0,0]),
             action=np.zeros(6),
             prev_action=np.zeros(6),
             intervention=False,
