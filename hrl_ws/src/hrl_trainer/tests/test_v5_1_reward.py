@@ -28,6 +28,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertLess(terms.jerk, 0.0)
         self.assertLess(terms.intervention, 0.0)
         self.assertLess(terms.clamp_or_projection, 0.0)
+        self.assertEqual(terms.stall, 0.0)
         self.assertEqual(terms.timeout_or_reset, 0.0)
         self.assertEqual(terms.success_bonus, 0.0)
 
@@ -65,6 +66,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertEqual(terms.jerk, 0.0)
         self.assertEqual(terms.intervention, 0.0)
         self.assertEqual(terms.clamp_or_projection, 0.0)
+        self.assertEqual(terms.stall, 0.0)
         self.assertEqual(terms.timeout_or_reset, -2.0)
 
     def test_reward_trace_component_schema(self) -> None:
@@ -89,11 +91,47 @@ class TestV51Reward(unittest.TestCase):
                 "jerk",
                 "intervention",
                 "clamp_or_projection",
+                "stall",
                 "timeout_or_reset",
                 "success_bonus",
                 "reward_total",
             },
         )
+
+    def test_stall_penalty_triggers_on_small_joint_delta(self) -> None:
+        terms = RewardComposer().compute(
+            prev_ee_pos_err=np.array([0.2, 0.0, 0.0]),
+            prev_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            curr_ee_pos_err=np.array([0.19, 0.0, 0.0]),
+            curr_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            action=np.zeros(6),
+            prev_action=np.zeros(6),
+            intervention=False,
+            clamp_or_projection=False,
+            done=False,
+            done_reason="running",
+            q_before=np.zeros(6),
+            q_after=np.full(6, 1e-6),
+        )
+        self.assertLess(terms.stall, 0.0)
+
+    def test_stall_penalty_not_triggered_when_joint_delta_large_enough(self) -> None:
+        terms = RewardComposer().compute(
+            prev_ee_pos_err=np.array([0.2, 0.0, 0.0]),
+            prev_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            curr_ee_pos_err=np.array([0.19, 0.0, 0.0]),
+            curr_ee_ori_err=np.array([0.0, 0.0, 0.0]),
+            action=np.zeros(6),
+            prev_action=np.zeros(6),
+            intervention=False,
+            clamp_or_projection=False,
+            done=False,
+            done_reason="running",
+            q_before=np.zeros(6),
+            q_after=np.full(6, 1e-2),
+            effect_ratio=1.0,
+        )
+        self.assertEqual(terms.stall, 0.0)
 
 
 if __name__ == "__main__":

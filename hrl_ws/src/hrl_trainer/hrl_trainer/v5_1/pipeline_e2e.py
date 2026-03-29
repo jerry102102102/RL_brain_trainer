@@ -80,8 +80,30 @@ def _reset_episode_home(
     runtime: RuntimeROS2Adapter,
     controlled_indices: list[int],
     home_q: np.ndarray,
+    reset_near_home_eps: float,
 ) -> dict[str, Any]:
     q_before_full = runtime.read_q()
+    controlled_idx_np = np.asarray(controlled_indices, dtype=int)
+    q_before_controlled = np.asarray(q_before_full, dtype=float)[controlled_idx_np]
+    home_q = np.asarray(home_q, dtype=float)
+    near_home_l2 = float(np.linalg.norm(q_before_controlled - home_q))
+    reset_skipped_near_home = bool(near_home_l2 < float(reset_near_home_eps))
+
+    if reset_skipped_near_home:
+        return {
+            "accepted": True,
+            "result_status": "success",
+            "execution_ok": True,
+            "fail_reason": "none",
+            "command_path": "skipped_near_home",
+            "home_q": home_q.tolist(),
+            "q_after": np.asarray(q_before_full, dtype=float).tolist(),
+            "q_before": np.asarray(q_before_full, dtype=float).tolist(),
+            "reset_skipped_near_home": True,
+            "reset_near_home_l2": near_home_l2,
+            "runtime": None,
+        }
+
     cmd_q_full = _expand_cmd_q(q_before_full=q_before_full, controlled_indices=controlled_indices, q_des_controlled=home_q)
     out = runtime.step(cmd_q_full)
     return {
@@ -90,8 +112,11 @@ def _reset_episode_home(
         "execution_ok": bool(out.get("execution_ok", False)),
         "fail_reason": str(out.get("fail_reason", "unknown")),
         "command_path": str(out.get("command_path", "unknown")),
-        "home_q": np.asarray(home_q, dtype=float).tolist(),
+        "home_q": home_q.tolist(),
         "q_after": out.get("q_after", []),
+        "q_before": out.get("q_before", np.asarray(q_before_full, dtype=float).tolist()),
+        "reset_skipped_near_home": False,
+        "reset_near_home_l2": near_home_l2,
         "runtime": out,
     }
 
@@ -252,6 +277,7 @@ def run_pipeline_e2e(
     joint_state_topic: str = "/joint_states",
     ee_pos_success_threshold: float = 0.08,
     ee_ori_success_threshold: float = 0.12,
+    reset_near_home_eps: float = 1e-4,
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_root)
     logs_root = artifact_root / "logs"
@@ -342,14 +368,25 @@ def run_pipeline_e2e(
                         runtime=runtime,
                         controlled_indices=runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)),
                         home_q=_HOME_Q,
+                        reset_near_home_eps=reset_near_home_eps,
                     )
                     _jsonl_append(runtime_trace_path, {"run_id": run_id, "episode": ep, "step": -1, "event": "reset", **reset_info})
-                    if not (reset_info["accepted"] and reset_info["execution_ok"] and reset_info["result_status"] == "success"):
+                    if not (reset_info["accepted"] and reset_info["execution_ok"]):
                         reset_failures += 1
                         reset_failure_reasons.append(
                             f"ep={ep}:reset:{reset_info.get('fail_reason','unknown')}"
                         )
-                        _jsonl_append(episode_reward_summary_path, {"run_id": run_id, "episode": ep, "episode_id": ep_id, "reset_result": reset_info, "reset_fail": True})
+                        _jsonl_append(
+                            episode_reward_summary_path,
+                            {
+                                "run_id": run_id,
+                                "episode": ep,
+                                "episode_id": ep_id,
+                                "reset_result": reset_info,
+                                "reset_fail": True,
+                                "reset_skipped_near_home": bool(reset_info.get("reset_skipped_near_home", False)),
+                            },
+                        )
                         break
                     last_err: Exception | None = None
                     for _attempt in range(2):
@@ -389,6 +426,7 @@ def run_pipeline_e2e(
                 "jerk": 0.0,
                 "intervention": 0.0,
                 "clamp_or_projection": 0.0,
+                "stall": 0.0,
                 "timeout_or_reset": 0.0,
                 "success_bonus": 0.0,
                 "reward_total": 0.0,
@@ -431,6 +469,9 @@ def run_pipeline_e2e(
                     clamp_or_projection=clamp_or_projection,
                     done=done,
                     done_reason=done_reason,
+                    q_before=np.asarray(step.get("obs_q", []), dtype=float),
+                    q_after=np.asarray(step.get("q_after", []), dtype=float),
+                    effect_ratio=(step.get("runtime", {}) or {}).get("effect_ratio"),
                 )
                 prev_action = action
                 terms_dict = terms.to_dict()
@@ -557,6 +598,7 @@ def run_pipeline_e2e(
                 "intervention_count": int(ep_intervention),
                 "no_effect_count": int(1 if trace_steps and trace_steps[-1]["intervention"] == "no_effect" else 0),
                 "reset_result": reset_info,
+                "reset_skipped_near_home": bool(reset_info.get("reset_skipped_near_home", False)),
             }
             _jsonl_append(episode_reward_summary_path, ep_summary)
 

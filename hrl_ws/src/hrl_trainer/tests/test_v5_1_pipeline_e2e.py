@@ -63,6 +63,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                     "jerk",
                     "intervention",
                     "clamp_or_projection",
+                    "stall",
                     "timeout_or_reset",
                     "success_bonus",
                     "reward_total",
@@ -598,6 +599,67 @@ class TestV51PipelineE2E(unittest.TestCase):
             )
             summary = json.loads((tmp_path / "artifacts_reset_ok" / "pipeline_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["episodes"][0]["reset_result"]["result_status"], "success")
+
+    def test_pipeline_e2e_near_home_reset_skip_counts_as_success(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _NearHomeRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+                self.step_calls = 0
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+                self.step_calls += 1
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": after.tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": float(_np.linalg.norm(after - before)),
+                    "timestamp_ns": 123,
+                    "accepted": True,
+                    "result_status": "success",
+                    "execution_ok": True,
+                    "fail_reason": "none",
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            runtime_holder: dict[str, _NearHomeRuntime] = {}
+
+            def _factory(**kwargs):
+                runtime_holder["rt"] = _NearHomeRuntime(**kwargs)
+                return runtime_holder["rt"]
+
+            run_pipeline_e2e(
+                run_id="test_e2e_near_home_skip",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root=tmp_path / "artifacts_near_home_skip",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=_factory,
+                reset_near_home_eps=1e-3,
+            )
+
+            summary = json.loads((tmp_path / "artifacts_near_home_skip" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["metrics"]["reset_failures"], 0)
+            self.assertTrue(bool(summary["episodes"][0]["reset_result"].get("reset_skipped_near_home", False)))
+
+            ep_rows = [json.loads(x) for x in (tmp_path / "artifacts_near_home_skip" / "episode_reward_summary.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+            self.assertTrue(bool(ep_rows[0].get("reset_skipped_near_home", False)))
 
     def test_pipeline_e2e_runtime_trace_includes_ee_fields(self) -> None:
         from pathlib import Path

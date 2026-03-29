@@ -21,6 +21,8 @@ class RewardConfig:
     reset_fail_penalty: float = -1.5
     success_bonus: float = 1.5
     execution_fail_penalty: float = -2.0
+    stall_penalty: float = -0.1
+    stall_joint_delta_eps: float = 1e-4
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class RewardTerms:
     jerk: float
     intervention: float
     clamp_or_projection: float
+    stall: float
     timeout_or_reset: float
     success_bonus: float
     reward_total: float
@@ -41,6 +44,7 @@ class RewardTerms:
             "jerk": self.jerk,
             "intervention": self.intervention,
             "clamp_or_projection": self.clamp_or_projection,
+            "stall": self.stall,
             "timeout_or_reset": self.timeout_or_reset,
             "success_bonus": self.success_bonus,
             "reward_total": self.reward_total,
@@ -69,6 +73,9 @@ class RewardComposer:
         clamp_or_projection: bool,
         done: bool,
         done_reason: str,
+        q_before: np.ndarray | None = None,
+        q_after: np.ndarray | None = None,
+        effect_ratio: float | None = None,
     ) -> RewardTerms:
         if done and done_reason == "execution_fail":
             timeout_reset_term = self.config.execution_fail_penalty
@@ -79,6 +86,7 @@ class RewardComposer:
                 jerk=0.0,
                 intervention=0.0,
                 clamp_or_projection=0.0,
+                stall=0.0,
                 timeout_or_reset=timeout_reset_term,
                 success_bonus=0.0,
                 reward_total=float(total),
@@ -102,12 +110,20 @@ class RewardComposer:
             elif done_reason == "success":
                 success_bonus = self.config.success_bonus
 
+        joint_delta_l2 = None
+        if q_before is not None and q_after is not None:
+            joint_delta_l2 = float(np.linalg.norm(np.asarray(q_after, dtype=float) - np.asarray(q_before, dtype=float)))
+        low_joint_delta = bool(joint_delta_l2 is not None and joint_delta_l2 < float(self.config.stall_joint_delta_eps))
+        low_effect_ratio = bool(effect_ratio is not None and float(effect_ratio) < 0.1)
+        stall_term = float(self.config.stall_penalty) if (low_joint_delta or low_effect_ratio) else 0.0
+
         total = (
             progress
             + action_term
             + jerk
             + intervention_term
             + clamp_term
+            + stall_term
             + timeout_reset_term
             + success_bonus
         )
@@ -118,6 +134,7 @@ class RewardComposer:
             jerk=jerk,
             intervention=intervention_term,
             clamp_or_projection=clamp_term,
+            stall=stall_term,
             timeout_or_reset=timeout_reset_term,
             success_bonus=success_bonus,
             reward_total=float(total),
