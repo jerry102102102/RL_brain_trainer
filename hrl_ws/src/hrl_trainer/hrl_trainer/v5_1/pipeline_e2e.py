@@ -845,6 +845,12 @@ def run_pipeline_e2e(
     )
     write_gate_report(gate_path, gate_result)
 
+    top_level_target_mode = episode_outputs[-1]["target_mode"] if episode_outputs else target_mode
+    top_level_ee_target = episode_outputs[-1]["ee_target"] if episode_outputs else external_ee_target.tolist()
+    top_level_ee_target_source = (
+        episode_outputs[-1]["ee_target_source"] if episode_outputs else external_ee_target_source
+    )
+
     summary = {
         "run_id": run_id,
         "timestamp_ns": time.time_ns(),
@@ -862,11 +868,12 @@ def run_pipeline_e2e(
         "runtime_mode": runtime_mode,
         "stage_profile": stage_profile,
         "target_mode": target_mode,
+        "resolved_target_mode": top_level_target_mode,
         "gate_overall_decision": gate_result.overall_decision,
         "gate_passed": gate_result.overall_decision == "GO",
         "episode_joint_delta_summary": episode_joint_delta_summary,
-        "ee_target": external_ee_target.tolist(),
-        "ee_target_source": external_ee_target_source,
+        "ee_target": top_level_ee_target,
+        "ee_target_source": top_level_ee_target_source,
     }
 
     if train_metrics:

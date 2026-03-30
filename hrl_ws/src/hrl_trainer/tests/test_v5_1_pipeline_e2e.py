@@ -149,7 +149,12 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(out["exit_code"], 0)
             summary = json.loads((tmp_path / "artifacts_s0b_near_home" / "pipeline_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["target_mode"], "auto")
+            self.assertEqual(summary["resolved_target_mode"], "near_home")
             self.assertEqual(summary["episodes"][0]["target_mode"], "near_home")
+            self.assertEqual(summary["ee_target_source"]["provider"], "near_home_bootstrap")
+            self.assertIn("home_ee", summary["ee_target_source"])
+            self.assertIn("target_delta_pos", summary["ee_target_source"])
+            self.assertIn("target_delta_ori", summary["ee_target_source"])
             self.assertIn("home_ee", summary["episodes"][0])
             self.assertIn("target_delta_pos", summary["episodes"][0])
             self.assertIn("target_delta_ori", summary["episodes"][0])
@@ -744,6 +749,7 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("ee_ori_err", step_rows[0])
 
             summary = json.loads((tmp_path / "artifacts_ee_trace" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["resolved_target_mode"], "external")
             self.assertEqual(summary["ee_target_source"]["provider"], "external_task_library.MoveTaskLibrary.move_from_to")
             self.assertTrue(summary["ee_target_source"]["external_file"].endswith("kitchen_robot_controller/task_library.py"))
 

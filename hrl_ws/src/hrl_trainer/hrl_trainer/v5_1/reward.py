@@ -12,7 +12,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class RewardConfig:
-    w_progress: float = 1.0
+    # Boost EE progress dominance for phase1 where action/jerk are disabled.
+    w_progress: float = 3.0
     w_action_norm: float = 0.0
     w_jerk: float = 0.0
     w_intervention: float = -0.4

@@ -4,10 +4,13 @@ import unittest
 
 import numpy as np
 
-from hrl_trainer.v5_1.reward import RewardComposer
+from hrl_trainer.v5_1.reward import RewardComposer, RewardConfig
 
 
 class TestV51Reward(unittest.TestCase):
+    def test_default_progress_weight_is_boosted(self) -> None:
+        self.assertEqual(RewardConfig.w_progress, 3.0)
+
     def test_reward_components_have_expected_signs(self) -> None:
         composer = RewardComposer()
         terms = composer.compute(
