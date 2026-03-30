@@ -15,9 +15,9 @@ class TestV51Reward(unittest.TestCase):
         composer = RewardComposer()
         terms = composer.compute(
             prev_ee_pos_err=np.array([0.5,0,0]),
-            prev_ee_ori_err=np.array([0.0,0,0]),
+            prev_ee_ori_err=np.array([0.2,0,0]),
             curr_ee_pos_err=np.array([0.4,0,0]),
-            curr_ee_ori_err=np.array([0.0,0,0]),
+            curr_ee_ori_err=np.array([0.18,0,0]),
             action=np.array([0.05, 0.0, 0.0, 0.0, 0.0, 0.0]),
             prev_action=np.zeros(6),
             intervention=True,
@@ -32,6 +32,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertLess(terms.intervention, 0.0)
         self.assertLess(terms.clamp_or_projection, 0.0)
         self.assertEqual(terms.stall, 0.0)
+        self.assertEqual(terms.ee_small_motion_penalty, 0.0)
         self.assertEqual(terms.timeout_or_reset, 0.0)
         self.assertEqual(terms.success_bonus, 0.0)
 
@@ -70,6 +71,7 @@ class TestV51Reward(unittest.TestCase):
         self.assertEqual(terms.intervention, 0.0)
         self.assertEqual(terms.clamp_or_projection, 0.0)
         self.assertEqual(terms.stall, 0.0)
+        self.assertEqual(terms.ee_small_motion_penalty, 0.0)
         self.assertEqual(terms.timeout_or_reset, -2.0)
 
     def test_reward_trace_component_schema(self) -> None:
@@ -95,6 +97,7 @@ class TestV51Reward(unittest.TestCase):
                 "intervention",
                 "clamp_or_projection",
                 "stall",
+                "ee_small_motion_penalty",
                 "timeout_or_reset",
                 "success_bonus",
                 "reward_total",
@@ -153,6 +156,38 @@ class TestV51Reward(unittest.TestCase):
             effect_ratio=0.2,
         )
         self.assertLess(terms.stall, 0.0)
+
+    def test_ee_small_motion_penalty_triggers_when_step_motion_too_small(self) -> None:
+        terms = RewardComposer().compute(
+            prev_ee_pos_err=np.array([0.2, 0.0, 0.0]),
+            prev_ee_ori_err=np.array([0.1, 0.0, 0.0]),
+            curr_ee_pos_err=np.array([0.1995, 0.0, 0.0]),
+            curr_ee_ori_err=np.array([0.0998, 0.0, 0.0]),
+            action=np.zeros(6),
+            prev_action=np.zeros(6),
+            intervention=False,
+            clamp_or_projection=False,
+            done=False,
+            done_reason="running",
+            effect_ratio=1.0,
+        )
+        self.assertLess(terms.ee_small_motion_penalty, 0.0)
+
+    def test_ee_small_motion_penalty_not_triggered_when_motion_sufficient(self) -> None:
+        terms = RewardComposer().compute(
+            prev_ee_pos_err=np.array([0.2, 0.0, 0.0]),
+            prev_ee_ori_err=np.array([0.1, 0.0, 0.0]),
+            curr_ee_pos_err=np.array([0.195, 0.0, 0.0]),
+            curr_ee_ori_err=np.array([0.09, 0.0, 0.0]),
+            action=np.zeros(6),
+            prev_action=np.zeros(6),
+            intervention=False,
+            clamp_or_projection=False,
+            done=False,
+            done_reason="running",
+            effect_ratio=1.0,
+        )
+        self.assertEqual(terms.ee_small_motion_penalty, 0.0)
 
 
 if __name__ == "__main__":

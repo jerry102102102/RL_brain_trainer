@@ -66,6 +66,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                     "intervention",
                     "clamp_or_projection",
                     "stall",
+                    "ee_small_motion_penalty",
                     "timeout_or_reset",
                     "success_bonus",
                     "reward_total",
@@ -488,7 +489,103 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(float(fail_row["components"]["progress"]), 0.0)
             self.assertEqual(float(fail_row["components"]["action"]), 0.0)
             self.assertEqual(float(fail_row["components"]["jerk"]), 0.0)
+            self.assertEqual(float(fail_row["components"]["ee_small_motion_penalty"]), 0.0)
             self.assertLess(float(fail_row["components"]["timeout_or_reset"]), 0.0)
+
+    def test_pipeline_e2e_reward_trace_records_ee_small_motion_penalty_on_stall(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _NoMotionButSuccessRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 6
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+                before = _np.asarray(self._q, dtype=float)
+                after = before.copy()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": _np.asarray(cmd_q, dtype=float).tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": 0.0,
+                    "accepted": True,
+                    "result_status": "success",
+                    "execution_ok": True,
+                    "fail_reason": "none",
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_small_motion_penalty",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root=tmp_path / "artifacts_small_motion_penalty",
+                runtime_mode="gz",
+                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _NoMotionButSuccessRuntime(**kwargs),
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            reward_rows = [
+                json.loads(x)
+                for x in (tmp_path / "artifacts_small_motion_penalty" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                if x.strip()
+            ]
+            self.assertGreaterEqual(len(reward_rows), 1)
+            row = reward_rows[-1]
+            self.assertIn("ee_step_dpos", row)
+            self.assertIn("ee_step_dori", row)
+            self.assertIn("ee_small_motion_penalty", row)
+            self.assertLess(float(row["components"]["ee_small_motion_penalty"]), 0.0)
+
+    def test_pipeline_e2e_reward_trace_no_ee_small_motion_penalty_when_thresholds_tiny(self) -> None:
+        from pathlib import Path
+        import tempfile
+        from hrl_trainer.v5_1.reward import RewardComposer as _RewardComposer, RewardConfig
+
+        class _TinyThresholdRewardComposer(_RewardComposer):
+            def __init__(self, config=None):
+                super().__init__(
+                    config
+                    or RewardConfig(
+                        ee_step_pos_min_m=1e-12,
+                        ee_step_ori_min_rad=1e-12,
+                    )
+                )
+
+        original_composer = pipeline_e2e.RewardComposer
+        pipeline_e2e.RewardComposer = _TinyThresholdRewardComposer
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                tmp_path = Path(td)
+                out = run_pipeline_e2e(
+                    run_id="test_e2e_small_motion_no_penalty",
+                    episodes=1,
+                    steps_per_episode=2,
+                    artifact_root=tmp_path / "artifacts_small_motion_no_penalty",
+                )
+
+                self.assertEqual(out["exit_code"], 0)
+                reward_rows = [
+                    json.loads(x)
+                    for x in (tmp_path / "artifacts_small_motion_no_penalty" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                    if x.strip()
+                ]
+                self.assertGreaterEqual(len(reward_rows), 1)
+                self.assertTrue(all(float(r["components"]["ee_small_motion_penalty"]) == 0.0 for r in reward_rows))
+        finally:
+            pipeline_e2e.RewardComposer = original_composer
 
     def test_pipeline_e2e_reward_uses_fail_penalty_on_action_rejected(self) -> None:
         from pathlib import Path

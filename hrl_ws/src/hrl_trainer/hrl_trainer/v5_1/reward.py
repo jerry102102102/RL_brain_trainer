@@ -25,6 +25,9 @@ class RewardConfig:
     stall_penalty: float = -0.1
     stall_joint_delta_eps: float = 3e-4
     stall_effect_ratio_threshold: float = 0.25
+    ee_small_motion_penalty: float = -0.05
+    ee_step_pos_min_m: float = 2e-3
+    ee_step_ori_min_rad: float = 5e-3
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class RewardTerms:
     intervention: float
     clamp_or_projection: float
     stall: float
+    ee_small_motion_penalty: float
     timeout_or_reset: float
     success_bonus: float
     reward_total: float
@@ -47,6 +51,7 @@ class RewardTerms:
             "intervention": self.intervention,
             "clamp_or_projection": self.clamp_or_projection,
             "stall": self.stall,
+            "ee_small_motion_penalty": self.ee_small_motion_penalty,
             "timeout_or_reset": self.timeout_or_reset,
             "success_bonus": self.success_bonus,
             "reward_total": self.reward_total,
@@ -89,6 +94,7 @@ class RewardComposer:
                 intervention=0.0,
                 clamp_or_projection=0.0,
                 stall=0.0,
+                ee_small_motion_penalty=0.0,
                 timeout_or_reset=timeout_reset_term,
                 success_bonus=0.0,
                 reward_total=float(total),
@@ -121,6 +127,12 @@ class RewardComposer:
         )
         stall_term = float(self.config.stall_penalty) if (low_joint_delta or low_effect_ratio) else 0.0
 
+        ee_step_dpos = float(np.linalg.norm(np.asarray(curr_ee_pos_err, dtype=float) - np.asarray(prev_ee_pos_err, dtype=float)))
+        ee_step_dori = float(np.linalg.norm(np.asarray(curr_ee_ori_err, dtype=float) - np.asarray(prev_ee_ori_err, dtype=float)))
+        ee_small_motion_term = float(self.config.ee_small_motion_penalty) if (
+            ee_step_dpos < float(self.config.ee_step_pos_min_m) or ee_step_dori < float(self.config.ee_step_ori_min_rad)
+        ) else 0.0
+
         total = (
             progress
             + action_term
@@ -128,6 +140,7 @@ class RewardComposer:
             + intervention_term
             + clamp_term
             + stall_term
+            + ee_small_motion_term
             + timeout_reset_term
             + success_bonus
         )
@@ -139,6 +152,7 @@ class RewardComposer:
             intervention=intervention_term,
             clamp_or_projection=clamp_term,
             stall=stall_term,
+            ee_small_motion_penalty=ee_small_motion_term,
             timeout_or_reset=timeout_reset_term,
             success_bonus=success_bonus,
             reward_total=float(total),

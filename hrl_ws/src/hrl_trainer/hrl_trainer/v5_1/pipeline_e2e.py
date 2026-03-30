@@ -585,6 +585,7 @@ def run_pipeline_e2e(
                 "intervention": 0.0,
                 "clamp_or_projection": 0.0,
                 "stall": 0.0,
+                "ee_small_motion_penalty": 0.0,
                 "timeout_or_reset": 0.0,
                 "success_bonus": 0.0,
                 "reward_total": 0.0,
@@ -603,6 +604,8 @@ def run_pipeline_e2e(
                 curr_ee_ori_err = np.asarray(step.get("ee_ori_err", prev_ee_ori_err), dtype=float)
                 prev_error = float(step.get("goal_error_prev", RewardComposer.ee_error_norm(prev_ee_pos_err, prev_ee_ori_err)))
                 curr_error = float(step.get("goal_error_next", RewardComposer.ee_error_norm(curr_ee_pos_err, curr_ee_ori_err)))
+                ee_step_dpos = float(np.linalg.norm(curr_ee_pos_err - prev_ee_pos_err))
+                ee_step_dori = float(np.linalg.norm(curr_ee_ori_err - prev_ee_ori_err))
                 intervention_now = step["intervention"] != "none"
                 clamp_or_projection = bool(step["saturated"] or step["projection_applied"])
                 execution_ok = bool(step.get("runtime", {}).get("execution_ok", True))
@@ -661,6 +664,9 @@ def run_pipeline_e2e(
                         "ee_target": step.get("ee_target"),
                         "ee_pos_err": step.get("ee_pos_err"),
                         "ee_ori_err": step.get("ee_ori_err"),
+                        "ee_step_dpos": ee_step_dpos,
+                        "ee_step_dori": ee_step_dori,
+                        "ee_small_motion_penalty": float(terms.ee_small_motion_penalty),
                         "reward_total": float(terms.reward_total),
                         "components": terms_dict,
                     }
