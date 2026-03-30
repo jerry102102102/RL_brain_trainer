@@ -4,6 +4,8 @@ import importlib.util
 import json
 import unittest
 
+import numpy as np
+
 from hrl_trainer.v5_1 import pipeline_e2e
 from hrl_trainer.v5_1.pipeline_e2e import run_pipeline_e2e
 
@@ -113,6 +115,44 @@ class TestV51PipelineE2E(unittest.TestCase):
             for row in l2_rows:
                 clipped = row["payload"]["action_clipped"]
                 self.assertTrue(all(abs(float(v)) <= 0.15 + 1e-9 for v in clipped))
+
+    def test_near_home_target_generation_logic(self) -> None:
+        ee_target, source = pipeline_e2e._resolve_near_home_ee_target(
+            home_q=np.zeros(6, dtype=float),
+            profile="s0_bootstrap",
+            pos_offset_min_m=0.02,
+            pos_offset_max_m=0.05,
+            ori_offset_min_deg=5.0,
+            ori_offset_max_deg=10.0,
+        )
+
+        delta_pos = np.asarray(source["target_delta_pos"], dtype=float)
+        delta_ori = np.asarray(source["target_delta_ori"], dtype=float)
+        self.assertAlmostEqual(float(np.linalg.norm(delta_pos)), 0.035, places=6)
+        self.assertAlmostEqual(float(np.linalg.norm(delta_ori)), np.deg2rad(7.5), places=6)
+        self.assertTrue(np.allclose(np.asarray(source["home_ee"], dtype=float) + np.concatenate([delta_pos, delta_ori]), ee_target, atol=1e-6))
+
+    def test_s0_b_default_target_mode_is_near_home(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_s0b_near_home",
+                episodes=1,
+                steps_per_episode=1,
+                artifact_root=tmp_path / "artifacts_s0b_near_home",
+                stage_profile="s0_b",
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_s0b_near_home" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["target_mode"], "auto")
+            self.assertEqual(summary["episodes"][0]["target_mode"], "near_home")
+            self.assertIn("home_ee", summary["episodes"][0])
+            self.assertIn("target_delta_pos", summary["episodes"][0])
+            self.assertIn("target_delta_ori", summary["episodes"][0])
 
     def test_pipeline_e2e_supports_sac_torch_policy_mode(self) -> None:
         from pathlib import Path

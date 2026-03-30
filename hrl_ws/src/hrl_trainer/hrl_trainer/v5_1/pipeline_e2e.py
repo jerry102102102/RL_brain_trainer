@@ -84,6 +84,56 @@ def _resolve_ee_target_from_external_task(
     return ee_target, source
 
 
+def _wrap_to_pi(x: np.ndarray) -> np.ndarray:
+    arr = np.asarray(x, dtype=float)
+    return (arr + np.pi) % (2.0 * np.pi) - np.pi
+
+
+def _resolve_near_home_ee_target(
+    *,
+    home_q: np.ndarray,
+    profile: str = "s0_bootstrap",
+    pos_offset_min_m: float = 0.02,
+    pos_offset_max_m: float = 0.05,
+    ori_offset_min_deg: float = 5.0,
+    ori_offset_max_deg: float = 10.0,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    home_q = np.asarray(home_q, dtype=float)
+    home_ee = _ee_pose_from_q(home_q)
+
+    pos_mag = float(0.5 * (float(pos_offset_min_m) + float(pos_offset_max_m)))
+    ori_mag_deg = float(0.5 * (float(ori_offset_min_deg) + float(ori_offset_max_deg)))
+    ori_mag = float(np.deg2rad(ori_mag_deg))
+
+    pos_dir = np.array([1.0, -0.5, 0.25], dtype=float)
+    pos_dir = pos_dir / float(np.linalg.norm(pos_dir))
+    ori_dir = np.array([1.0, -0.5, 0.25], dtype=float)
+    ori_dir = ori_dir / float(np.linalg.norm(ori_dir))
+
+    delta_pos = pos_dir * pos_mag
+    delta_ori = ori_dir * ori_mag
+
+    ee_target = home_ee.copy()
+    ee_target[:3] = ee_target[:3] + delta_pos
+    ee_target[3:6] = _wrap_to_pi(ee_target[3:6] + delta_ori)
+
+    source = {
+        "provider": "near_home_bootstrap",
+        "profile": str(profile),
+        "home_q": home_q.tolist(),
+        "home_ee": home_ee.tolist(),
+        "target_delta_pos": delta_pos.tolist(),
+        "target_delta_ori": delta_ori.tolist(),
+        "target_delta_pos_l2": float(np.linalg.norm(delta_pos)),
+        "target_delta_ori_l2": float(np.linalg.norm(delta_ori)),
+        "pos_offset_min_m": float(pos_offset_min_m),
+        "pos_offset_max_m": float(pos_offset_max_m),
+        "ori_offset_min_deg": float(ori_offset_min_deg),
+        "ori_offset_max_deg": float(ori_offset_max_deg),
+    }
+    return ee_target, source
+
+
 def _safe_rate(numerator: int, denominator: int) -> float:
     return float(numerator) / float(denominator) if denominator else 0.0
 
@@ -337,6 +387,12 @@ def run_pipeline_e2e(
     external_task_src_idx: int = 2,
     external_task_dst_idx: int = 7,
     external_task_waypoint_index: int = 2,
+    target_mode: str = "auto",
+    near_home_profile: str = "s0_bootstrap",
+    near_home_pos_offset_min_m: float = 0.02,
+    near_home_pos_offset_max_m: float = 0.05,
+    near_home_ori_offset_min_deg: float = 5.0,
+    near_home_ori_offset_max_deg: float = 10.0,
 ) -> dict[str, Any]:
     artifact_root = Path(artifact_root)
     logs_root = artifact_root / "logs"
@@ -358,6 +414,8 @@ def run_pipeline_e2e(
         raise ValueError("V5.1 single-path only supports policy_mode=sac_torch")
     if runtime_mode not in {"smoke", "gz"}:
         raise ValueError("runtime_mode must be one of: smoke|gz")
+    if target_mode not in {"auto", "external", "near_home"}:
+        raise ValueError("target_mode must be one of: auto|external|near_home")
 
     from .sac_torch import SACTorchAgent, SACTorchConfig
 
@@ -379,7 +437,7 @@ def run_pipeline_e2e(
             joint_state_topic=joint_state_topic,
         )
 
-    ee_target, ee_target_source = _resolve_ee_target_from_external_task(
+    external_ee_target, external_ee_target_source = _resolve_ee_target_from_external_task(
         prop=external_task_prop,
         src_idx=external_task_src_idx,
         dst_idx=external_task_dst_idx,
@@ -407,6 +465,28 @@ def run_pipeline_e2e(
             ep_id = f"{run_id}_ep{ep:03d}_{stage.name}"
             step_count = min(int(steps_per_episode), stage.step_budget)
 
+            resolved_target_mode = target_mode
+            if resolved_target_mode == "auto":
+                resolved_target_mode = "near_home" if stage.name == "S0_B" else "external"
+
+            home_q_for_target = _HOME_Q.copy()
+            if runtime_mode == "gz" and runtime is not None and runtime_controlled_indices is not None:
+                q_home_full = runtime.read_q()
+                home_q_for_target = np.asarray(q_home_full, dtype=float)[np.asarray(runtime_controlled_indices, dtype=int)]
+
+            if resolved_target_mode == "near_home":
+                ee_target, ee_target_source = _resolve_near_home_ee_target(
+                    home_q=home_q_for_target,
+                    profile=near_home_profile,
+                    pos_offset_min_m=near_home_pos_offset_min_m,
+                    pos_offset_max_m=near_home_pos_offset_max_m,
+                    ori_offset_min_deg=near_home_ori_offset_min_deg,
+                    ori_offset_max_deg=near_home_ori_offset_max_deg,
+                )
+            else:
+                ee_target = np.asarray(external_ee_target, dtype=float).copy()
+                ee_target_source = dict(external_ee_target_source)
+
             def _policy_fn(obs: np.ndarray) -> tuple[np.ndarray, str]:
                 return agent.act(obs, stochastic=True), policy_mode
 
@@ -426,6 +506,7 @@ def run_pipeline_e2e(
                         episode=ep,
                         policy_fn=_smoke_policy_fn,
                         action_limit=float(stage.action_limit),
+                        target_q=ee_target,
                     )
                 else:
                     reset_info = _reset_episode_home(
@@ -452,6 +533,19 @@ def run_pipeline_e2e(
                             },
                         )
                         break
+
+                    if resolved_target_mode == "near_home":
+                        q_after_reset = np.asarray(reset_info.get("q_after", home_q_for_target.tolist()), dtype=float)
+                        home_q_after_reset = q_after_reset[np.asarray(runtime_controlled_indices or list(range(_CONTROLLED_ACTION_DIM)), dtype=int)]
+                        ee_target, ee_target_source = _resolve_near_home_ee_target(
+                            home_q=home_q_after_reset,
+                            profile=near_home_profile,
+                            pos_offset_min_m=near_home_pos_offset_min_m,
+                            pos_offset_max_m=near_home_pos_offset_max_m,
+                            ori_offset_min_deg=near_home_ori_offset_min_deg,
+                            ori_offset_max_deg=near_home_ori_offset_max_deg,
+                        )
+
                     last_err: Exception | None = None
                     for _attempt in range(2):
                         try:
@@ -668,6 +762,11 @@ def run_pipeline_e2e(
                 "success_count": int(ep_success),
                 "intervention_count": int(ep_intervention),
                 "no_effect_count": int(1 if trace_steps and trace_steps[-1]["intervention"] == "no_effect" else 0),
+                "target_mode": resolved_target_mode,
+                "home_ee": ee_target_source.get("home_ee"),
+                "ee_target": ee_target.tolist(),
+                "target_delta_pos": ee_target_source.get("target_delta_pos"),
+                "target_delta_ori": ee_target_source.get("target_delta_ori"),
                 "reset_result": reset_info,
                 "reset_skipped_near_home": bool(reset_info.get("reset_skipped_near_home", False)),
             }
@@ -686,6 +785,12 @@ def run_pipeline_e2e(
                     "final_goal_error": final_error,
                     "policy_mode": policy_mode,
                     "runtime_mode": runtime_mode,
+                    "target_mode": resolved_target_mode,
+                    "home_ee": ee_target_source.get("home_ee"),
+                    "ee_target": ee_target.tolist(),
+                    "target_delta_pos": ee_target_source.get("target_delta_pos"),
+                    "target_delta_ori": ee_target_source.get("target_delta_ori"),
+                    "ee_target_source": ee_target_source,
                     "reset_result": reset_info,
                 }
             )
@@ -756,11 +861,12 @@ def run_pipeline_e2e(
         "policy_mode": policy_mode,
         "runtime_mode": runtime_mode,
         "stage_profile": stage_profile,
+        "target_mode": target_mode,
         "gate_overall_decision": gate_result.overall_decision,
         "gate_passed": gate_result.overall_decision == "GO",
         "episode_joint_delta_summary": episode_joint_delta_summary,
-        "ee_target": ee_target.tolist(),
-        "ee_target_source": ee_target_source,
+        "ee_target": external_ee_target.tolist(),
+        "ee_target_source": external_ee_target_source,
     }
 
     if train_metrics:
@@ -807,6 +913,12 @@ def main() -> int:
     parser.add_argument("--external-task-src-idx", type=int, default=2)
     parser.add_argument("--external-task-dst-idx", type=int, default=7)
     parser.add_argument("--external-task-waypoint-index", type=int, default=2)
+    parser.add_argument("--target-mode", choices=["auto", "external", "near_home"], default="auto")
+    parser.add_argument("--near-home-profile", default="s0_bootstrap")
+    parser.add_argument("--near-home-pos-offset-min-m", type=float, default=0.02)
+    parser.add_argument("--near-home-pos-offset-max-m", type=float, default=0.05)
+    parser.add_argument("--near-home-ori-offset-min-deg", type=float, default=5.0)
+    parser.add_argument("--near-home-ori-offset-max-deg", type=float, default=10.0)
     args = parser.parse_args()
 
     joint_names = [x.strip() for x in args.runtime_joint_names.split(",") if x.strip()]
@@ -830,6 +942,12 @@ def main() -> int:
         external_task_src_idx=args.external_task_src_idx,
         external_task_dst_idx=args.external_task_dst_idx,
         external_task_waypoint_index=args.external_task_waypoint_index,
+        target_mode=args.target_mode,
+        near_home_profile=args.near_home_profile,
+        near_home_pos_offset_min_m=args.near_home_pos_offset_min_m,
+        near_home_pos_offset_max_m=args.near_home_pos_offset_max_m,
+        near_home_ori_offset_min_deg=args.near_home_ori_offset_min_deg,
+        near_home_ori_offset_max_deg=args.near_home_ori_offset_max_deg,
     )
     print(json.dumps({"run_id": args.run_id, "outputs": outputs}, indent=2, sort_keys=True))
     return int(outputs.get("exit_code", 0))
