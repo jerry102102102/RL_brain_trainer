@@ -2,6 +2,19 @@
 
 > 目的：把目前 `pipeline_e2e` 的 deterministic/pseudo metrics 替換成真正 SAC 訓練與真實 reward 評估。
 
+## Bundle-v1 勾稽（R1/R2/R3 一次落地）
+- R1 Reward v1：`hrl_trainer/v5_1/reward_v1.py` + `tests/v5_1/test_reward_v1.py`
+- R2 SAC Core：`hrl_trainer/v5_1/replay_buffer.py`、`hrl_trainer/v5_1/sac_agent.py`、`hrl_trainer/v5_1/train_loop_sac.py` + `tests/v5_1/test_sac_update_smoke.py`
+- R3 Gate/Eval：`hrl_trainer/v5_1/eval_sac_gate.py`、`hrl_trainer/v5_1/artifact_schema.py`、`v5/eval_harness.py`、`v5/l2_policy.py` + `tests/v5_1/test_eval_sac_gate.py`
+
+驗收命令：
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer
+pytest -q tests/v5_1/test_reward_v1.py tests/v5_1/test_sac_update_smoke.py tests/v5_1/test_eval_sac_gate.py
+python -m hrl_trainer.v5_1.train_loop_sac --episodes 20 --seed 20260331 --artifact-root artifacts/v5_1/train/smoke
+python -m hrl_trainer.v5_1.eval_sac_gate --checkpoint artifacts/v5_1/train/smoke/checkpoint_latest.pt --episodes 30 --seed 20260331 --policy-mode sac --enforce-gates
+```
+
 ## R1 — Reward v1 落地（真實計算，不再 pseudo）
 - Goal: 實作 SAC 真實 reward function，替代目前 `success_rate = 0.5 + 0.1*ep`。
 - Scope:
