@@ -13,12 +13,23 @@ from .sac_agent import SACAgent, SACConfig
 
 
 class ToyReachEnv:
-    def __init__(self, seed: int = 0, max_steps: int = 160, success_dwell_steps: int = 10):
+    def __init__(
+        self,
+        seed: int = 0,
+        max_steps: int = 160,
+        success_dwell_steps: int = 10,
+        near_goal_tol: float = 0.05,
+        goal_tol_pos: float = 0.02,
+        goal_tol_yaw: float = 0.08,
+    ):
         self.rng = np.random.default_rng(seed)
         self.max_steps = max_steps
         self.success_dwell_steps = int(success_dwell_steps)
+        self.near_goal_tol = float(near_goal_tol)
+        self.goal_tol_pos = float(goal_tol_pos)
+        self.goal_tol_yaw = float(goal_tol_yaw)
         self.step_idx = 0
-        self.success_streak = 0
+        self.near_goal_streak = 0
         self.goal = np.zeros(3, dtype=np.float32)
         self.state = np.zeros(3, dtype=np.float32)
         self.prev_action = np.zeros(3, dtype=np.float32)
@@ -26,7 +37,7 @@ class ToyReachEnv:
     def reset(self, episode_seed: int) -> np.ndarray:
         self.rng = np.random.default_rng(episode_seed)
         self.step_idx = 0
-        self.success_streak = 0
+        self.near_goal_streak = 0
         self.state = self.rng.uniform(-0.06, 0.06, size=3).astype(np.float32)
         self.prev_action = np.zeros(3, dtype=np.float32)
         return self.state.copy()
@@ -42,9 +53,11 @@ class ToyReachEnv:
         safety = bool(np.any(np.abs(clamp) > 0.075))
         intervention = False
         timeout = self.step_idx >= self.max_steps
-        success_hit = bool(err <= 0.02 and yaw_err <= 0.08)
-        self.success_streak = self.success_streak + 1 if success_hit else 0
-        success = bool(self.success_streak >= self.success_dwell_steps)
+        goal_hit = bool(err <= self.goal_tol_pos and yaw_err <= self.goal_tol_yaw)
+        near_goal = bool(err <= self.near_goal_tol)
+        near_goal_streak_prev = int(self.near_goal_streak)
+        self.near_goal_streak = self.near_goal_streak + 1 if near_goal else 0
+        success = bool(self.near_goal_streak >= self.success_dwell_steps)
         done = timeout or safety or intervention or success
         truncated = timeout and not success
         return self.state.copy(), {
@@ -54,6 +67,10 @@ class ToyReachEnv:
             "safety": safety,
             "intervention": intervention,
             "success": success,
+            "goal_hit": goal_hit,
+            "near_goal": near_goal,
+            "near_goal_streak_prev": near_goal_streak_prev,
+            "near_goal_streak_curr": int(self.near_goal_streak),
         }, done, truncated
 
 
@@ -96,6 +113,8 @@ def run_train(episodes: int, seed: int, artifact_root: Path) -> Path:
                     safety_violation_event=bool(info["safety"]),
                     intervention_event=bool(info["intervention"]),
                     terminal_reason=terminal_reason,
+                    near_goal_streak_prev=int(info.get("near_goal_streak_prev", 0)),
+                    near_goal_streak_curr=int(info.get("near_goal_streak_curr", 0)),
                 )
                 agent.remember(obs, action, rb.reward_total, nxt, bool(done), bool(truncated), info={"terminal_reason": terminal_reason})
                 global_step += 1

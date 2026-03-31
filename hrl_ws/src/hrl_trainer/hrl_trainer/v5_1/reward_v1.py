@@ -16,8 +16,9 @@ class RewardV1Config:
     goal_tol_yaw: float = 0.08
 
     w_progress: float = 1.2
-    w_near: float = 0.4
-    w_goal_hit: float = 1.2
+    w_near_entry: float = 0.35
+    w_near_dwell: float = 0.05
+    w_goal_hit: float = 0.2
     w_action: float = 0.03
     w_jerk: float = 0.02
     w_safety: float = 2.0
@@ -27,6 +28,8 @@ class RewardV1Config:
     terminal_success_bonus: float = 5.0
     terminal_timeout_penalty: float = 3.0
     terminal_safety_penalty: float = 6.0
+    quick_exit_penalty: float = 0.35
+    quick_exit_max_streak: int = 3
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,9 @@ class RewardV1Breakdown:
     reward_terminal: float
     reward_total: float
     progress: float
-    near: float
+    near_entry: float
+    near_dwell: float
+    near_quick_exit: float
     goal_hit: float
     action_delta_l2: float
     jerk_l2: float
@@ -63,6 +68,8 @@ def compute_reward_v1(
     safety_violation_event: bool,
     intervention_event: bool,
     terminal_reason: TerminalReason = "ongoing",
+    near_goal_streak_prev: int = 0,
+    near_goal_streak_curr: int = 0,
     config: RewardV1Config | None = None,
 ) -> RewardV1Breakdown:
     cfg = config or RewardV1Config()
@@ -72,7 +79,14 @@ def compute_reward_v1(
         denom = max(float(error_prev), 1e-6)
         progress = float(np.clip((float(error_prev) - float(error_curr)) / denom, -1.0, 1.0))
 
-    near = 1.0 if float(error_curr) <= cfg.near_goal_tol else 0.0
+    in_near_goal = float(error_curr) <= cfg.near_goal_tol
+    near_entry = 1.0 if (int(near_goal_streak_prev) <= 0 and int(near_goal_streak_curr) > 0) else 0.0
+    near_dwell = 1.0 if in_near_goal else 0.0
+    near_quick_exit = 1.0 if (
+        int(near_goal_streak_prev) > 0
+        and int(near_goal_streak_curr) == 0
+        and int(near_goal_streak_prev) <= int(cfg.quick_exit_max_streak)
+    ) else 0.0
     goal_hit = 1.0 if (float(error_curr) <= cfg.goal_tol_pos and float(abs(yaw_error_curr)) <= cfg.goal_tol_yaw) else 0.0
 
     action_delta = 0.0
@@ -89,13 +103,15 @@ def compute_reward_v1(
 
     step_reward = (
         cfg.w_progress * progress
-        + cfg.w_near * near
+        + cfg.w_near_entry * near_entry
+        + cfg.w_near_dwell * near_dwell
         + cfg.w_goal_hit * goal_hit
         - cfg.w_action * action_delta
         - cfg.w_jerk * jerk
         - cfg.w_safety * safety
         - cfg.w_clamp * clamp
         - cfg.w_intervention * intervention
+        - cfg.quick_exit_penalty * near_quick_exit
     )
 
     terminal_reward = 0.0
@@ -112,7 +128,9 @@ def compute_reward_v1(
         reward_terminal=float(terminal_reward),
         reward_total=float(total),
         progress=float(progress),
-        near=float(near),
+        near_entry=float(near_entry),
+        near_dwell=float(near_dwell),
+        near_quick_exit=float(near_quick_exit),
         goal_hit=float(goal_hit),
         action_delta_l2=float(action_delta),
         jerk_l2=float(jerk),

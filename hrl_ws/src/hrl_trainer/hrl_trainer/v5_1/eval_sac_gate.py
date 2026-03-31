@@ -44,6 +44,7 @@ def evaluate(checkpoint: Path, episodes: int, seed: int, policy_mode: str = "sac
         returns = 0.0
         min_err = float("inf")
         near_dwell = 0
+        near_dwell_max = 0
         goal_hits = 0
         safety_count = 0
         intervention_count = 0
@@ -58,9 +59,10 @@ def evaluate(checkpoint: Path, episodes: int, seed: int, policy_mode: str = "sac
             nxt, info, done, _trunc = env.step(action)
             err = float(info["error"])
             min_err = min(min_err, err)
-            if err <= 0.05:
-                near_dwell += 1
-            if info["success"]:
+            near_streak_curr = int(info.get("near_goal_streak_curr", 0))
+            near_dwell = near_streak_curr
+            near_dwell_max = max(near_dwell_max, near_streak_curr)
+            if info.get("goal_hit", False):
                 goal_hits += 1
             if info["safety"]:
                 safety_count += 1
@@ -89,7 +91,7 @@ def evaluate(checkpoint: Path, episodes: int, seed: int, policy_mode: str = "sac
             "episode_length": int(step + 1),
             "min_goal_error_per_episode": float(min_err),
             "final_goal_error": float(err),
-            "near_goal_dwell_steps": int(near_dwell),
+            "near_goal_dwell_steps": int(near_dwell_max),
             "goal_hit_steps": int(goal_hits),
             "safety_violation_count": int(safety_count),
             "intervention_count": int(intervention_count),
