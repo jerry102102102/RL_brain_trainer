@@ -21,8 +21,8 @@ class SACConfig:
     alpha_lr: float = 3e-4
     batch_size: int = 256
     replay_capacity: int = 200_000
-    warmup_steps: int = 5000
-    updates_per_step: float = 1.0
+    warmup_steps: int = 8000
+    updates_per_step: float = 0.5
     gradient_clip_norm: float = 5.0
     target_entropy: float | None = None
     device: str = "cpu"
@@ -122,7 +122,6 @@ class SACAgent:
         self._update_budget_carry += float(self.cfg.updates_per_step)
         n_updates = int(self._update_budget_carry)
         self._update_budget_carry -= n_updates
-        n_updates = max(1, n_updates)
         out: list[dict[str, float]] = []
         for _ in range(n_updates):
             row = self._run_single_update()

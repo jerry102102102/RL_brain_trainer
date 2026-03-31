@@ -13,10 +13,12 @@ from .sac_agent import SACAgent, SACConfig
 
 
 class ToyReachEnv:
-    def __init__(self, seed: int = 0, max_steps: int = 180):
+    def __init__(self, seed: int = 0, max_steps: int = 160, success_dwell_steps: int = 10):
         self.rng = np.random.default_rng(seed)
         self.max_steps = max_steps
+        self.success_dwell_steps = int(success_dwell_steps)
         self.step_idx = 0
+        self.success_streak = 0
         self.goal = np.zeros(3, dtype=np.float32)
         self.state = np.zeros(3, dtype=np.float32)
         self.prev_action = np.zeros(3, dtype=np.float32)
@@ -24,6 +26,7 @@ class ToyReachEnv:
     def reset(self, episode_seed: int) -> np.ndarray:
         self.rng = np.random.default_rng(episode_seed)
         self.step_idx = 0
+        self.success_streak = 0
         self.state = self.rng.uniform(-0.06, 0.06, size=3).astype(np.float32)
         self.prev_action = np.zeros(3, dtype=np.float32)
         return self.state.copy()
@@ -39,7 +42,9 @@ class ToyReachEnv:
         safety = bool(np.any(np.abs(clamp) > 0.075))
         intervention = False
         timeout = self.step_idx >= self.max_steps
-        success = bool(err <= 0.02 and yaw_err <= 0.08)
+        success_hit = bool(err <= 0.02 and yaw_err <= 0.08)
+        self.success_streak = self.success_streak + 1 if success_hit else 0
+        success = bool(self.success_streak >= self.success_dwell_steps)
         done = timeout or safety or intervention or success
         truncated = timeout and not success
         return self.state.copy(), {

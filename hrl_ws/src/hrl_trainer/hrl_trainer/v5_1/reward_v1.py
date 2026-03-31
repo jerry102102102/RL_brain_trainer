@@ -16,15 +16,15 @@ class RewardV1Config:
     goal_tol_yaw: float = 0.08
 
     w_progress: float = 1.2
-    w_near: float = 0.8
-    w_goal_hit: float = 2.0
+    w_near: float = 0.4
+    w_goal_hit: float = 1.2
     w_action: float = 0.03
     w_jerk: float = 0.02
-    w_safety: float = 1.5
+    w_safety: float = 2.0
     w_clamp: float = 0.6
     w_intervention: float = 2.5
 
-    terminal_success_bonus: float = 8.0
+    terminal_success_bonus: float = 5.0
     terminal_timeout_penalty: float = 3.0
     terminal_safety_penalty: float = 6.0
 
