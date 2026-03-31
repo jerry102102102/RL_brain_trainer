@@ -5,6 +5,12 @@
 
 ---
 
+## V5.1 Architecture Overview
+
+![V5.1 Architecture Overview](docs/assets/v5_1_architecture_overview.png)
+
+> 圖中整理了目前 V5.1 的主流程（感知/策略/執行/驗證）與 gate 決策結構，可搭配下方文檔一起看。
+
 ## V5.1 current direction（快速入口）
 
 > 當前主軸已收斂到 **V5.1：L2 joint-space SAC + L3 deterministic safety execution**。
