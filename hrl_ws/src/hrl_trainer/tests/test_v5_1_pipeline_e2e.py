@@ -181,6 +181,38 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("train_metrics", summary)
             self.assertGreaterEqual(len(summary["train_metrics"]), 1)
 
+    def test_pipeline_e2e_learning_dynamics_param_hash_changes_with_training(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_learning_dynamics",
+                episodes=6,
+                steps_per_episode=20,
+                artifact_root=tmp_path / "artifacts_learning_dynamics",
+                policy_mode="sac_torch",
+                sac_seed=7,
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_learning_dynamics" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertIn("train_metrics", summary)
+            self.assertGreaterEqual(len(summary["train_metrics"]), 1)
+
+            last = summary["train_metrics"][-1]
+            self.assertGreater(float(last["updates_applied"]), 0.0)
+            self.assertIn("param_hash_actor", last)
+            self.assertIn("param_hash_critic", last)
+
+            actor_hashes = [m["param_hash_actor"] for m in summary["train_metrics"] if m.get("param_hash_actor")]
+            critic_hashes = [m["param_hash_critic"] for m in summary["train_metrics"] if m.get("param_hash_critic")]
+            self.assertGreaterEqual(len(set(actor_hashes)), 2)
+            self.assertGreaterEqual(len(set(critic_hashes)), 2)
+            self.assertTrue(bool(summary.get("learning_effective", False)))
+            self.assertEqual(summary.get("ineffective_reasons", []), [])
+
     def test_pipeline_e2e_rejects_non_torch_policy_mode(self) -> None:
         with self.assertRaises(ValueError):
             run_pipeline_e2e(

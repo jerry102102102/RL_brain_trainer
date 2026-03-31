@@ -823,10 +823,37 @@ def run_pipeline_e2e(
     if reset_failure_reasons:
         metrics["reset_failure_reasons"] = reset_failure_reasons[-5:]
 
+    learning_effective = False
+    ineffective_reasons: list[str] = []
     if train_metrics:
         metrics["train_actor_loss"] = float(np.mean([m["actor_loss"] for m in train_metrics]))
         metrics["train_critic_loss"] = float(np.mean([m["critic_loss"] for m in train_metrics]))
         metrics["train_alpha"] = float(train_metrics[-1]["alpha"])
+        metrics["env_steps_collected"] = float(train_metrics[-1].get("env_steps_collected", 0.0))
+        metrics["updates_applied"] = float(train_metrics[-1].get("updates_applied", 0.0))
+        metrics["batch_draw_count"] = float(train_metrics[-1].get("batch_draw_count", 0.0))
+        metrics["actor_update_count"] = float(train_metrics[-1].get("actor_update_count", 0.0))
+        metrics["critic_update_count"] = float(train_metrics[-1].get("critic_update_count", 0.0))
+        metrics["alpha_update_count"] = float(train_metrics[-1].get("alpha_update_count", 0.0))
+        metrics["gradient_norm_actor"] = float(train_metrics[-1].get("gradient_norm_actor", 0.0))
+        metrics["gradient_norm_critic"] = float(train_metrics[-1].get("gradient_norm_critic", 0.0))
+
+        actor_hashes = [m.get("param_hash_actor") for m in train_metrics if m.get("param_hash_actor")]
+        critic_hashes = [m.get("param_hash_critic") for m in train_metrics if m.get("param_hash_critic")]
+        actor_hash_changed = len(set(actor_hashes)) > 1
+        critic_hash_changed = len(set(critic_hashes)) > 1
+        metrics["param_hash_actor_changed"] = actor_hash_changed
+        metrics["param_hash_critic_changed"] = critic_hash_changed
+
+        if metrics["updates_applied"] <= 0:
+            ineffective_reasons.append("updates_applied<=0")
+        if not actor_hash_changed:
+            ineffective_reasons.append("actor_param_hash_not_changed")
+        if not critic_hash_changed:
+            ineffective_reasons.append("critic_param_hash_not_changed")
+        learning_effective = len(ineffective_reasons) == 0
+    else:
+        ineffective_reasons.append("no_train_metrics")
 
     l1_lines = sum(_count_jsonl_lines(Path(ep["logs"]["l1"])) for ep in episode_outputs)
     l2_lines = sum(_count_jsonl_lines(Path(ep["logs"]["l2"])) for ep in episode_outputs)
@@ -880,6 +907,8 @@ def run_pipeline_e2e(
         "episode_joint_delta_summary": episode_joint_delta_summary,
         "ee_target": top_level_ee_target,
         "ee_target_source": top_level_ee_target_source,
+        "learning_effective": learning_effective,
+        "ineffective_reasons": ineffective_reasons,
     }
 
     if train_metrics:

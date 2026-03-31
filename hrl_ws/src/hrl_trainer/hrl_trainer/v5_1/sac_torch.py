@@ -6,6 +6,7 @@ This is the primary SAC path used by pipeline_e2e (policy_mode=sac_torch).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,7 @@ class SACTorchConfig:
     log_std_min: float = -5.0
     log_std_max: float = 2.0
     device: str = "cpu"
+    param_hash_interval: int = 10
 
 
 class TorchReplayBuffer:
@@ -151,6 +153,15 @@ class SACTorchAgent:
 
         self.replay = TorchReplayBuffer(self.cfg.replay_capacity, self.cfg.obs_dim, self.cfg.action_dim, self.device)
 
+        self.env_steps_collected = 0
+        self.updates_applied = 0
+        self.batch_draw_count = 0
+        self.actor_update_count = 0
+        self.critic_update_count = 0
+        self.alpha_update_count = 0
+        self.last_actor_hash: str | None = None
+        self.last_critic_hash: str | None = None
+
     @property
     def alpha(self) -> float:
         return float(self.log_alpha.detach().exp().cpu().item())
@@ -164,6 +175,24 @@ class SACTorchAgent:
 
     def remember(self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool) -> None:
         self.replay.add(obs, action, reward, next_obs, done)
+        self.env_steps_collected += 1
+
+    @staticmethod
+    def _grad_norm(module: nn.Module) -> float:
+        grads = [p.grad.detach().reshape(-1) for p in module.parameters() if p.grad is not None]
+        if not grads:
+            return 0.0
+        flat = torch.cat(grads)
+        return float(torch.linalg.norm(flat).detach().cpu().item())
+
+    @staticmethod
+    def _param_hash(modules: list[nn.Module]) -> str:
+        h = hashlib.sha256()
+        with torch.no_grad():
+            for module in modules:
+                for p in module.parameters():
+                    h.update(p.detach().cpu().numpy().tobytes())
+        return h.hexdigest()
 
     def _soft_update(self) -> None:
         tau = self.cfg.tau
@@ -193,8 +222,10 @@ class SACTorchAgent:
         self.q1_optim.zero_grad(set_to_none=True)
         self.q2_optim.zero_grad(set_to_none=True)
         critic_loss.backward()
+        critic_grad_norm = float(np.sqrt(self._grad_norm(self.q1) ** 2 + self._grad_norm(self.q2) ** 2))
         self.q1_optim.step()
         self.q2_optim.step()
+        self.critic_update_count += 1
 
         pi, logp, _ = self.actor.sample(obs)
         q_pi = torch.min(self.q1(obs, pi), self.q2(obs, pi))
@@ -202,17 +233,37 @@ class SACTorchAgent:
 
         self.actor_optim.zero_grad(set_to_none=True)
         actor_loss.backward()
+        actor_grad_norm = self._grad_norm(self.actor)
         self.actor_optim.step()
+        self.actor_update_count += 1
 
         alpha_loss = -(self.log_alpha * (logp.detach() + self.target_entropy)).mean()
         self.alpha_optim.zero_grad(set_to_none=True)
         alpha_loss.backward()
         self.alpha_optim.step()
+        self.alpha_update_count += 1
 
         self._soft_update()
 
+        self.updates_applied += 1
+        self.batch_draw_count += self.cfg.batch_size
+        if self.updates_applied % max(1, int(self.cfg.param_hash_interval)) == 0 or self.last_actor_hash is None:
+            self.last_actor_hash = self._param_hash([self.actor])
+            self.last_critic_hash = self._param_hash([self.q1, self.q2])
+
         entropy = float((-logp).mean().detach().cpu().item())
         return {
+            "global_step": float(self.env_steps_collected),
+            "env_steps_collected": float(self.env_steps_collected),
+            "updates_applied": float(self.updates_applied),
+            "batch_draw_count": float(self.batch_draw_count),
+            "actor_update_count": float(self.actor_update_count),
+            "critic_update_count": float(self.critic_update_count),
+            "alpha_update_count": float(self.alpha_update_count),
+            "gradient_norm_actor": float(actor_grad_norm),
+            "gradient_norm_critic": float(critic_grad_norm),
+            "param_hash_actor": self.last_actor_hash,
+            "param_hash_critic": self.last_critic_hash,
             "actor_loss": float(actor_loss.detach().cpu().item()),
             "critic_loss": float(critic_loss.detach().cpu().item()),
             "alpha": self.alpha,
