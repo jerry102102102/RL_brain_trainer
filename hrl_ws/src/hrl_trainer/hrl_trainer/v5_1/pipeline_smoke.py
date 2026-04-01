@@ -21,6 +21,9 @@ from .contracts import (
 from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig
 from .safety_watchdog import Intervention, SafetyWatchdog
 
+_CONTROLLED_ACTION_DIM = 7
+
+
 PolicyFn = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]]
 
 
@@ -48,11 +51,17 @@ def run_smoke(
     target_q: np.ndarray | None = None,
 ) -> dict[str, Any]:
     ts0 = time.time_ns()
-    q = np.zeros(6, dtype=float)
-    dq = np.zeros(6, dtype=float)
-    target_q = np.asarray(target_q, dtype=float) if target_q is not None else np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0], dtype=float)
+    q = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
+    dq = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
+    target_q = (
+        np.asarray(target_q, dtype=float)
+        if target_q is not None
+        else np.array([0.2, -0.15, 0.1, 0.05, 0.0, 0.0, 0.0], dtype=float)
+    )
 
-    executor = L3DeterministicExecutor(L3ExecutorConfig(dt=0.1, delta_q_limit=(float(action_limit),) * 6))
+    executor = L3DeterministicExecutor(
+        L3ExecutorConfig(dt=0.1, delta_q_limit=(float(action_limit),) * _CONTROLLED_ACTION_DIM)
+    )
     watchdog = SafetyWatchdog(timeout_s=0.35, timeout_action=Intervention.HOLD)
 
     l1_path = log_root / "l1" / f"{run_id}.jsonl"

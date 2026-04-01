@@ -21,7 +21,7 @@ if TORCH_AVAILABLE:
 @unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed in this environment")
 class TestV51SACTorch(unittest.TestCase):
     def test_forward_action_shape(self) -> None:
-        cfg = SACTorchConfig(obs_dim=12, action_dim=6, hidden_dim=64)
+        cfg = SACTorchConfig(obs_dim=27, action_dim=7, hidden_dim=64)
         agent = SACTorchAgent(cfg, seed=0)
 
         obs = np.linspace(-0.5, 0.5, cfg.obs_dim, dtype=np.float32)
@@ -30,15 +30,15 @@ class TestV51SACTorch(unittest.TestCase):
         self.assertEqual(action.shape, (cfg.action_dim,))
 
     def test_obs_builder_dim_matches_sac_interface(self) -> None:
-        q = np.zeros(6, dtype=np.float32)
-        dq = np.zeros(6, dtype=np.float32)
+        q = np.zeros(7, dtype=np.float32)
+        dq = np.zeros(7, dtype=np.float32)
         ee_err = np.zeros(6, dtype=np.float32)
-        prev_action = np.zeros(6, dtype=np.float32)
+        prev_action = np.zeros(7, dtype=np.float32)
         obs = _obs_from_state(q=q, dq=dq, ee_pose_err=ee_err, prev_action=prev_action)
-        self.assertEqual(obs.shape[0], 24)
+        self.assertEqual(obs.shape[0], 27)
 
     def test_train_step_updates_parameters(self) -> None:
-        cfg = SACTorchConfig(obs_dim=12, action_dim=6, batch_size=8, replay_capacity=256, hidden_dim=64)
+        cfg = SACTorchConfig(obs_dim=27, action_dim=7, batch_size=8, replay_capacity=256, hidden_dim=64)
         agent = SACTorchAgent(cfg, seed=42)
 
         before_actor = {k: v.detach().clone() for k, v in agent.actor.state_dict().items()}

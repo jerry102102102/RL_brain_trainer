@@ -16,10 +16,11 @@ import numpy as np
 @dataclass(frozen=True)
 class L3ExecutorConfig:
     dt: float = 0.1
-    joint_min: tuple[float, ...] = (-2.8, -1.6, -2.8, -3.0, -2.8, -6.0)
-    joint_max: tuple[float, ...] = (2.8, 1.6, 2.8, 3.0, 2.8, 6.0)
-    delta_q_limit: tuple[float, ...] = (0.05, 0.03, 0.05, 0.05, 0.05, 0.08)
-    rate_limit_per_sec: tuple[float, ...] = (0.30, 0.20, 0.30, 0.30, 0.30, 0.40)
+    # [Rack_joint, j1..j6]
+    joint_min: tuple[float, ...] = (-0.5, -2.8, -1.6, -2.8, -3.0, -2.8, -6.0)
+    joint_max: tuple[float, ...] = (0.5, 2.8, 1.6, 2.8, 3.0, 2.8, 6.0)
+    delta_q_limit: tuple[float, ...] = (0.05, 0.05, 0.03, 0.05, 0.05, 0.05, 0.08)
+    rate_limit_per_sec: tuple[float, ...] = (0.30, 0.30, 0.20, 0.30, 0.30, 0.30, 0.40)
 
 
 @dataclass(frozen=True)

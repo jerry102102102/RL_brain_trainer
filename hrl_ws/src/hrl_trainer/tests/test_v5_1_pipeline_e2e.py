@@ -119,7 +119,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
     def test_near_home_target_generation_logic(self) -> None:
         ee_target, source = pipeline_e2e._resolve_near_home_ee_target(
-            home_q=np.zeros(6, dtype=float),
+            home_q=np.zeros(7, dtype=float),
             profile="s0_bootstrap",
             pos_offset_min_m=0.02,
             pos_offset_max_m=0.05,
@@ -257,7 +257,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _FakeRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -290,7 +290,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=2,
                 artifact_root=tmp_path / "artifacts_gz",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _FakeRuntime(**kwargs),
             )
 
@@ -369,7 +369,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _NoEffectRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -402,7 +402,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=6,
                 artifact_root=tmp_path / "artifacts_gz_no_effect",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _NoEffectRuntime(**kwargs),
             )
 
@@ -421,7 +421,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _ExecSuccessRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -458,7 +458,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=2,
                 artifact_root=tmp_path / "artifacts_exec_success",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _ExecSuccessRuntime(**kwargs),
             )
 
@@ -478,7 +478,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _ExecFailRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -514,7 +514,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=4,
                 artifact_root=tmp_path / "artifacts_exec_fail",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _ExecFailRuntime(**kwargs),
             )
 
@@ -539,7 +539,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _NoMotionButSuccessRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -573,7 +573,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=1,
                 artifact_root=tmp_path / "artifacts_small_motion_penalty",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _NoMotionButSuccessRuntime(**kwargs),
             )
 
@@ -634,7 +634,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _RejectedRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -670,7 +670,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=4,
                 artifact_root=tmp_path / "artifacts_exec_rejected",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _RejectedRuntime(**kwargs),
             )
 
@@ -714,7 +714,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _ResetFailRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
                 self.calls = 0
 
             def read_q(self, timeout_s=None):
@@ -725,7 +725,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 self.calls += 1
                 return {
                     "q_before": list(self._q), "q_after": list(self._q), "cmd_q": list(cmd_q),
-                    "joint_delta": [0.0] * 6, "joint_delta_l2": 0.0, "timestamp_ns": 123,
+                    "joint_delta": [0.0] * 7, "joint_delta_l2": 0.0, "timestamp_ns": 123,
                     "accepted": False, "result_status": "rejected", "execution_ok": False, "fail_reason": "goal_rejected",
                 }
 
@@ -740,7 +740,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=2,
                 artifact_root=tmp_path / "artifacts_reset_fail",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _ResetFailRuntime(**kwargs),
                 reset_near_home_eps=0.0,
             )
@@ -755,7 +755,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _OkRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -779,7 +779,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=1,
                 artifact_root=tmp_path / "artifacts_reset_ok",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _OkRuntime(**kwargs),
             )
             summary = json.loads((tmp_path / "artifacts_reset_ok" / "pipeline_summary.json").read_text(encoding="utf-8"))
@@ -791,7 +791,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _NearHomeRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
                 self.step_calls = 0
 
             def read_q(self, timeout_s=None):
@@ -834,7 +834,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=1,
                 artifact_root=tmp_path / "artifacts_near_home_skip",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=_factory,
                 reset_near_home_eps=1e-3,
             )
@@ -852,7 +852,7 @@ class TestV51PipelineE2E(unittest.TestCase):
 
         class _OkRuntime:
             def __init__(self, **kwargs):
-                self._q = [0.0] * 6
+                self._q = [0.0] * 7
 
             def read_q(self, timeout_s=None):
                 import numpy as _np
@@ -876,7 +876,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 steps_per_episode=2,
                 artifact_root=tmp_path / "artifacts_ee_trace",
                 runtime_mode="gz",
-                runtime_joint_names=["j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _OkRuntime(**kwargs),
             )
             rows = [json.loads(x) for x in (tmp_path / "artifacts_ee_trace" / "runtime_trace.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
