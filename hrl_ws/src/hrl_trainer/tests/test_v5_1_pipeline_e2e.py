@@ -352,7 +352,16 @@ class TestV51PipelineE2E(unittest.TestCase):
             step_rows = [r for r in rows if "cmd_q" in r]
             self.assertGreaterEqual(len(step_rows), 1)
             self.assertEqual(len(step_rows[0]["cmd_q"]), 7)
-            self.assertAlmostEqual(float(step_rows[0]["cmd_q"][0]), 0.0, places=7)
+
+    def test_controlled_indices_and_expand_include_rack_joint(self) -> None:
+        indices = pipeline_e2e._controlled_joint_indices(["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"])
+        self.assertEqual(indices, [0, 1, 2, 3, 4, 5, 6])
+
+        q_before = np.array([0.11, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7], dtype=float)
+        q_des = np.array([-0.22, -0.21, 0.31, -0.41, 0.51, -0.61, 0.71], dtype=float)
+        q_cmd = pipeline_e2e._expand_cmd_q(q_before, indices, q_des)
+        self.assertAlmostEqual(float(q_cmd[0]), float(q_des[0]), places=9)
+        np.testing.assert_allclose(q_cmd, q_des, atol=1e-12)
 
     def test_pipeline_e2e_gz_mode_failfast_no_effect(self) -> None:
         from pathlib import Path
@@ -687,7 +696,7 @@ class TestV51PipelineE2E(unittest.TestCase):
                 runtime_mode="gz",
             )
 
-    def test_pipeline_e2e_gz_mode_rejects_non_6_controlled_dofs(self) -> None:
+    def test_pipeline_e2e_gz_mode_rejects_non_7_controlled_dofs(self) -> None:
         with self.assertRaises(ValueError):
             run_pipeline_e2e(
                 run_id="test_e2e_gz_bad_joint_dim",

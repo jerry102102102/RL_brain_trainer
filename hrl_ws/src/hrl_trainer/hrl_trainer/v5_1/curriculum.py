@@ -17,7 +17,7 @@ class StageSpec:
     reward_scale: float
     step_budget: int
     action_limit: float = 0.05
-    controlled_dofs: int = 6
+    controlled_dofs: int = 7
 
 
 @dataclass(frozen=True)

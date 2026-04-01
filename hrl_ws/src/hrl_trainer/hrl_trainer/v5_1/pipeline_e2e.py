@@ -23,8 +23,8 @@ from .runtime_ros2 import RuntimeROS2Adapter
 
 RuntimeFactory = Callable[..., RuntimeROS2Adapter]
 
-_CONTROLLED_ACTION_DIM = 6
-_OBS_DIM = 24
+_CONTROLLED_ACTION_DIM = 7
+_OBS_DIM = 27
 _NO_EFFECT_EPS = 1e-4
 _NO_EFFECT_STREAK_LIMIT = 3
 _HOME_Q = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
@@ -242,11 +242,11 @@ def _save_agent_checkpoint(agent: Any, checkpoint_path: Path, run_id: str) -> st
 
 
 def _controlled_joint_indices(runtime_joint_names: list[str]) -> list[int]:
-    indices = [i for i, name in enumerate(runtime_joint_names) if name.lower() != "rack_joint"]
+    indices = list(range(len(runtime_joint_names)))
     if len(indices) != _CONTROLLED_ACTION_DIM:
         raise ValueError(
-            "runtime_joint_names must resolve to exactly 6 controllable joints "
-            f"(excluding Rack_joint); got {len(indices)} from {runtime_joint_names}"
+            "runtime_joint_names must resolve to exactly 7 controllable joints "
+            f"(including Rack_joint); got {len(indices)} from {runtime_joint_names}"
         )
     return indices
 
