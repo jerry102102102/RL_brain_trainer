@@ -678,6 +678,9 @@ def run_pipeline_e2e(
 
             ep_q_before = np.asarray(trace_steps[0]["runtime"]["q_before"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
             ep_q_after = np.asarray(trace_steps[-1]["runtime"]["q_after"], dtype=float) if (trace_steps and runtime_mode == "gz") else None
+            terminal_done = False
+            terminal_done_reason = "none"
+            terminal_step: int | None = None
 
             for idx, step in enumerate(trace_steps):
                 action = np.asarray(step["action_raw"], dtype=float)
@@ -705,6 +708,11 @@ def run_pipeline_e2e(
                         done_reason = "no_effect"
                     else:
                         done_reason = "success" if (float(np.linalg.norm(curr_ee_pos_err)) < float(ee_pos_success_threshold) and float(np.linalg.norm(curr_ee_ori_err)) < float(ee_ori_success_threshold)) else "timeout"
+
+                if done:
+                    terminal_done = True
+                    terminal_done_reason = done_reason
+                    terminal_step = int(step["step"])
 
                 q_before_arr = np.asarray(step.get("obs_q", []), dtype=float)
                 q_after_arr = np.asarray(step.get("q_after", []), dtype=float)
@@ -860,6 +868,9 @@ def run_pipeline_e2e(
                 "target_delta_ori": ee_target_source.get("target_delta_ori"),
                 "reset_result": reset_info,
                 "reset_skipped_near_home": bool(reset_info.get("reset_skipped_near_home", False)),
+                "terminal": bool(terminal_done),
+                "done_reason": terminal_done_reason,
+                "terminal_step": terminal_step,
             }
             _jsonl_append(episode_reward_summary_path, ep_summary)
 
@@ -883,6 +894,9 @@ def run_pipeline_e2e(
                     "target_delta_ori": ee_target_source.get("target_delta_ori"),
                     "ee_target_source": ee_target_source,
                     "reset_result": reset_info,
+                    "terminal": bool(terminal_done),
+                    "done_reason": terminal_done_reason,
+                    "terminal_step": terminal_step,
                 }
             )
     finally:
