@@ -165,6 +165,82 @@ def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
         f.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
 
 
+def _checkpoint_layout(artifact_root: Path) -> dict[str, Path]:
+    train_root = artifact_root / "train"
+    return {
+        "latest": train_root / "checkpoint_latest.pt",
+        "final": train_root / "checkpoint_final.pt",
+    }
+
+
+def _checkpoint_candidates(artifact_root: Path) -> list[Path]:
+    layout = _checkpoint_layout(artifact_root)
+    return [layout["latest"], layout["final"]]
+
+
+def _load_agent_checkpoint(agent: Any, checkpoint_path: Path) -> None:
+    import torch
+
+    payload = torch.load(checkpoint_path, map_location="cpu")
+    agent.actor.load_state_dict(payload["actor_state_dict"])
+    agent.q1.load_state_dict(payload["q1_state_dict"])
+    agent.q2.load_state_dict(payload["q2_state_dict"])
+    agent.q1_target.load_state_dict(payload["q1_target_state_dict"])
+    agent.q2_target.load_state_dict(payload["q2_target_state_dict"])
+    agent.actor_optim.load_state_dict(payload["actor_optim_state_dict"])
+    agent.q1_optim.load_state_dict(payload["q1_optim_state_dict"])
+    agent.q2_optim.load_state_dict(payload["q2_optim_state_dict"])
+    agent.log_alpha = torch.tensor(
+        float(payload.get("log_alpha", np.log(max(float(payload.get("alpha", 0.2)), 1e-8)))),
+        dtype=torch.float32,
+        device=agent.device,
+        requires_grad=True,
+    )
+    agent.alpha_optim = torch.optim.Adam([agent.log_alpha], lr=agent.cfg.lr_alpha)
+    if "alpha_optim_state_dict" in payload:
+        agent.alpha_optim.load_state_dict(payload["alpha_optim_state_dict"])
+
+    agent.env_steps_collected = int(payload.get("env_steps_collected", 0))
+    agent.updates_applied = int(payload.get("updates_applied", 0))
+    agent.batch_draw_count = int(payload.get("batch_draw_count", 0))
+    agent.actor_update_count = int(payload.get("actor_update_count", 0))
+    agent.critic_update_count = int(payload.get("critic_update_count", 0))
+    agent.alpha_update_count = int(payload.get("alpha_update_count", 0))
+    agent.last_actor_hash = payload.get("last_actor_hash")
+    agent.last_critic_hash = payload.get("last_critic_hash")
+
+
+def _save_agent_checkpoint(agent: Any, checkpoint_path: Path, run_id: str) -> str:
+    import torch
+
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_id": run_id,
+        "timestamp_ns": time.time_ns(),
+        "actor_state_dict": agent.actor.state_dict(),
+        "q1_state_dict": agent.q1.state_dict(),
+        "q2_state_dict": agent.q2.state_dict(),
+        "q1_target_state_dict": agent.q1_target.state_dict(),
+        "q2_target_state_dict": agent.q2_target.state_dict(),
+        "actor_optim_state_dict": agent.actor_optim.state_dict(),
+        "q1_optim_state_dict": agent.q1_optim.state_dict(),
+        "q2_optim_state_dict": agent.q2_optim.state_dict(),
+        "alpha_optim_state_dict": agent.alpha_optim.state_dict(),
+        "log_alpha": float(agent.log_alpha.detach().cpu().item()),
+        "alpha": float(agent.alpha),
+        "env_steps_collected": int(agent.env_steps_collected),
+        "updates_applied": int(agent.updates_applied),
+        "batch_draw_count": int(agent.batch_draw_count),
+        "actor_update_count": int(agent.actor_update_count),
+        "critic_update_count": int(agent.critic_update_count),
+        "alpha_update_count": int(agent.alpha_update_count),
+        "last_actor_hash": agent.last_actor_hash,
+        "last_critic_hash": agent.last_critic_hash,
+    }
+    torch.save(payload, checkpoint_path)
+    return str(checkpoint_path)
+
+
 def _controlled_joint_indices(runtime_joint_names: list[str]) -> list[int]:
     indices = [i for i, name in enumerate(runtime_joint_names) if name.lower() != "rack_joint"]
     if len(indices) != _CONTROLLED_ACTION_DIM:
@@ -423,6 +499,15 @@ def run_pipeline_e2e(
         SACTorchConfig(obs_dim=_OBS_DIM, action_dim=_CONTROLLED_ACTION_DIM),
         seed=sac_seed,
     )
+
+    loaded_from_checkpoint = False
+    loaded_checkpoint_path: str | None = None
+    for checkpoint_candidate in _checkpoint_candidates(artifact_root):
+        if checkpoint_candidate.exists():
+            _load_agent_checkpoint(agent, checkpoint_candidate)
+            loaded_from_checkpoint = True
+            loaded_checkpoint_path = str(checkpoint_candidate)
+            break
 
     runtime = None
     runtime_controlled_indices: list[int] | None = None
@@ -872,6 +957,11 @@ def run_pipeline_e2e(
     gate_path = artifact_root / "gate_result.json"
     summary_path = artifact_root / "pipeline_summary.json"
 
+    checkpoint_layout = _checkpoint_layout(artifact_root)
+    saved_checkpoint_paths: list[str] = []
+    saved_checkpoint_paths.append(_save_agent_checkpoint(agent, checkpoint_layout["latest"], run_id))
+    saved_checkpoint_paths.append(_save_agent_checkpoint(agent, checkpoint_layout["final"], run_id))
+
     curriculum_path.write_text(
         json.dumps(curriculum.to_artifact(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -896,6 +986,8 @@ def run_pipeline_e2e(
             "reward_trace": str(reward_trace_path),
             "episode_reward_summary": str(episode_reward_summary_path),
             "runtime_trace": str(runtime_trace_path),
+            "checkpoint_latest": str(checkpoint_layout["latest"]),
+            "checkpoint_final": str(checkpoint_layout["final"]),
         },
         "policy_mode": policy_mode,
         "runtime_mode": runtime_mode,
@@ -909,6 +1001,10 @@ def run_pipeline_e2e(
         "ee_target_source": top_level_ee_target_source,
         "learning_effective": learning_effective,
         "ineffective_reasons": ineffective_reasons,
+        "loaded_from_checkpoint": bool(loaded_from_checkpoint),
+        "loaded_checkpoint_path": loaded_checkpoint_path,
+        "saved_checkpoint_paths": saved_checkpoint_paths,
+        "model_persistence_mode": "auto-resume-required",
     }
 
     if train_metrics:

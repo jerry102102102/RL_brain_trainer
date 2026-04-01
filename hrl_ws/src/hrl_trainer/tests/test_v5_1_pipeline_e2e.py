@@ -882,6 +882,49 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(summary["ee_target_source"]["provider"], "external_task_library.MoveTaskLibrary.move_from_to")
             self.assertTrue(summary["ee_target_source"]["external_file"].endswith("kitchen_robot_controller/task_library.py"))
 
+    def test_pipeline_e2e_auto_resume_and_checkpoint_persistence(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            artifact_root = tmp_path / "artifacts_resume"
+
+            first = run_pipeline_e2e(
+                run_id="test_e2e_resume_round1",
+                episodes=2,
+                steps_per_episode=8,
+                artifact_root=artifact_root,
+                policy_mode="sac_torch",
+                sac_seed=13,
+            )
+            self.assertEqual(first["exit_code"], 0)
+            first_summary = json.loads((artifact_root / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertFalse(bool(first_summary["loaded_from_checkpoint"]))
+            self.assertIsNone(first_summary["loaded_checkpoint_path"])
+            self.assertEqual(first_summary["model_persistence_mode"], "auto-resume-required")
+            self.assertGreaterEqual(len(first_summary["saved_checkpoint_paths"]), 1)
+            for p in first_summary["saved_checkpoint_paths"]:
+                self.assertTrue(Path(p).exists())
+
+            second = run_pipeline_e2e(
+                run_id="test_e2e_resume_round2",
+                episodes=2,
+                steps_per_episode=8,
+                artifact_root=artifact_root,
+                policy_mode="sac_torch",
+                sac_seed=13,
+            )
+            self.assertEqual(second["exit_code"], 0)
+            second_summary = json.loads((artifact_root / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertTrue(bool(second_summary["loaded_from_checkpoint"]))
+            self.assertIsNotNone(second_summary["loaded_checkpoint_path"])
+            self.assertTrue(Path(second_summary["loaded_checkpoint_path"]).exists())
+            self.assertEqual(second_summary["model_persistence_mode"], "auto-resume-required")
+            self.assertGreaterEqual(len(second_summary["saved_checkpoint_paths"]), 1)
+            for p in second_summary["saved_checkpoint_paths"]:
+                self.assertTrue(Path(p).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
