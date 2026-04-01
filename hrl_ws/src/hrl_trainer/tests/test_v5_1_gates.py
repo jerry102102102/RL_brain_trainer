@@ -14,6 +14,7 @@ def _base_metrics() -> dict[str, float | int]:
         "l1_log_lines": 12,
         "l2_log_lines": 12,
         "l3_log_lines": 12,
+        "success_rate": 0.70,
         "success_rate_first": 0.55,
         "success_rate_last": 0.80,
         "intervention_rate_first": 1.0,
@@ -59,6 +60,21 @@ def test_gate_evaluator_fail_case_learning_quality() -> None:
     iv = next(g for g in result.each_gate if g.name == "P1.intervention_non_worsening")
     assert trend.passed is False
     assert iv.passed is False
+
+
+def test_gate_evaluator_fail_case_success_rate_zero_floor() -> None:
+    evaluator = GateEvaluator(DEFAULT_GATE)
+    metrics = _base_metrics()
+    metrics["success_rate"] = 0.0
+    metrics["success_rate_first"] = 0.0
+    metrics["success_rate_last"] = 0.0
+
+    result = evaluator.evaluate(run_id="r_fail_success_zero", metrics=metrics)
+
+    assert result.overall_decision == "HOLD"
+    floor_gate = next(g for g in result.each_gate if g.name == "P1.success_rate_floor")
+    assert floor_gate.passed is False
+    assert "success_rate=0.000" in floor_gate.reason
 
 
 def test_gate_report_schema_contains_required_fields(tmp_path) -> None:

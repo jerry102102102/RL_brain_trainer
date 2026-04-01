@@ -21,6 +21,7 @@ class GateSpec:
     max_reset_failures: int = 0
     min_execution_ratio: float = 1.0
     min_log_integrity_ratio: float = 1.0
+    min_success_rate: float = 0.01
     min_success_trend_delta: float = 0.0
     max_intervention_worsen: float = 0.0
 
@@ -82,6 +83,7 @@ class GateEvaluator:
         min_layer_lines = min(l1_lines, l2_lines, l3_lines)
         log_integrity_ratio = float(min_layer_lines) / float(log_expected)
 
+        success_rate = float(metrics.get("success_rate", 0.0))
         success_first = float(metrics.get("success_rate_first", 0.0))
         success_last = float(metrics.get("success_rate_last", 0.0))
         success_delta = success_last - success_first
@@ -131,6 +133,17 @@ class GateEvaluator:
                     "log_integrity_ratio": log_integrity_ratio,
                 },
                 threshold={"op": ">=", "value": float(self.spec.min_log_integrity_ratio)},
+            ),
+            self._check(
+                name="P1.success_rate_floor",
+                priority="P1",
+                passed=success_rate >= self.spec.min_success_rate,
+                reason_ok="Success rate is above floor",
+                reason_fail=(
+                    f"success_rate={success_rate:.3f} below {self.spec.min_success_rate:.3f}"
+                ),
+                metrics={"success_rate": success_rate},
+                threshold={"op": ">=", "value": float(self.spec.min_success_rate)},
             ),
             self._check(
                 name="P1.success_trend",
