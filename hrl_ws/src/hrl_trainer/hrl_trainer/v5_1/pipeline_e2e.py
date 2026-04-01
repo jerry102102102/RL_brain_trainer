@@ -663,6 +663,11 @@ def run_pipeline_e2e(
             ep_intervention = 0
             prev_action = np.zeros(_CONTROLLED_ACTION_DIM, dtype=float)
             trace_steps = logs.get("trace_steps", [])
+            reward_state = {
+                "prev_in_near_goal": False,
+                "dwell_count": 0,
+                "prev_success_latched": False,
+            }
             ep_component_sums: dict[str, float] = {
                 "progress": 0.0,
                 "action": 0.0,
@@ -671,8 +676,15 @@ def run_pipeline_e2e(
                 "clamp_or_projection": 0.0,
                 "stall": 0.0,
                 "ee_small_motion_penalty": 0.0,
+                "timeout_penalty": 0.0,
+                "reset_fail_penalty": 0.0,
+                "execution_fail_penalty": 0.0,
                 "timeout_or_reset": 0.0,
                 "success_bonus": 0.0,
+                "near_goal": 0.0,
+                "dwell": 0.0,
+                "near_goal_exit": 0.0,
+                "ori_progress": 0.0,
                 "reward_total": 0.0,
             }
 
@@ -719,6 +731,7 @@ def run_pipeline_e2e(
                 q_before_for_stall = q_before_arr if q_before_arr.size > 0 and q_before_arr.shape == q_after_arr.shape else None
                 q_after_for_stall = q_after_arr if q_before_for_stall is not None else None
 
+                reward_state_in = dict(reward_state)
                 terms = reward_composer.compute(
                     prev_ee_pos_err=prev_ee_pos_err,
                     prev_ee_ori_err=prev_ee_ori_err,
@@ -733,7 +746,13 @@ def run_pipeline_e2e(
                     q_before=q_before_for_stall,
                     q_after=q_after_for_stall,
                     effect_ratio=(step.get("runtime", {}) or {}).get("effect_ratio"),
+                    prev_in_near_goal=reward_state_in["prev_in_near_goal"],
+                    dwell_count=reward_state_in["dwell_count"],
+                    prev_success_latched=reward_state_in["prev_success_latched"],
                 )
+                reward_state["prev_in_near_goal"] = bool(terms.in_near_goal)
+                reward_state["dwell_count"] = int(terms.dwell_count)
+                reward_state["prev_success_latched"] = bool(terms.success_latched)
                 prev_action = action
                 terms_dict = terms.to_dict()
                 episode_return += terms.reward_total
@@ -761,6 +780,12 @@ def run_pipeline_e2e(
                         "ee_step_dori": ee_step_dori,
                         "ee_small_motion_penalty": float(terms.ee_small_motion_penalty),
                         "reward_total": float(terms.reward_total),
+                        "reward_state_in": reward_state_in,
+                        "reward_state_out": {
+                            "prev_in_near_goal": bool(reward_state["prev_in_near_goal"]),
+                            "dwell_count": int(reward_state["dwell_count"]),
+                            "prev_success_latched": bool(reward_state["prev_success_latched"]),
+                        },
                         "components": terms_dict,
                     }
                 )

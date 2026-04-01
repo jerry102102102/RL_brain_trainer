@@ -58,12 +58,18 @@ class RewardTerms:
     clamp_or_projection: float
     stall: float
     ee_small_motion_penalty: float
+    timeout_penalty: float
+    reset_fail_penalty: float
+    execution_fail_penalty: float
     timeout_or_reset: float
     success_bonus: float
     near_goal: float
     dwell: float
     near_goal_exit: float
     ori_progress: float
+    in_near_goal: float
+    dwell_count: float
+    success_latched: float
     reward_total: float
 
     def to_dict(self) -> dict[str, float]:
@@ -75,12 +81,18 @@ class RewardTerms:
             "clamp_or_projection": self.clamp_or_projection,
             "stall": self.stall,
             "ee_small_motion_penalty": self.ee_small_motion_penalty,
+            "timeout_penalty": self.timeout_penalty,
+            "reset_fail_penalty": self.reset_fail_penalty,
+            "execution_fail_penalty": self.execution_fail_penalty,
             "timeout_or_reset": self.timeout_or_reset,
             "success_bonus": self.success_bonus,
             "near_goal": self.near_goal,
             "dwell": self.dwell,
             "near_goal_exit": self.near_goal_exit,
             "ori_progress": self.ori_progress,
+            "in_near_goal": self.in_near_goal,
+            "dwell_count": self.dwell_count,
+            "success_latched": self.success_latched,
             "reward_total": self.reward_total,
         }
 
@@ -88,17 +100,10 @@ class RewardTerms:
 class RewardComposer:
     def __init__(self, config: RewardConfig | None = None) -> None:
         self.config = config or RewardConfig()
-        # Internal rollout state for near-goal/dwell shaping.
-        self._prev_in_near_goal: bool = False
-        self._dwell_count: int = 0
 
     @staticmethod
     def _norm(x: np.ndarray) -> float:
         return float(np.linalg.norm(np.asarray(x, dtype=float)))
-
-    def reset_episode_state(self) -> None:
-        self._prev_in_near_goal = False
-        self._dwell_count = 0
 
     def compute(
         self,
@@ -115,6 +120,9 @@ class RewardComposer:
         q_before: np.ndarray | None = None,
         q_after: np.ndarray | None = None,
         effect_ratio: float | None = None,
+        prev_in_near_goal: bool = False,
+        dwell_count: int = 0,
+        prev_success_latched: bool = False,
     ) -> RewardTerms:
         del q_before, q_after, effect_ratio  # unused in phase-1 ablation
 
@@ -125,6 +133,7 @@ class RewardComposer:
 
         # 1) execution_fail override.
         if done and done_reason == "execution_fail":
+            execution_fail_penalty = float(self.config.execution_fail_penalty)
             return RewardTerms(
                 progress=0.0,
                 action=0.0,
@@ -133,13 +142,19 @@ class RewardComposer:
                 clamp_or_projection=0.0,
                 stall=0.0,
                 ee_small_motion_penalty=0.0,
-                timeout_or_reset=float(self.config.execution_fail_penalty),
+                timeout_penalty=0.0,
+                reset_fail_penalty=0.0,
+                execution_fail_penalty=execution_fail_penalty,
+                timeout_or_reset=execution_fail_penalty,
                 success_bonus=0.0,
                 near_goal=0.0,
                 dwell=0.0,
                 near_goal_exit=0.0,
                 ori_progress=0.0,
-                reward_total=float(self.config.execution_fail_penalty),
+                in_near_goal=0.0,
+                dwell_count=0.0,
+                success_latched=0.0,
+                reward_total=execution_fail_penalty,
             )
 
         # 2) position progress: linear + log.
@@ -173,23 +188,25 @@ class RewardComposer:
         r_near_goal = self.config.near_goal_bonus if in_near_goal else 0.0
 
         if in_dwell_region:
-            self._dwell_count += 1
+            dwell_count += 1
             r_dwell = self.config.dwell_bonus
         else:
-            self._dwell_count = 0
+            dwell_count = 0
             r_dwell = 0.0
 
-        r_near_goal_exit = self.config.near_goal_exit_penalty if (self._prev_in_near_goal and not in_near_goal) else 0.0
+        r_near_goal_exit = self.config.near_goal_exit_penalty if (prev_in_near_goal and not in_near_goal) else 0.0
 
         # 7) terminal.
-        r_terminal = 0.0
-        success_by_dwell = self._dwell_count >= self.config.dwell_steps_required
-        if done_reason == "success" or success_by_dwell:
-            r_terminal += self.config.success_bonus
-        elif done_reason == "timeout":
-            r_terminal += self.config.timeout_penalty
-        elif done_reason == "reset_fail":
-            r_terminal += self.config.reset_fail_penalty
+        success_by_dwell = (not prev_success_latched) and (dwell_count >= self.config.dwell_steps_required)
+        success_terminal = (not prev_success_latched) and (done_reason == "success")
+        success_awarded = success_terminal or success_by_dwell
+        success_latched = prev_success_latched or success_awarded
+
+        r_success_bonus = float(self.config.success_bonus) if success_awarded else 0.0
+        r_timeout_penalty = float(self.config.timeout_penalty) if done_reason == "timeout" else 0.0
+        r_reset_fail_penalty = float(self.config.reset_fail_penalty) if done_reason == "reset_fail" else 0.0
+        r_execution_fail_penalty = 0.0
+        r_terminal_penalty = r_timeout_penalty + r_reset_fail_penalty + r_execution_fail_penalty
 
         total = (
             r_pos_progress
@@ -201,10 +218,9 @@ class RewardComposer:
             + r_near_goal
             + r_dwell
             + r_near_goal_exit
-            + r_terminal
+            + r_success_bonus
+            + r_terminal_penalty
         )
-
-        self._prev_in_near_goal = in_near_goal
 
         return RewardTerms(
             progress=float(r_pos_progress),
@@ -214,12 +230,18 @@ class RewardComposer:
             clamp_or_projection=float(r_clamp),
             stall=0.0,
             ee_small_motion_penalty=0.0,
-            timeout_or_reset=float(r_terminal),
-            success_bonus=float(self.config.success_bonus if (done_reason == "success" or success_by_dwell) else 0.0),
+            timeout_penalty=float(r_timeout_penalty),
+            reset_fail_penalty=float(r_reset_fail_penalty),
+            execution_fail_penalty=float(r_execution_fail_penalty),
+            timeout_or_reset=float(r_terminal_penalty),
+            success_bonus=float(r_success_bonus),
             near_goal=float(r_near_goal),
             dwell=float(r_dwell),
             near_goal_exit=float(r_near_goal_exit),
             ori_progress=float(r_ori_progress),
+            in_near_goal=float(in_near_goal),
+            dwell_count=float(dwell_count),
+            success_latched=float(success_latched),
             reward_total=float(total),
         )
 
