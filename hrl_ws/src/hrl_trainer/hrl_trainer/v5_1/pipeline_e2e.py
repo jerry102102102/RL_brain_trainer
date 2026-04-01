@@ -181,7 +181,7 @@ def _checkpoint_candidates(artifact_root: Path) -> list[Path]:
 def _load_agent_checkpoint(agent: Any, checkpoint_path: Path) -> None:
     import torch
 
-    payload = torch.load(checkpoint_path, map_location="cpu")
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     agent.actor.load_state_dict(payload["actor_state_dict"])
     agent.q1.load_state_dict(payload["q1_state_dict"])
     agent.q2.load_state_dict(payload["q2_state_dict"])
