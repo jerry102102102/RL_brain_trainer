@@ -3,12 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DEFAULT_SCENE_LINK="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
+DEFAULT_SCENE_LINK="$REPO_ROOT/external/kitchen_scene"
+LEGACY_SCENE_LINK="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
 
 usage() {
   cat <<USAGE
 Usage:
-  $(basename "$0") [--scene-link PATH] [--launch-cmd CMD] [--dry-run]
+  $(basename "$0") [--scene-link PATH] [--launch-cmd CMD] [--mode headless|gui] [--no-cleanup] [--dry-run]
 
 Purpose:
   Launch kitchen scene from the bridged ENPM662 repo.
@@ -17,7 +18,10 @@ Options:
   --scene-link PATH   Path to bridged scene repo symlink.
                       Default: $DEFAULT_SCENE_LINK
   --launch-cmd CMD    Explicit launch command run inside scene repo.
-                      Example: ros2 launch my_pkg kitchen_scene.launch.py use_sim_time:=true
+                      Example: ros2 launch kitchen_robot_description gazebo.launch.py use_sim_time:=true headless:=true
+  --mode MODE         Auto launch mode when --launch-cmd is not set.
+                      headless (default) or gui
+  --no-cleanup        Skip pre-launch cleanup of existing kitchen scene processes.
   --dry-run           Print launch command only.
   -h, --help          Show this help.
 USAGE
@@ -25,7 +29,9 @@ USAGE
 
 SCENE_LINK="$DEFAULT_SCENE_LINK"
 LAUNCH_CMD=""
+MODE="headless"
 DRY_RUN=0
+DO_CLEANUP=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +42,14 @@ while [[ $# -gt 0 ]]; do
     --launch-cmd)
       LAUNCH_CMD="$2"
       shift 2
+      ;;
+    --mode)
+      MODE="$2"
+      shift 2
+      ;;
+    --no-cleanup)
+      DO_CLEANUP=0
+      shift
       ;;
     --dry-run)
       DRY_RUN=1
@@ -53,45 +67,60 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$MODE" != "headless" && "$MODE" != "gui" ]]; then
+  echo "ERROR: --mode must be one of: headless, gui" >&2
+  exit 64
+fi
+
+if [[ "$SCENE_LINK" == "$DEFAULT_SCENE_LINK" && ! -d "$SCENE_LINK" && -d "$LEGACY_SCENE_LINK" ]]; then
+  echo "WARN: default bridge not found at $DEFAULT_SCENE_LINK, fallback to legacy path: $LEGACY_SCENE_LINK" >&2
+  SCENE_LINK="$LEGACY_SCENE_LINK"
+fi
+
 if [[ ! -d "$SCENE_LINK" ]]; then
   echo "ERROR: bridged scene path not found: $SCENE_LINK" >&2
   echo "Run: scripts/v5/bridge_kitchen_scene.sh --scene-repo <path>" >&2
   exit 2
 fi
 
-if [[ -z "$LAUNCH_CMD" ]]; then
-  if command -v rg >/dev/null 2>&1; then
-    CANDIDATE="$(rg --files "$SCENE_LINK" | rg 'launch/.*(kitchen|gazebo).*\.launch\.py$|(kitchen|gazebo).*\.launch\.py$' | head -n 1 || true)"
-  else
-    CANDIDATE="$(find "$SCENE_LINK" -type f \( -name '*kitchen*.launch.py' -o -name '*gazebo*.launch.py' \) | head -n 1 || true)"
-  fi
 
-  if [[ -z "$CANDIDATE" ]]; then
-    cat >&2 <<ERR
-ERROR: no kitchen launch file auto-detected under $SCENE_LINK
-Provide explicit command with:
-  --launch-cmd 'ros2 launch <pkg> <launch>.launch.py use_sim_time:=true'
-ERR
-    exit 3
-  fi
+cleanup_scene_processes() {
+  local patterns=(
+    "ros2 launch kitchen_robot_description gazebo.launch.py"
+    "gz sim.*worlds/v5_kitchen_empty.sdf"
+    "gz sim.*world=v5_kitchen_empty"
+  )
 
-  PKG_DIR="$(basename "$(dirname "$(dirname "$CANDIDATE")")")"
-  LAUNCH_FILE="$(basename "$CANDIDATE")"
-
-  # Resolve real ROS package name from package.xml when folder name is not a valid package name.
-  PKG_XML="$(dirname "$(dirname "$CANDIDATE")")/package.xml"
-  if [[ -f "$PKG_XML" ]]; then
-    PKG_FROM_XML="$(grep -m1 -oP '(?<=<name>)[^<]+' "$PKG_XML" || true)"
-    if [[ -n "$PKG_FROM_XML" ]]; then
-      PKG_DIR="$PKG_FROM_XML"
+  local killed_any=0
+  for pattern in "${patterns[@]}"; do
+    if pgrep -f "$pattern" >/dev/null 2>&1; then
+      echo "Cleanup: terminating existing process pattern: $pattern"
+      pkill -f "$pattern" >/dev/null 2>&1 || true
+      killed_any=1
     fi
-  fi
+  done
 
-  LAUNCH_CMD="ros2 launch $PKG_DIR $LAUNCH_FILE use_sim_time:=true headless:=true"
+  if [[ "$killed_any" -eq 1 ]]; then
+    sleep 1
+  fi
+}
+
+if [[ -z "$LAUNCH_CMD" ]]; then
+  if [[ "$MODE" == "headless" ]]; then
+    LAUNCH_CMD="ros2 launch kitchen_robot_description gazebo.launch.py use_sim_time:=true headless:=true use_software_renderer:=true"
+  else
+    LAUNCH_CMD="ros2 launch kitchen_robot_description gazebo.launch.py use_sim_time:=true headless:=false"
+  fi
 fi
 
 echo "Scene repo: $SCENE_LINK"
+echo "Launch mode: $MODE"
+echo "Cleanup before launch: $([[ "$DO_CLEANUP" -eq 1 ]] && echo enabled || echo disabled)"
 echo "Launch cmd: $LAUNCH_CMD"
+
+if [[ "$DO_CLEANUP" -eq 1 ]]; then
+  cleanup_scene_processes
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "DRY-RUN: launch skipped"

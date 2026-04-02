@@ -85,6 +85,12 @@ def generate_launch_description():
         description='When dedicated path unsupported, auto-run legacy adapter path.'
     )
 
+    declare_show_tray_mode_warning = DeclareLaunchArgument(
+        'show_tray_mode_warning',
+        default_value='false',
+        description='Show QUASI_DEDICATED tray mode warning log at startup.'
+    )
+
     # === Environment variables ===
     set_res_gz = SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.pathsep.join([pkg_share, res_root]))
     set_res_ign = SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', os.pathsep.join([pkg_share, res_root]))
@@ -97,7 +103,7 @@ def generate_launch_description():
             f'(deterministic legacy adapter; Pose_V dedicated path unsupported: '
             f'pose_v_msg={pose_v_msg_supported}, bridge_pose_v={bridge_pose_v_supported}).'
         ),
-        condition=IfCondition('true' if (not dedicated_supported) else 'false')
+        condition=IfCondition(LaunchConfiguration('show_tray_mode_warning'))
     )
 
     # Copy controller.yaml into /tmp so the <parameters> tag can read it
@@ -416,6 +422,7 @@ def generate_launch_description():
         declare_enable_dedicated_tray_source,
         declare_enable_legacy_tray_pose_adapter,
         declare_auto_fallback_legacy_on_unsupported,
+        declare_show_tray_mode_warning,
         set_res_gz, set_res_ign, soft_gl, no_audio,
         tray_mode_warning,
         prep_params,

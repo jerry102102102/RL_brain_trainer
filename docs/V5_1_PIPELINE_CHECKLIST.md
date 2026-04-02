@@ -57,23 +57,87 @@
 
 ## D) 最低驗收命令模板
 
+### D.1 當前已驗證可用的場景啟動方式（Jerry 實測）
+
+> Jerry 的 shell 是 `zsh`。若 agent 端預設是 `bash`，不得直接照搬錯誤 `.bash` / `src/install` 路徑；需以目前已驗證可用的 source 流程為準。
+
 ```bash
 cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
-source scripts/v5_1/activate_env.sh
-scripts/v5_1/env_check.sh
-
-# 1) bring-up + 基礎健康檢查
-scripts/v5/launch_kitchen_scene.sh --mode headless
-ros2 service call /controller_manager/list_controllers controller_manager_msgs/srv/ListControllers "{}"
-ros2 topic echo /tray1/pose --qos-reliability best_effort --once
-ros2 topic echo /v5/perception/object_pose_est --qos-reliability best_effort --once
-
-# 2) V5.1 pipeline（範本）
-bash scripts/v5_1/run_e2e_pipeline.sh --bringup --verify --run-id <run_id>
-
-# 3) 分層 log 驗證（範本）
-python scripts/v5_1/validate_layer_logs.py --run-id <run_id>
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+scripts/v5/launch_kitchen_scene.sh --mode gui
 ```
+
+如果要 headless：
+
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+scripts/v5/launch_kitchen_scene.sh --mode headless
+```
+
+### D.2 當前已驗證可用的 GZ pipeline 執行命令（Jerry 實測）
+
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+source hrl_ws/.venv/bin/activate
+export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+
+python -m hrl_trainer.v5_1.pipeline_e2e \
+ --run-id main_reward_gz_30step_smoke \
+ --episodes 1 \
+ --steps-per-episode 30 \
+ --artifact-root artifacts/v5_1/e2e/main_reward_gz_30step_smoke \
+ --runtime-mode gz \
+ --policy-mode sac_torch \
+ --stage-profile s0_b \
+ --target-mode near_home \
+ --runtime-joint-names Rack_joint,robot_base_joint,shoulder1_joint,shoulder2_joint,wr1_joint,wr2_joint,wr3_joint \
+ --trajectory-topic /arm_controller/joint_trajectory \
+ --joint-state-topic /joint_states
+```
+
+### D.3 每次跑完後的固定解讀順序
+
+必讀 artifact：
+- `artifacts/v5_1/e2e/<run_id>/gate_result.json`
+- `artifacts/v5_1/e2e/<run_id>/pipeline_summary.json`
+- `artifacts/v5_1/e2e/<run_id>/episode_reward_summary.jsonl`
+- 視需要加看：`reward_trace.jsonl`、`runtime_trace.jsonl`
+
+解讀順序：
+1. **先看這次是不是「真的跑起來」**
+   - `episodes_completed == episodes_requested`
+   - `reset_failures == 0`
+   - `execution_ratio == 1.0`
+   - `l1/l2/l3` logs 有值
+2. **再看 gate 有沒有過**
+   - `gate_overall_decision`
+   - `gate_passed`
+3. **最後才看任務/訓練表現**
+   - `done_reason`（`success` / `timeout` / `execution_fail`）
+   - `success_rate`
+   - `component_sums.progress`
+   - `near_goal`
+   - `dwell`
+   - `success_bonus`
+   - `reward_total`
+
+### D.4 一個重要規則
+- `exit_code = 0` 只代表命令執行完，不代表實驗成功。
+- 若 `gate_passed = false` 或 `overall_decision = HOLD`，回報時必須明確標記為 **FAIL/HOLD**，不可說成「成功」。
+
+### D.5 執行完訓練後第一件事：清理 GZ 相關進程
+
+```bash
+pkill -f "ros2 launch kitchen_robot_description gazebo.launch.py|gz sim|parameter_bridge|tray_pose_adapter|controller_manager" || true
+sleep 2
+```
+
+這一步是固定規則，避免殘留 process 汙染下一輪實驗。
 
 ## E) 驗收判定（最低）
 - Bring-up/health check 全 PASS。

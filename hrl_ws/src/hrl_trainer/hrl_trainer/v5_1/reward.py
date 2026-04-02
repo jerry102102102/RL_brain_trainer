@@ -105,6 +105,12 @@ class RewardComposer:
     def _norm(x: np.ndarray) -> float:
         return float(np.linalg.norm(np.asarray(x, dtype=float)))
 
+    @staticmethod
+    def ee_error_norm(ee_pos_err: np.ndarray, ee_ori_err: np.ndarray) -> float:
+        pos = float(np.linalg.norm(np.asarray(ee_pos_err, dtype=float)))
+        ori = float(np.linalg.norm(np.asarray(ee_ori_err, dtype=float)))
+        return pos + 0.5 * ori
+
     def compute(
         self,
         prev_ee_pos_err: np.ndarray,
