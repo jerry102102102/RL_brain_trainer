@@ -15,6 +15,15 @@
 
 > 當前主軸已收斂到 **V5.1：L2 joint-space SAC + L3 deterministic safety execution**。
 
+- Stage closeout summaries for the current maintained branch:
+  - `V5_1_STAGE_SUMMARY.md`
+  - `V5_1_EXECUTIVE_SUMMARY.md`
+  - `V5_1_TIMELINE.md`
+- The maintained code path now includes both:
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/v5_1/pipeline_e2e.py` for the SAC-based training/evaluation pipeline
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/v5_1/build_teacher_dataset.py`,
+    `train_deterministic_student.py`, and `eval_deterministic_student.py` for the teacher-student deterministic extraction line
+
 - V5.1 正式計劃（主文檔）：`docs/V5_1_IMPLEMENTATION_PLAN.md`
 - V5.1 當前短總覽（可審核）：`docs/V5_1_STATUS_SUMMARY.md`
 - V5.1 單一路線交付（ROS2+venv+SAC Torch）：`reports/V5_1_SINGLE_PATH_DELIVERY.md`
@@ -29,6 +38,16 @@
 - 固定環境：ROS2 Jazzy + `hrl_ws/.venv/bin/python`。
 - 啟用環境：`source scripts/v5_1/activate_env.sh`
 - 環境檢查：`scripts/v5_1/env_check.sh`
+
+### V5.2 deterministic extraction（same maintained branch）
+- Teacher source building:
+  - `python -m hrl_trainer.v5_1.build_teacher_dataset ...`
+- Student training:
+  - `python -m hrl_trainer.v5_1.train_deterministic_student ...`
+- Student evaluation:
+  - `python -m hrl_trainer.v5_1.eval_deterministic_student ...`
+- This line is part of the same maintained branch state and is summarized in:
+  - `V5_1_STAGE_SUMMARY.md`
 
 
 - 任務票（可直接執行）：`docs/V5_1_TASK_BOARD.md`
