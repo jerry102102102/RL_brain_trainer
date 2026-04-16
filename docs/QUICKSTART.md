@@ -94,29 +94,6 @@ cd hrl_ws/src/hrl_trainer && python3 -m hrl_trainer.v5.eval_harness --policy rl_
   - `summary.stage.benchmark_schema`: `v5_rl_l2_v0_benchmark`
   - `summary.stage.benchmark_version`: `1.0`
 
-## V5.1 Bundle-v1（RealSAC-Gated）一次性命令
-
-```bash
-cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer
-
-# tests: reward/sac/gate
-pytest -q tests/v5_1/test_reward_v1.py tests/v5_1/test_sac_update_smoke.py tests/v5_1/test_eval_sac_gate.py
-
-# smoke train
-python -m hrl_trainer.v5_1.train_loop_sac --episodes 20 --seed 20260331 --artifact-root artifacts/v5_1/train/smoke
-
-# 30ep gate
-python -m hrl_trainer.v5_1.eval_sac_gate --checkpoint artifacts/v5_1/train/smoke/checkpoint_latest.pt --episodes 30 --seed 20260331 --policy-mode sac --enforce-gates
-
-# 100ep gate (only after 30ep GO)
-python -m hrl_trainer.v5_1.eval_sac_gate --checkpoint artifacts/v5_1/train/smoke/checkpoint_latest.pt --episodes 100 --seed 20260401 --policy-mode sac --enforce-gates
-```
-
-- 若 30ep 為 HOLD：
-  - policy fallback：`--policy-mode rule`
-  - 套 `Bundle-v1-safe-fallback` runtime 參數（較保守權重 + 更長 warmup）
-  - 保留 SAC artifacts 做離線分析，不刪檔
-
 ## V5 WP2 M2-9 一鍵重跑（推薦入口）
 
 ```bash
@@ -137,3 +114,13 @@ cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
 - 本 repo 目前 WP2 M2-9 closeout 屬於前者，不代表已完成後者。
 
 更多細節：`docs/WP2_IMPLEMENTATION_NOTE.md`
+
+## V5.1 Note
+
+The maintained V5.1 path is now centered on the `pipeline_e2e` / `sac_torch` / deterministic-student workflow.  
+Older Bundle-v1 toy-SAC files and their gate-eval commands are no longer part of the active branch.
+
+For the cleaned stage summary, see:
+- `V5_1_STAGE_SUMMARY.md`
+- `V5_1_EXECUTIVE_SUMMARY.md`
+- `V5_1_TIMELINE.md`

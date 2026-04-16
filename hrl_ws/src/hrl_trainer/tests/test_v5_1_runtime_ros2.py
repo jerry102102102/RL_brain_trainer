@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import subprocess
 
 import numpy as np
 
-from hrl_trainer.v5_1.runtime_ros2 import JointStateFrame, RuntimeROS2Adapter
+from hrl_trainer.v5_1.runtime_ros2 import GazeboTargetVisualizer, JointStateFrame, RuntimeROS2Adapter
 
 
 class _FakeIO:
@@ -52,6 +53,19 @@ class _FakeActionIO(_FakeIO):
             }
         )
         return dict(self.action_result)
+
+
+class _FakeVisualizer:
+    def __init__(self) -> None:
+        self.calls: list[list[float]] = []
+        self.closed = False
+
+    def publish_pose(self, pose6: np.ndarray) -> dict[str, object]:
+        self.calls.append(np.asarray(pose6, dtype=float).tolist())
+        return {"success": True, "action": "create", "reason": "ok", "world_name": "empty", "entity_name": "unit_target"}
+
+    def close(self) -> None:
+        self.closed = True
 
 class TestRuntimeROS2Adapter(unittest.TestCase):
     def test_step_emits_cmd_and_readback(self) -> None:
@@ -222,6 +236,75 @@ class TestRuntimeROS2Adapter(unittest.TestCase):
         self.assertFalse(bool(out["execution_ok"]))
         self.assertEqual(out["result_status"], "rejected")
         self.assertEqual(out["fail_reason"], "goal_rejected")
+
+    def test_publish_ee_target_visual_uses_configured_visualizer(self) -> None:
+        io = _FakeIO(frames=[JointStateFrame(names=["j1", "j2"], position=[0.0, 0.0], velocity=[0.0, 0.0], stamp_ns=1)])
+        visualizer = _FakeVisualizer()
+        adapter = RuntimeROS2Adapter(
+            io=io,
+            joint_names=["j1", "j2"],
+            target_visualizer=visualizer,
+            initial_warmup_timeout_s=0.0,
+        )
+
+        out = adapter.publish_ee_target_visual(np.array([0.1, -0.2, 0.3, 1.0, -0.5, 0.2], dtype=float))
+        adapter.close()
+
+        self.assertTrue(bool(out["success"]))
+        self.assertEqual(len(visualizer.calls), 1)
+        self.assertEqual(visualizer.calls[0], [0.1, -0.2, 0.3, 1.0, -0.5, 0.2])
+        self.assertTrue(visualizer.closed)
+
+    def test_gazebo_target_visualizer_creates_then_updates_marker(self) -> None:
+        commands: list[list[str]] = []
+        responses = [
+            subprocess.CompletedProcess(args=["gz"], returncode=0, stdout="data: true\n", stderr=""),
+            subprocess.CompletedProcess(args=["gz"], returncode=0, stdout="data: true\n", stderr=""),
+        ]
+
+        def _runner(command: list[str], _timeout_ms: int) -> subprocess.CompletedProcess[str]:
+            commands.append(list(command))
+            return responses.pop(0)
+
+        visualizer = GazeboTargetVisualizer(
+            world_name="empty",
+            entity_name="unit_target",
+            gz_binary="gz",
+            runner=_runner,
+        )
+
+        create_out = visualizer.publish_pose(np.array([0.1, 0.2, 0.3, 1.57, 0.0, -1.57], dtype=float))
+        update_out = visualizer.publish_pose(np.array([0.2, 0.1, 0.4, 1.57, 0.1, -1.2], dtype=float))
+
+        self.assertTrue(bool(create_out["success"]))
+        self.assertEqual(create_out["action"], "create")
+        self.assertTrue(bool(update_out["success"]))
+        self.assertEqual(update_out["action"], "set_pose")
+        self.assertEqual(commands[0][3], "/world/empty/create")
+        self.assertEqual(commands[1][3], "/world/empty/set_pose")
+        self.assertIn("unit_target", commands[0][-1])
+        self.assertIn('name: "unit_target"', commands[1][-1])
+
+    def test_gazebo_target_visualizer_applies_world_offset(self) -> None:
+        commands: list[list[str]] = []
+
+        def _runner(command: list[str], _timeout_ms: int) -> subprocess.CompletedProcess[str]:
+            commands.append(list(command))
+            return subprocess.CompletedProcess(args=command, returncode=0, stdout="data: true\n", stderr="")
+
+        visualizer = GazeboTargetVisualizer(
+            world_name="empty",
+            entity_name="unit_target",
+            pose_offset_xyz=np.array([0.0, 0.0, 1.04], dtype=float),
+            gz_binary="gz",
+            runner=_runner,
+        )
+
+        out = visualizer.publish_pose(np.array([-0.2, -0.03, 1.09, 1.6, -0.12, -1.59], dtype=float))
+
+        self.assertTrue(bool(out["success"]))
+        self.assertIn("2.130000", commands[0][-1])
+        self.assertEqual(out["pose_offset_xyz"], [0.0, 0.0, 1.04])
 
 
 if __name__ == "__main__":

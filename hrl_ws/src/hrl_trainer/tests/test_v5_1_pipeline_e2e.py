@@ -12,6 +12,80 @@ from hrl_trainer.v5_1.pipeline_e2e import run_pipeline_e2e
 TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 
 
+class TestV51PipelineE2EScoring(unittest.TestCase):
+    def test_checkpoint_score_prioritizes_deterministic_quality(self) -> None:
+        stronger_deterministic = {
+            "det_success_rate": 0.2,
+            "mean_final_dpos": 0.12,
+            "regression_rate": 0.60,
+            "mean_final_minus_min": 0.02,
+        }
+        weaker_deterministic = {
+            "det_success_rate": 0.0,
+            "mean_final_dpos": 0.10,
+            "regression_rate": 0.55,
+            "mean_final_minus_min": 0.01,
+        }
+
+        self.assertGreater(
+            pipeline_e2e._checkpoint_score(stronger_deterministic),
+            pipeline_e2e._checkpoint_score(weaker_deterministic),
+        )
+
+    def test_fixed_eval_suite_is_deterministic(self) -> None:
+        suite_a = pipeline_e2e._build_fixed_eval_suite(
+            suite_size=3,
+            suite_seed=123,
+            target_mode="near_home",
+            action_stage_name="S2",
+            target_curriculum_stage_name="TC0",
+            near_home_profile="TC0",
+            near_home_pos_offset_min_m=0.08,
+            near_home_pos_offset_max_m=0.10,
+            near_home_ori_offset_min_deg=0.0,
+            near_home_ori_offset_max_deg=2.0,
+            external_ee_target=np.zeros(6, dtype=float),
+            external_ee_target_source={},
+        )
+        suite_b = pipeline_e2e._build_fixed_eval_suite(
+            suite_size=3,
+            suite_seed=123,
+            target_mode="near_home",
+            action_stage_name="S2",
+            target_curriculum_stage_name="TC0",
+            near_home_profile="TC0",
+            near_home_pos_offset_min_m=0.08,
+            near_home_pos_offset_max_m=0.10,
+            near_home_ori_offset_min_deg=0.0,
+            near_home_ori_offset_max_deg=2.0,
+            external_ee_target=np.zeros(6, dtype=float),
+            external_ee_target_source={},
+        )
+        self.assertEqual(suite_a["suite_id"], suite_b["suite_id"])
+        self.assertEqual(suite_a["targets"], suite_b["targets"])
+
+    def test_exploration_schedule_reduces_after_good_progress(self) -> None:
+        new_scale, reason = pipeline_e2e._schedule_exploration_scale(
+            0.60,
+            total_successes=5,
+            best_min_dpos=0.05,
+            det_success_rate=0.0,
+        )
+        self.assertEqual(new_scale, 0.45)
+        self.assertEqual(reason, "train_success>=5")
+
+    def test_disable_exploration_schedule_keeps_scale_fixed(self) -> None:
+        new_scale, reason = pipeline_e2e._maybe_schedule_exploration_scale(
+            True,
+            0.60,
+            total_successes=99,
+            best_min_dpos=0.0,
+            det_success_rate=1.0,
+        )
+        self.assertEqual(new_scale, 0.60)
+        self.assertIsNone(reason)
+
+
 @unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed in this environment")
 class TestV51PipelineE2E(unittest.TestCase):
     def test_pipeline_e2e_outputs_artifacts_and_logs(self) -> None:
@@ -57,20 +131,27 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertGreaterEqual(len(reward_rows), 1)
             self.assertIn("episode_id", reward_rows[0])
             self.assertIn("reward_total", reward_rows[0])
-            self.assertEqual(
-                set(reward_rows[0]["components"].keys()),
+            self.assertTrue(
                 {
                     "progress",
                     "action",
                     "jerk",
+                    "adjust_penalty",
+                    "raw_action_penalty",
+                    "reject_penalty",
                     "intervention",
                     "clamp_or_projection",
-                    "stall",
-                    "ee_small_motion_penalty",
+                    "near_goal",
+                    "near_goal_shell",
+                    "dwell",
+                    "near_goal_exit",
+                    "local_drift_penalty",
+                    "dwell_break",
                     "timeout_or_reset",
                     "success_bonus",
+                    "success_triggered_by_dwell",
                     "reward_total",
-                },
+                }.issubset(set(reward_rows[0]["components"].keys()))
             )
 
             ep_summary_rows = [
@@ -82,6 +163,23 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertIn("component_sums", ep_summary_rows[0])
             self.assertIn("component_means", ep_summary_rows[0])
             self.assertIn("total_reward", ep_summary_rows[0])
+            self.assertIn("max_dwell_count", ep_summary_rows[0])
+            self.assertIn("dwell_break_count", ep_summary_rows[0])
+            self.assertIn("clamp_count", ep_summary_rows[0])
+            self.assertIn("projection_count", ep_summary_rows[0])
+            self.assertIn("reject_count", ep_summary_rows[0])
+            self.assertIn("reject_rate", ep_summary_rows[0])
+            self.assertIn("near_goal_entry_count", ep_summary_rows[0])
+            self.assertIn("near_goal_shell_count", ep_summary_rows[0])
+            self.assertIn("near_goal_exit_count", ep_summary_rows[0])
+            self.assertIn("success_triggered_by_dwell", ep_summary_rows[0])
+            self.assertIn("sum_adjust_penalty", ep_summary_rows[0])
+            self.assertIn("sum_raw_action_penalty", ep_summary_rows[0])
+            self.assertIn("sum_reject_penalty", ep_summary_rows[0])
+            self.assertIn("sum_delta_norm", ep_summary_rows[0])
+            self.assertIn("min_dpos", ep_summary_rows[0])
+            self.assertIn("final_dpos", ep_summary_rows[0])
+            self.assertIn("final_dpos_minus_min_dpos", ep_summary_rows[0])
 
             gate_payload = json.loads(gate_path.read_text(encoding="utf-8"))
             self.assertEqual(gate_payload["overall_decision"], "GO")
@@ -125,13 +223,19 @@ class TestV51PipelineE2E(unittest.TestCase):
             pos_offset_max_m=0.05,
             ori_offset_min_deg=5.0,
             ori_offset_max_deg=10.0,
+            rng=np.random.default_rng(7),
         )
 
         delta_pos = np.asarray(source["target_delta_pos"], dtype=float)
         delta_ori = np.asarray(source["target_delta_ori"], dtype=float)
-        self.assertAlmostEqual(float(np.linalg.norm(delta_pos)), 0.035, places=6)
-        self.assertAlmostEqual(float(np.linalg.norm(delta_ori)), np.deg2rad(7.5), places=6)
+        self.assertGreaterEqual(float(np.linalg.norm(delta_pos)), 0.02 - 1e-9)
+        self.assertLessEqual(float(np.linalg.norm(delta_pos)), 0.05 + 1e-9)
+        self.assertGreaterEqual(float(np.linalg.norm(delta_ori)), np.deg2rad(5.0) - 1e-9)
+        self.assertLessEqual(float(np.linalg.norm(delta_ori)), np.deg2rad(10.0) + 1e-9)
         self.assertTrue(np.allclose(np.asarray(source["home_ee"], dtype=float) + np.concatenate([delta_pos, delta_ori]), ee_target, atol=1e-6))
+        self.assertLessEqual(float(ee_target[2]), float(source["home_ee"][2]) + 1e-9)
+        self.assertLessEqual(float(delta_pos[2]), 1e-9)
+        self.assertTrue(bool(source["z_not_above_home"]))
 
     def test_s0_b_default_target_mode_is_near_home(self) -> None:
         from pathlib import Path
@@ -152,13 +256,35 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(summary["target_mode"], "auto")
             self.assertEqual(summary["resolved_target_mode"], "near_home")
             self.assertEqual(summary["episodes"][0]["target_mode"], "near_home")
-            self.assertEqual(summary["ee_target_source"]["provider"], "near_home_bootstrap")
+            self.assertEqual(summary["ee_target_source"]["provider"], "near_home_randomized")
             self.assertIn("home_ee", summary["ee_target_source"])
             self.assertIn("target_delta_pos", summary["ee_target_source"])
             self.assertIn("target_delta_ori", summary["ee_target_source"])
             self.assertIn("home_ee", summary["episodes"][0])
             self.assertIn("target_delta_pos", summary["episodes"][0])
             self.assertIn("target_delta_ori", summary["episodes"][0])
+
+    def test_near_home_target_changes_across_episodes(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_s0b_near_home_randomized",
+                episodes=2,
+                steps_per_episode=1,
+                artifact_root=tmp_path / "artifacts_s0b_near_home_randomized",
+                stage_profile="s0_b",
+                sac_seed=5,
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_s0b_near_home_randomized" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["episodes"][0]["target_mode"], "near_home")
+            target0 = np.asarray(summary["episodes"][0]["ee_target"], dtype=float)
+            target1 = np.asarray(summary["episodes"][1]["ee_target"], dtype=float)
+            self.assertFalse(np.allclose(target0, target1, atol=1e-9))
 
     def test_pipeline_e2e_supports_sac_torch_policy_mode(self) -> None:
         from pathlib import Path
@@ -303,6 +429,76 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(summary["runtime_mode"], "gz")
             self.assertGreaterEqual(len(summary["episode_joint_delta_summary"]), 1)
 
+    def test_pipeline_e2e_gz_mode_records_target_visualization_status(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _FakeRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 7
+                self.visual_calls: list[list[float]] = []
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+                return _np.asarray(self._q, dtype=float)
+
+            def publish_ee_target_visual(self, ee_target):
+                import numpy as _np
+                self.visual_calls.append(_np.asarray(ee_target, dtype=float).tolist())
+                return {
+                    "success": True,
+                    "action": "create",
+                    "reason": "ok",
+                    "world_name": "empty",
+                    "entity_name": "unit_target",
+                }
+
+            def step(self, cmd_q):
+                import numpy as _np
+                before = _np.asarray(self._q, dtype=float)
+                after = _np.asarray(cmd_q, dtype=float)
+                self._q = after.tolist()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": after.tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": float(_np.linalg.norm(after - before)),
+                    "timestamp_ns": 123,
+                    "accepted": True,
+                    "result_status": "success",
+                    "execution_ok": True,
+                    "fail_reason": "none",
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            runtime_holder: dict[str, _FakeRuntime] = {}
+
+            def _factory(**kwargs):
+                runtime_holder["rt"] = _FakeRuntime(**kwargs)
+                return runtime_holder["rt"]
+
+            out = run_pipeline_e2e(
+                run_id="test_e2e_gz_target_visual",
+                episodes=1,
+                steps_per_episode=2,
+                artifact_root=tmp_path / "artifacts_gz_target_visual",
+                runtime_mode="gz",
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=_factory,
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            self.assertEqual(len(runtime_holder["rt"].visual_calls), 1)
+            summary = json.loads((tmp_path / "artifacts_gz_target_visual" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            self.assertIn("target_visualization", summary["episodes"][0])
+            self.assertTrue(bool(summary["episodes"][0]["target_visualization"]["success"]))
+            self.assertTrue(bool(summary["gz_target_visualization_enabled"]))
+
     def test_pipeline_e2e_gz_mode_supports_rack_joint_passthrough(self) -> None:
         from pathlib import Path
         import tempfile
@@ -414,6 +610,86 @@ class TestV51PipelineE2E(unittest.TestCase):
             ]
             self.assertGreaterEqual(len(reward_rows), 3)
             self.assertEqual(reward_rows[-1]["done_reason"], "no_effect")
+
+    def test_pipeline_e2e_stops_early_on_success_by_dwell(self) -> None:
+        from pathlib import Path
+        import tempfile
+
+        class _StaticHomeRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 7
+
+            def read_q(self, timeout_s=None):
+                import numpy as _np
+
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+
+                before = _np.asarray(self._q, dtype=float)
+                after = before.copy()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": _np.asarray(cmd_q, dtype=float).tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": 0.0,
+                    "accepted": True,
+                    "result_status": "success",
+                    "execution_ok": True,
+                    "fail_reason": "none",
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        original_target_resolver = pipeline_e2e._resolve_near_home_ee_target
+
+        def _home_target(*, home_q, **kwargs):
+            home_ee = pipeline_e2e._ee_pose_from_q(np.asarray(home_q, dtype=float))
+            return home_ee.copy(), {
+                "provider": "near_home_randomized",
+                "profile": "test",
+                "home_q": np.asarray(home_q, dtype=float).tolist(),
+                "home_ee": home_ee.tolist(),
+                "target_delta_pos": [0.0, 0.0, 0.0],
+                "target_delta_ori": [0.0, 0.0, 0.0],
+            }
+
+        pipeline_e2e._resolve_near_home_ee_target = _home_target
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                tmp_path = Path(td)
+                out = run_pipeline_e2e(
+                    run_id="test_e2e_success_by_dwell",
+                    episodes=1,
+                    steps_per_episode=10,
+                    artifact_root=tmp_path / "artifacts_success_by_dwell",
+                    runtime_mode="gz",
+                    stage_profile="s0_b",
+                    target_mode="near_home",
+                    runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
+                    runtime_factory=lambda **kwargs: _StaticHomeRuntime(**kwargs),
+                )
+
+                self.assertEqual(out["exit_code"], 0)
+                summary = json.loads((tmp_path / "artifacts_success_by_dwell" / "pipeline_summary.json").read_text(encoding="utf-8"))
+                episode = summary["episodes"][0]
+                self.assertEqual(episode["done_reason"], "success")
+                self.assertTrue(bool(episode["success_triggered_by_dwell"]))
+                self.assertEqual(float(episode["success_rate"]), 1.0)
+
+                reward_rows = [
+                    json.loads(x)
+                    for x in (tmp_path / "artifacts_success_by_dwell" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                    if x.strip()
+                ]
+                self.assertEqual(len(reward_rows), 3)
+                self.assertEqual(reward_rows[-1]["done_reason"], "success")
+        finally:
+            pipeline_e2e._resolve_near_home_ee_target = original_target_resolver
 
     def test_pipeline_e2e_reward_allows_normal_path_on_execution_success(self) -> None:
         from pathlib import Path
@@ -533,7 +809,7 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(float(fail_row["components"]["ee_small_motion_penalty"]), 0.0)
             self.assertLess(float(fail_row["components"]["timeout_or_reset"]), 0.0)
 
-    def test_pipeline_e2e_reward_trace_records_ee_small_motion_penalty_on_stall(self) -> None:
+    def test_pipeline_e2e_reward_trace_records_reward_state_transitions(self) -> None:
         from pathlib import Path
         import tempfile
 
@@ -568,10 +844,10 @@ class TestV51PipelineE2E(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tmp_path = Path(td)
             out = run_pipeline_e2e(
-                run_id="test_e2e_small_motion_penalty",
+                run_id="test_e2e_reward_state_trace",
                 episodes=1,
                 steps_per_episode=1,
-                artifact_root=tmp_path / "artifacts_small_motion_penalty",
+                artifact_root=tmp_path / "artifacts_reward_state_trace",
                 runtime_mode="gz",
                 runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
                 runtime_factory=lambda **kwargs: _NoMotionButSuccessRuntime(**kwargs),
@@ -580,53 +856,73 @@ class TestV51PipelineE2E(unittest.TestCase):
             self.assertEqual(out["exit_code"], 0)
             reward_rows = [
                 json.loads(x)
-                for x in (tmp_path / "artifacts_small_motion_penalty" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
+                for x in (tmp_path / "artifacts_reward_state_trace" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
                 if x.strip()
             ]
             self.assertGreaterEqual(len(reward_rows), 1)
             row = reward_rows[-1]
-            self.assertIn("ee_step_dpos", row)
-            self.assertIn("ee_step_dori", row)
-            self.assertIn("ee_small_motion_penalty", row)
-            self.assertLess(float(row["components"]["ee_small_motion_penalty"]), 0.0)
+            self.assertIn("reward_state_in", row)
+            self.assertIn("reward_state_out", row)
+            self.assertIn("prev_in_dwell", row["reward_state_in"])
+            self.assertIn("success_awarded", row["reward_state_out"])
+            self.assertIn("dwell_break", row["components"])
 
-    def test_pipeline_e2e_reward_trace_no_ee_small_motion_penalty_when_thresholds_tiny(self) -> None:
+    def test_pipeline_e2e_episode_summary_includes_new_reward_ablation_metrics(self) -> None:
         from pathlib import Path
         import tempfile
-        from hrl_trainer.v5_1.reward import RewardComposer as _RewardComposer, RewardConfig
 
-        class _TinyThresholdRewardComposer(_RewardComposer):
-            def __init__(self, config=None):
-                super().__init__(
-                    config
-                    or RewardConfig(
-                        ee_step_pos_min_m=1e-12,
-                        ee_step_ori_min_rad=1e-12,
-                    )
-                )
+        class _StaticRuntime:
+            def __init__(self, **kwargs):
+                self._q = [0.0] * 7
 
-        original_composer = pipeline_e2e.RewardComposer
-        pipeline_e2e.RewardComposer = _TinyThresholdRewardComposer
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                tmp_path = Path(td)
-                out = run_pipeline_e2e(
-                    run_id="test_e2e_small_motion_no_penalty",
-                    episodes=1,
-                    steps_per_episode=2,
-                    artifact_root=tmp_path / "artifacts_small_motion_no_penalty",
-                )
+            def read_q(self, timeout_s=None):
+                import numpy as _np
 
-                self.assertEqual(out["exit_code"], 0)
-                reward_rows = [
-                    json.loads(x)
-                    for x in (tmp_path / "artifacts_small_motion_no_penalty" / "reward_trace.jsonl").read_text(encoding="utf-8").splitlines()
-                    if x.strip()
-                ]
-                self.assertGreaterEqual(len(reward_rows), 1)
-                self.assertTrue(all(float(r["components"]["ee_small_motion_penalty"]) == 0.0 for r in reward_rows))
-        finally:
-            pipeline_e2e.RewardComposer = original_composer
+                return _np.asarray(self._q, dtype=float)
+
+            def step(self, cmd_q):
+                import numpy as _np
+
+                before = _np.asarray(self._q, dtype=float)
+                after = before.copy()
+                return {
+                    "q_before": before.tolist(),
+                    "q_after": after.tolist(),
+                    "cmd_q": _np.asarray(cmd_q, dtype=float).tolist(),
+                    "joint_delta": (after - before).tolist(),
+                    "joint_delta_l2": 0.0,
+                    "accepted": True,
+                    "result_status": "success",
+                    "execution_ok": True,
+                    "fail_reason": "none",
+                    "timestamp_ns": 123,
+                }
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = Path(td)
+            out = run_pipeline_e2e(
+                run_id="test_e2e_reward_summary_metrics",
+                episodes=1,
+                steps_per_episode=3,
+                artifact_root=tmp_path / "artifacts_reward_summary_metrics",
+                runtime_mode="gz",
+                runtime_joint_names=["Rack_joint", "j1", "j2", "j3", "j4", "j5", "j6"],
+                runtime_factory=lambda **kwargs: _StaticRuntime(**kwargs),
+            )
+
+            self.assertEqual(out["exit_code"], 0)
+            summary = json.loads((tmp_path / "artifacts_reward_summary_metrics" / "pipeline_summary.json").read_text(encoding="utf-8"))
+            episode = summary["episodes"][0]
+            self.assertIn("max_dwell_count", episode)
+            self.assertIn("dwell_break_count", episode)
+            self.assertIn("clamp_count", episode)
+            self.assertIn("near_goal_entry_count", episode)
+            self.assertIn("success_triggered_by_dwell", episode)
+            self.assertIn("min_dpos", episode)
+            self.assertIn("final_dpos", episode)
 
     def test_pipeline_e2e_reward_uses_fail_penalty_on_action_rejected(self) -> None:
         from pathlib import Path

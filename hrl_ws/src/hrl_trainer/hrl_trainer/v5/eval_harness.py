@@ -10,7 +10,6 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .benchmark_rl_l2_v0 import run_rl_l2_v0_benchmark
 from .benchmark_rule_l2_v0 import run_rule_l2_v0_benchmark
-from ..v5_1.eval_sac_gate import evaluate as evaluate_sac_gate
 
 EVAL_HARNESS_SCHEMA = "v5_eval_harness"
 EVAL_HARNESS_VERSION = "1.0"
@@ -104,27 +103,10 @@ def run_eval_harness(
     enforce_gates: bool = False,
     checkpoint: str | None = None,
 ) -> EvalHarnessSummary:
-    if policy_mode == "sac" and enforce_gates and checkpoint:
-        gate_payload, gate_code = evaluate_sac_gate(
-            Path(checkpoint),
-            episodes=episodes,
-            seed=seed,
-            policy_mode="sac",
-            enforce_gates=True,
-        )
-        summary_payload = dict(gate_payload["summary"])
-        pass_condition = gate_code == 0
-        return EvalHarnessSummary(
-            schema=EVAL_HARNESS_SCHEMA,
-            version=EVAL_HARNESS_VERSION,
-            policy_requested=str(policy_requested),
-            policy_executed=POLICY_RL_L2,
-            fallback_used=False,
-            seed=int(seed),
-            episodes=int(episodes),
-            summary=summary_payload,
-            status_code=int(gate_code),
-            passed=bool(pass_condition),
+    if policy_mode == "sac" or enforce_gates or checkpoint:
+        raise ValueError(
+            "Legacy v5.1 SAC gate evaluation has been removed from the maintained V5.1 mainline. "
+            "Use the active v5_1 pipeline/eval flow instead of eval_harness for SAC-based evaluation."
         )
 
     policy_executed, fallback_used = resolve_policy_execution(policy_requested, strict_policy=strict_policy)

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+import shutil
+import subprocess
 import time
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 import numpy as np
 
@@ -25,6 +28,219 @@ class JointRuntimeIO(Protocol):
     def execute_joint_target(
         self, joint_names: list[str], positions: np.ndarray, duration_s: float, result_timeout_s: float
     ) -> dict[str, Any]: ...
+
+
+class GazeboTargetVisualizer:
+    """Best-effort Gazebo visualizer for the active EE target."""
+
+    def __init__(
+        self,
+        world_name: str = "empty",
+        entity_name: str = "v5_1_target_marker",
+        timeout_ms: int = 2000,
+        pose_offset_xyz: np.ndarray | None = None,
+        gz_binary: str | None = None,
+        runner: Callable[[list[str], int], subprocess.CompletedProcess[str]] | None = None,
+    ) -> None:
+        self.world_name = str(world_name).strip() or "empty"
+        self.entity_name = str(entity_name).strip() or "v5_1_target_marker"
+        self.timeout_ms = max(100, int(timeout_ms))
+        self.pose_offset_xyz = np.asarray(pose_offset_xyz if pose_offset_xyz is not None else [0.0, 0.0, 0.0], dtype=float)
+        if self.pose_offset_xyz.shape != (3,):
+            raise ValueError(f"pose_offset_xyz shape mismatch: expected (3,), got {tuple(self.pose_offset_xyz.shape)}")
+        self.gz_binary = gz_binary or (shutil.which("gz") or "gz")
+        self._runner = runner or self._default_runner
+        self._created = False
+        self._disabled_reason: str | None = None
+
+        if gz_binary is None and shutil.which(self.gz_binary) is None:
+            self._disabled_reason = "gz_not_found"
+
+    def _default_runner(self, command: list[str], timeout_ms: int) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, float(timeout_ms) / 1000.0),
+        )
+
+    def _service_call(
+        self,
+        *,
+        service: str,
+        reqtype: str,
+        reptype: str,
+        request: str,
+    ) -> dict[str, Any]:
+        command = [
+            self.gz_binary,
+            "service",
+            "-s",
+            service,
+            "--reqtype",
+            reqtype,
+            "--reptype",
+            reptype,
+            "--timeout",
+            str(self.timeout_ms),
+            "--req",
+            request,
+        ]
+        try:
+            completed = self._runner(command, self.timeout_ms)
+        except Exception as exc:
+            return {
+                "success": False,
+                "reason": f"runner_error:{type(exc).__name__}",
+                "service": service,
+                "command": command,
+                "stdout": "",
+                "stderr": str(exc),
+            }
+
+        stdout = str(getattr(completed, "stdout", "") or "")
+        stderr = str(getattr(completed, "stderr", "") or "")
+        success = int(getattr(completed, "returncode", 1)) == 0 and "data: false" not in stdout.lower()
+        return {
+            "success": success,
+            "reason": "ok" if success else f"returncode:{int(getattr(completed, 'returncode', 1))}",
+            "service": service,
+            "command": command,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+
+    @staticmethod
+    def _rpy_to_quat(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
+        cr = math.cos(0.5 * float(roll))
+        sr = math.sin(0.5 * float(roll))
+        cp = math.cos(0.5 * float(pitch))
+        sp = math.sin(0.5 * float(pitch))
+        cy = math.cos(0.5 * float(yaw))
+        sy = math.sin(0.5 * float(yaw))
+        return (
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy,
+        )
+
+    def _build_marker_sdf(self, pose6: np.ndarray) -> str:
+        pose6_world = np.asarray(pose6, dtype=float).copy()
+        pose6_world[:3] = pose6_world[:3] + self.pose_offset_xyz
+        x, y, z, roll, pitch, yaw = [float(v) for v in pose6_world.tolist()]
+        return (
+            "<sdf version='1.9'>"
+            f"<model name='{self.entity_name}'>"
+            "<static>true</static>"
+            f"<pose>{x:.6f} {y:.6f} {z:.6f} {roll:.6f} {pitch:.6f} {yaw:.6f}</pose>"
+            "<link name='target_link'>"
+            "<visual name='origin_sphere'>"
+            "<geometry><sphere><radius>0.015</radius></sphere></geometry>"
+            "<material><ambient>0.12 0.85 0.20 0.90</ambient><diffuse>0.12 0.85 0.20 0.90</diffuse></material>"
+            "</visual>"
+            "<visual name='axis_x'>"
+            "<pose>0.040 0.000 0.000 0 0 0</pose>"
+            "<geometry><box><size>0.080 0.006 0.006</size></box></geometry>"
+            "<material><ambient>0.92 0.12 0.12 0.95</ambient><diffuse>0.92 0.12 0.12 0.95</diffuse></material>"
+            "</visual>"
+            "<visual name='axis_y'>"
+            "<pose>0.000 0.040 0.000 0 0 0</pose>"
+            "<geometry><box><size>0.006 0.080 0.006</size></box></geometry>"
+            "<material><ambient>0.12 0.82 0.22 0.95</ambient><diffuse>0.12 0.82 0.22 0.95</diffuse></material>"
+            "</visual>"
+            "<visual name='axis_z'>"
+            "<pose>0.000 0.000 0.040 0 0 0</pose>"
+            "<geometry><box><size>0.006 0.006 0.080</size></box></geometry>"
+            "<material><ambient>0.16 0.28 0.92 0.95</ambient><diffuse>0.16 0.28 0.92 0.95</diffuse></material>"
+            "</visual>"
+            "</link>"
+            "</model>"
+            "</sdf>"
+        )
+
+    def _build_set_pose_request(self, pose6: np.ndarray) -> str:
+        pose6_world = np.asarray(pose6, dtype=float).copy()
+        pose6_world[:3] = pose6_world[:3] + self.pose_offset_xyz
+        x, y, z, roll, pitch, yaw = [float(v) for v in pose6_world.tolist()]
+        qx, qy, qz, qw = self._rpy_to_quat(roll, pitch, yaw)
+        return (
+            f'name: "{self.entity_name}" '
+            f'position {{ x: {x:.6f} y: {y:.6f} z: {z:.6f} }} '
+            f'orientation {{ x: {qx:.8f} y: {qy:.8f} z: {qz:.8f} w: {qw:.8f} }}'
+        )
+
+    def publish_pose(self, pose6: np.ndarray) -> dict[str, Any]:
+        pose6 = np.asarray(pose6, dtype=float)
+        if pose6.shape != (6,):
+            raise ValueError(f"pose6 shape mismatch: expected (6,), got {tuple(pose6.shape)}")
+
+        if self._disabled_reason is not None:
+            return {
+                "success": False,
+                "action": "disabled",
+                "reason": self._disabled_reason,
+                "world_name": self.world_name,
+                "entity_name": self.entity_name,
+                "pose_offset_xyz": self.pose_offset_xyz.tolist(),
+            }
+
+        create_service = f"/world/{self.world_name}/create"
+        set_pose_service = f"/world/{self.world_name}/set_pose"
+
+        if not self._created:
+            create_req = f'sdf: "{self._build_marker_sdf(pose6)}"'
+            create_result = self._service_call(
+                service=create_service,
+                reqtype="gz.msgs.EntityFactory",
+                reptype="gz.msgs.Boolean",
+                request=create_req,
+            )
+            if create_result["success"]:
+                self._created = True
+                return {
+                    "success": True,
+                    "action": "create",
+                    "reason": "ok",
+                    "world_name": self.world_name,
+                    "entity_name": self.entity_name,
+                    "pose_offset_xyz": self.pose_offset_xyz.tolist(),
+                    "service": create_service,
+                }
+
+        set_pose_result = self._service_call(
+            service=set_pose_service,
+            reqtype="gz.msgs.Pose",
+            reptype="gz.msgs.Boolean",
+            request=self._build_set_pose_request(pose6),
+        )
+        if set_pose_result["success"]:
+            self._created = True
+            return {
+                "success": True,
+                "action": "set_pose",
+                "reason": "ok",
+                "world_name": self.world_name,
+                "entity_name": self.entity_name,
+                "pose_offset_xyz": self.pose_offset_xyz.tolist(),
+                "service": set_pose_service,
+            }
+
+        return {
+            "success": False,
+            "action": "set_pose" if self._created else "create",
+            "reason": str(set_pose_result.get("reason", "unknown")),
+            "world_name": self.world_name,
+            "entity_name": self.entity_name,
+            "pose_offset_xyz": self.pose_offset_xyz.tolist(),
+            "service": str(set_pose_result.get("service", set_pose_service)),
+            "stderr": str(set_pose_result.get("stderr", "")),
+            "stdout": str(set_pose_result.get("stdout", "")),
+        }
+
+    def close(self) -> None:
+        return
 
 
 class ROS2JointRuntimeIO:
@@ -232,6 +448,7 @@ class RuntimeROS2Adapter:
         no_effect_ratio: float = 0.1,
         initial_warmup_timeout_s: float = 2.5,
         initial_read_fallback_timeout_s: float = 2.0,
+        target_visualizer: GazeboTargetVisualizer | None = None,
     ) -> None:
         self.io = io
         self.joint_names = list(joint_names)
@@ -244,6 +461,7 @@ class RuntimeROS2Adapter:
         self.no_effect_ratio = max(0.0, float(no_effect_ratio))
         self.initial_warmup_timeout_s = max(0.0, float(initial_warmup_timeout_s))
         self.initial_read_fallback_timeout_s = max(0.0, float(initial_read_fallback_timeout_s))
+        self.target_visualizer = target_visualizer
         self._has_initial_frame = False
 
         self._warmup_initial_frame()
@@ -262,6 +480,10 @@ class RuntimeROS2Adapter:
         joint_state_qos_depth: int = 10,
         action_name: str = "/arm_controller/follow_joint_trajectory",
         use_action_primary: bool = True,
+        gz_visualize_target: bool = False,
+        gz_world_name: str = "empty",
+        gz_target_entity_name: str = "v5_1_target_marker",
+        gz_target_world_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 1.04),
     ) -> "RuntimeROS2Adapter":
         return cls(
             io=ROS2JointRuntimeIO(
@@ -277,7 +499,27 @@ class RuntimeROS2Adapter:
             settle_timeout_s=settle_timeout_s,
             initial_warmup_timeout_s=initial_warmup_timeout_s,
             initial_read_fallback_timeout_s=initial_read_fallback_timeout_s,
+            target_visualizer=(
+                GazeboTargetVisualizer(
+                    world_name=gz_world_name,
+                    entity_name=gz_target_entity_name,
+                    pose_offset_xyz=np.asarray(gz_target_world_offset_xyz, dtype=float),
+                )
+                if gz_visualize_target
+                else None
+            ),
         )
+
+    def publish_ee_target_visual(self, ee_target: np.ndarray) -> dict[str, Any]:
+        if self.target_visualizer is None:
+            return {
+                "success": False,
+                "action": "disabled",
+                "reason": "visualizer_not_configured",
+                "world_name": None,
+                "entity_name": None,
+            }
+        return self.target_visualizer.publish_pose(np.asarray(ee_target, dtype=float))
 
     def _extract_q(self, frame: JointStateFrame) -> np.ndarray:
         idx = {name: i for i, name in enumerate(frame.names)}
@@ -469,6 +711,10 @@ class RuntimeROS2Adapter:
         }
 
     def close(self) -> None:
-        close_fn = getattr(self.io, "close", None)
-        if callable(close_fn):
-            close_fn()
+        try:
+            if self.target_visualizer is not None:
+                self.target_visualizer.close()
+        finally:
+            close_fn = getattr(self.io, "close", None)
+            if callable(close_fn):
+                close_fn()

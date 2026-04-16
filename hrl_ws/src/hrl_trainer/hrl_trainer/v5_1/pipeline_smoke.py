@@ -24,7 +24,7 @@ from .safety_watchdog import Intervention, SafetyWatchdog
 _CONTROLLED_ACTION_DIM = 7
 
 
-PolicyFn = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str]]
+PolicyFn = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, str] | tuple[np.ndarray, str, dict[str, Any]]]
 
 
 def _jsonl_append(path: Path, payload: dict[str, Any]) -> None:
@@ -123,8 +123,14 @@ def run_smoke(
         if policy_fn is None:
             delta_q_raw = (target_q - q) * 0.5
             policy_name = "rule"
+            policy_debug: dict[str, Any] = {}
         else:
-            delta_q_raw, policy_name = policy_fn(q.copy(), target_q.copy())
+            policy_out = policy_fn(q.copy(), target_q.copy())
+            if len(policy_out) == 2:
+                delta_q_raw, policy_name = policy_out
+                policy_debug = {}
+            else:
+                delta_q_raw, policy_name, policy_debug = policy_out
 
         action = ActionCommand(
             schema_version=SCHEMA_VERSION,
@@ -153,6 +159,7 @@ def run_smoke(
                 "healthy": True,
                 "saturated": saturation,
             },
+            "policy_debug": policy_debug,
             "gate_snapshot": _build_gate_snapshot(now_s=now_s, watchdog=watchdog),
         }
 
@@ -223,6 +230,7 @@ def run_smoke(
                 "intervention": wd.intervention.value,
                 "projection_applied": bool(result.projection_applied),
                 "saturated": saturation,
+                "policy_debug": policy_debug,
             }
         )
 

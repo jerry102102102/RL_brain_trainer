@@ -4,12 +4,8 @@ from .contracts import ActionCommand, LayerLogRecord, ObservationFrame, validate
 from .l3_executor import L3ExecutorConfig, L3ExecutorResult, L3DeterministicExecutor
 from .curriculum import CurriculumManager, CurriculumState, EpisodeRecord, StageSpec
 from .gates import DEFAULT_GATE, GateEvaluator, GateResult, GateSpec
-from .l3_executor import L3DeterministicExecutor, L3ExecutorConfig, L3ExecutorResult
 from .safety_watchdog import Intervention, SafetyWatchdog, WatchdogDecision
 from .reward import RewardComposer, RewardConfig, RewardTerms
-from .reward_v1 import RewardV1Breakdown, RewardV1Config, compute_reward_v1
-from .replay_buffer import ReplayBuffer
-from .sac_agent import SACAgent, SACConfig
 
 try:
     from .sac_torch import SACTorchAgent, SACTorchConfig, TorchReplayBuffer
@@ -40,12 +36,6 @@ __all__ = [
     "RewardComposer",
     "RewardConfig",
     "RewardTerms",
-    "RewardV1Config",
-    "RewardV1Breakdown",
-    "compute_reward_v1",
-    "ReplayBuffer",
-    "SACConfig",
-    "SACAgent",
 ]
 
 if SACTorchAgent is not None:

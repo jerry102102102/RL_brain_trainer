@@ -62,10 +62,14 @@ def resolve_stages(profile: str = "default") -> tuple[StageSpec, ...]:
 
 
 class CurriculumManager:
-    def __init__(self, stages: tuple[StageSpec, ...] | None = None) -> None:
+    def __init__(self, stages: tuple[StageSpec, ...] | None = None, max_stage_index: int | None = None) -> None:
         self.stages: tuple[StageSpec, ...] = stages or DEFAULT_STAGES
         if len(self.stages) < 1:
             raise ValueError("curriculum requires at least one stage")
+        if max_stage_index is None:
+            self.max_stage_index = len(self.stages) - 1
+        else:
+            self.max_stage_index = max(0, min(int(max_stage_index), len(self.stages) - 1))
 
         self.state = CurriculumState()
         self.history: list[EpisodeRecord] = []
@@ -76,7 +80,7 @@ class CurriculumManager:
 
     @property
     def is_terminal(self) -> bool:
-        return self.state.stage_index == len(self.stages) - 1
+        return self.state.stage_index >= self.max_stage_index
 
     def record_episode(self, success_rate: float) -> EpisodeRecord:
         if not (0.0 <= float(success_rate) <= 1.0):
@@ -110,6 +114,7 @@ class CurriculumManager:
         return {
             "state": asdict(self.state),
             "current_stage": asdict(self.current_stage),
+            "max_stage_index": int(self.max_stage_index),
             "history": [asdict(r) for r in self.history],
             "stages": [asdict(s) for s in self.stages],
         }
