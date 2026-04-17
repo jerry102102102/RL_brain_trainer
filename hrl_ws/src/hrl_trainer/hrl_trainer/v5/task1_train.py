@@ -405,6 +405,7 @@ class GazeboRuntimeL3Executor:
     reset_timeout_sec: float = 4.0
     scene_reset_cmd: str | None = None
     reset_position_tol: float = 0.03
+    reset_topic_fallback_attempts: int = 2
     allow_ee_fallback: bool = False
     use_tf_ee_pose: bool = True
     ee_base_frame: str = "base_link"
@@ -1179,19 +1180,60 @@ class GazeboRuntimeL3Executor:
         return out
 
     def _send_reset_target(self, *, n_joints: int, q_goal: np.ndarray, timeout_sec: float, use_action: bool) -> bool:
+        self._last_reset_action_diag = {"path": "topic", "status": "not_attempted", "detail": ""}
         if use_action and self._traj_action_client.wait_for_server(timeout_sec=float(timeout_sec)):
             goal = self._FollowJointTrajectory.Goal()
             trajectory = self._JointTrajectory()
             trajectory.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
-            trajectory.header.stamp = self._node.get_clock().now().to_msg()
+            # Keep zero stamp semantics for immediate execution parity with stable L0 behavior.
             point = self._JointTrajectoryPoint()
             point.positions = q_goal.tolist()
             point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
             trajectory.points = [point]
             goal.trajectory = trajectory
+
             send_future = self._traj_action_client.send_goal_async(goal)
             self._rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=float(timeout_sec))
-            return True
+            if not bool(send_future.done()):
+                self._last_reset_action_diag = {
+                    "path": "action",
+                    "status": "send_goal_timeout",
+                    "detail": f"timeout={float(timeout_sec):.2f}",
+                }
+                return False
+
+            goal_handle = send_future.result()
+            if goal_handle is None or not bool(getattr(goal_handle, "accepted", False)):
+                self._last_reset_action_diag = {
+                    "path": "action",
+                    "status": "goal_rejected",
+                    "detail": "accepted=false",
+                }
+                return False
+
+            result_future = goal_handle.get_result_async()
+            result_wait = max(float(timeout_sec), 1.0)
+            self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=result_wait)
+            if not bool(result_future.done()):
+                self._last_reset_action_diag = {
+                    "path": "action",
+                    "status": "result_timeout",
+                    "detail": f"timeout={result_wait:.2f}",
+                }
+                return False
+
+            wrapped = result_future.result()
+            status = int(getattr(wrapped, "status", -1))
+            status_ok = status == 4
+            result_payload = getattr(wrapped, "result", None)
+            error_code = int(getattr(result_payload, "error_code", 0)) if result_payload is not None else 0
+            error_ok = error_code == 0
+            self._last_reset_action_diag = {
+                "path": "action",
+                "status": "succeeded" if status_ok and error_ok else "result_rejected",
+                "detail": f"status={status} error_code={error_code}",
+            }
+            return bool(status_ok and error_ok)
 
         msg = self._JointTrajectory()
         msg.joint_names = list(self._canonical_joint_names_or_fail(n_joints))
@@ -1201,6 +1243,11 @@ class GazeboRuntimeL3Executor:
         point.time_from_start.sec = max(1, int(np.ceil(timeout_sec)))
         msg.points = [point]
         self._traj_pub.publish(msg)
+        self._last_reset_action_diag = {
+            "path": "topic",
+            "status": "published",
+            "detail": f"timeout={float(timeout_sec):.2f}",
+        }
         return False
 
     def _wait_reset_convergence(
@@ -1222,6 +1269,15 @@ class GazeboRuntimeL3Executor:
                 return True, q_now, dq_now, ee_proxy_now
         return False, q_last, dq_last, ee_last
 
+    def _format_reset_top_joint_errors(self, *, q_now: np.ndarray, q_goal: np.ndarray, n_joints: int, top_k: int = 3) -> str:
+        err = np.abs(np.asarray(q_now, dtype=float) - np.asarray(q_goal, dtype=float))
+        names = list(self._canonical_joint_names_or_fail(n_joints))
+        if err.size == 0:
+            return ""
+        k = max(1, min(int(top_k), int(err.size)))
+        idx = np.argsort(-err)[:k]
+        return ", ".join(f"{names[int(i)]}:{float(err[int(i)]):.4f}" for i in idx)
+
     def reset_arm_to_initial(
         self,
         *,
@@ -1233,26 +1289,40 @@ class GazeboRuntimeL3Executor:
         q_goal = np.zeros(n_joints, dtype=float) if target_q is None else np.asarray(target_q, dtype=float).copy()
         q_goal = np.clip(q_goal, self.q_min[:n_joints], self.q_max[:n_joints])
 
-        action_used = self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=timeout_sec, use_action=True)
+        action_ok = self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=timeout_sec, use_action=True)
         ok, q_last, dq_last, ee_last = self._wait_reset_convergence(n_joints=n_joints, q_goal=q_goal, timeout_sec=timeout_sec)
         if ok:
             return q_last, dq_last, ee_last
 
-        # Fallback path: action goal accepted but no observable convergence; force a topic command once.
-        self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=max(0.2, float(timeout_sec) * 0.5), use_action=False)
-        ok_fallback, q_fb, dq_fb, ee_fb = self._wait_reset_convergence(
-            n_joints=n_joints,
-            q_goal=q_goal,
-            timeout_sec=max(0.3, float(timeout_sec) * 0.5),
-        )
-        if ok_fallback:
-            if self.verbose_debug:
-                print(f"[gazebo-debug] reset fallback recovered convergence action_used={int(action_used)}")
-            return q_fb, dq_fb, ee_fb
+        fallback_attempts = max(1, int(getattr(self, "reset_topic_fallback_attempts", 2)))
+        q_fb, dq_fb, ee_fb = q_last, dq_last, ee_last
+        for _ in range(fallback_attempts):
+            self._send_reset_target(n_joints=n_joints, q_goal=q_goal, timeout_sec=max(0.2, float(timeout_sec) * 0.5), use_action=False)
+            ok_fallback, q_fb, dq_fb, ee_fb = self._wait_reset_convergence(
+                n_joints=n_joints,
+                q_goal=q_goal,
+                timeout_sec=max(0.3, float(timeout_sec) * 0.5),
+            )
+            if ok_fallback:
+                if self.verbose_debug:
+                    print(
+                        "[gazebo-debug] reset fallback recovered convergence "
+                        f"action_ok={int(action_ok)} attempts={fallback_attempts}"
+                    )
+                return q_fb, dq_fb, ee_fb
 
+        action_diag = getattr(self, "_last_reset_action_diag", None)
+        action_diag_str = "none"
+        if isinstance(action_diag, dict):
+            action_diag_str = (
+                f"path={action_diag.get('path')} status={action_diag.get('status')} detail={action_diag.get('detail')}"
+            )
+        top_joint_err = self._format_reset_top_joint_errors(q_now=q_fb, q_goal=q_goal, n_joints=n_joints, top_k=3)
         raise RuntimeError(
             "backend=gazebo fail-fast: arm reset did not converge within "
-            f"{timeout_sec:.2f}s (after action+topic fallback, max_abs_error={float(np.max(np.abs(q_fb - q_goal))):.4f})"
+            f"{timeout_sec:.2f}s (after action+topic fallback x{fallback_attempts}, "
+            f"action_diag={action_diag_str}, max_abs_error={float(np.max(np.abs(q_fb - q_goal))):.4f}, "
+            f"top_joint_errors=[{top_joint_err}])"
         )
 
     def reset_episode(self, *, n_joints: int, timeout_sec: float | None = None) -> dict[str, object]:
@@ -1937,6 +2007,7 @@ def run_task1_training(
     checkpoint_path: str | None = None,
     auto_reset: bool | None = None,
     reset_timeout: float = 4.0,
+    reset_topic_fallback_attempts: int = 2,
     scene_reset_cmd: str | None = None,
     allow_ee_fallback: bool = False,
     verbose_debug: bool = False,
@@ -1960,6 +2031,7 @@ def run_task1_training(
         feasibility_eps=float(config.feasibility_eps),
         null_effect_eps=float(config.null_effect_eps),
         reset_timeout_sec=reset_timeout,
+        reset_topic_fallback_attempts=max(1, int(reset_topic_fallback_attempts)),
         scene_reset_cmd=scene_reset_cmd,
         allow_ee_fallback=allow_ee_fallback,
         verbose_debug=verbose_debug,
@@ -2117,6 +2189,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reward-mode", choices=["task1_main", "no_shaping", "heuristic", "pbrs"], default="task1_main")
     parser.add_argument("--auto-reset", dest="auto_reset", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--reset-timeout", type=float, default=4.0)
+    parser.add_argument("--reset-topic-fallback-attempts", type=int, default=2)
     parser.add_argument("--scene-reset-cmd", type=str, default=None)
     parser.add_argument("--artifact-output", type=str, default=None)
     parser.add_argument("--baseline-artifact", type=str, default=None)
@@ -2209,6 +2282,7 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint_path=args.checkpoint_path,
         auto_reset=args.auto_reset,
         reset_timeout=args.reset_timeout,
+        reset_topic_fallback_attempts=max(1, int(args.reset_topic_fallback_attempts)),
         scene_reset_cmd=args.scene_reset_cmd,
         allow_ee_fallback=bool(args.allow_ee_fallback),
         verbose_debug=bool(args.verbose_debug),

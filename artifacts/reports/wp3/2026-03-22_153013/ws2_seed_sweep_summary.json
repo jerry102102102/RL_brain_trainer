@@ -1,0 +1,45 @@
+{
+  "aggregate": {
+    "average_reward_ci95_half_width": 0.9260999999999994,
+    "average_reward_mean": 4.6975,
+    "average_reward_std": 0.668215908221287,
+    "n": 2,
+    "success_rate_ci95_half_width": 0.48999999999999994,
+    "success_rate_mean": 0.75,
+    "success_rate_std": 0.3535533905932738
+  },
+  "episodes": 2,
+  "gate": "WS2_STAT_SEED_SWEEP",
+  "generated_at_utc": "2026-03-22T19:30:13.120411+00:00",
+  "metric": "success_rate",
+  "passed": true,
+  "per_seed": [
+    {
+      "average_episode_length": 4.5,
+      "average_reward": 5.169999999999999,
+      "fail_count": 0,
+      "passed": true,
+      "policy_executed": "rl_l2",
+      "seed": 11,
+      "status_code": 0,
+      "success_count": 2,
+      "success_rate": 1.0
+    },
+    {
+      "average_episode_length": 5.0,
+      "average_reward": 4.225,
+      "fail_count": 1,
+      "passed": true,
+      "policy_executed": "rl_l2",
+      "seed": 13,
+      "status_code": 0,
+      "success_count": 1,
+      "success_rate": 0.5
+    }
+  ],
+  "policy": "rl_l2",
+  "seeds": [
+    11,
+    13
+  ]
+}

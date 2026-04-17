@@ -1,0 +1,97 @@
+{
+  "best_epoch": 1,
+  "best_val_weighted_loss": 0.0009206460090354085,
+  "checkpoint_best": "artifacts/v5_1/student/det_student_smoke/checkpoint_best.pt",
+  "checkpoint_latest": "artifacts/v5_1/student/det_student_smoke/checkpoint_latest.pt",
+  "dataset_path": "artifacts/v5_1/teacher_dataset/det_extract_smoke/dataset.jsonl",
+  "epochs_completed": 3,
+  "epochs_requested": 3,
+  "history_tail": [
+    {
+      "epoch": 1,
+      "train_mean_action_l2": 0.006761402590200305,
+      "train_target_action_l2": 0.07205422595143318,
+      "train_unweighted_loss": 0.0007980347727425396,
+      "train_weighted_loss": 0.0007939287752378732,
+      "val_unweighted_loss": 0.0009167694370262325,
+      "val_weighted_loss": 0.0009206460090354085
+    },
+    {
+      "epoch": 2,
+      "train_mean_action_l2": 0.006641154643148184,
+      "train_target_action_l2": 0.07216012850403786,
+      "train_unweighted_loss": 0.0007989056757651269,
+      "train_weighted_loss": 0.0007724526803940535,
+      "val_unweighted_loss": 0.0009180484339594841,
+      "val_weighted_loss": 0.0009222476510331035
+    },
+    {
+      "epoch": 3,
+      "train_mean_action_l2": 0.006510482868179679,
+      "train_target_action_l2": 0.07313121110200882,
+      "train_unweighted_loss": 0.0008232254476752132,
+      "train_weighted_loss": 0.0008108289621304721,
+      "val_unweighted_loss": 0.0009193388978019357,
+      "val_weighted_loss": 0.0009236425394192338
+    }
+  ],
+  "optimizer": {
+    "batch_size": 64,
+    "early_stop_patience": 20,
+    "learning_rate": 0.0003,
+    "val_fraction": 0.15,
+    "weight_decay": 1e-05
+  },
+  "run_id": "det_student_smoke",
+  "seed": 0,
+  "splits": {
+    "train": {
+      "count": 90,
+      "tier_counts": {
+        "elite": 53,
+        "strong": 37
+      },
+      "tier_weight_sums": {
+        "elite": 266.11418333277095,
+        "strong": 128.5826320076982
+      },
+      "zone_counts": {
+        "inner": 7,
+        "outer": 60,
+        "outside": 23
+      },
+      "zone_weight_sums": {
+        "inner": 39.87527932077646,
+        "outer": 290.9758337529996,
+        "outside": 63.84570226669314
+      }
+    },
+    "validation": {
+      "count": 10,
+      "tier_counts": {
+        "elite": 6,
+        "strong": 4
+      },
+      "tier_weight_sums": {
+        "elite": 35.8801841519773,
+        "strong": 11.046747300773859
+      },
+      "zone_counts": {
+        "inner": 2,
+        "outer": 8
+      },
+      "zone_weight_sums": {
+        "inner": 11.013603222370147,
+        "outer": 35.91332823038101
+      }
+    }
+  },
+  "student_config": {
+    "action_dim": 7,
+    "action_scale": 0.08,
+    "device": "cpu",
+    "hidden_dim": 128,
+    "obs_dim": 27
+  },
+  "training_curves_plot": "artifacts/v5_1/student/det_student_smoke/plots/training_curves.png"
+}

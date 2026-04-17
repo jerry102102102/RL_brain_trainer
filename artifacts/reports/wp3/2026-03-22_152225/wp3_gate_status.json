@@ -1,0 +1,7 @@
+{
+  "note": "WS1 depends on real robot/HIL evidence availability; FAIL is expected before true HIL logs exist.",
+  "overall_pass": false,
+  "ws1_exit_code": 2,
+  "ws2_exit_code": 0,
+  "ws3_exit_code": 0
+}

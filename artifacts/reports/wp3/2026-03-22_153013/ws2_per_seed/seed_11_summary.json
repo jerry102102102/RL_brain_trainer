@@ -1,0 +1,11 @@
+{
+  "average_episode_length": 4.5,
+  "average_reward": 5.169999999999999,
+  "fail_count": 0,
+  "passed": true,
+  "policy_executed": "rl_l2",
+  "seed": 11,
+  "status_code": 0,
+  "success_count": 2,
+  "success_rate": 1.0
+}

@@ -67,6 +67,44 @@
 - CPO / CMDP 經典論文（尚待補齊 PDF 與實作對照）
 - 已在記憶中列為主線：`memory/2026-02-17.md`
 
+### D3. Action projection / executed-vs-proposed mismatch
+- Markgraf, H., Sawant, S., Krasowski, H., Schaefer, L., Gros, S., & Althoff, M. (2025)
+  - Title: **Safe Reinforcement Learning using Action Projection: Safeguard the Policy or the Environment?**
+  - Source: `arXiv:2509.12833`
+  - 用途：正式區分 SE-RL 與 SP-RL，點出 projection-based safe RL 裡的 action aliasing / executed-vs-proposed mismatch；可直接對照目前 V5.1 executor clamp/projection 對 replay 與 critic 的影響。
+  - 優先級：⭐⭐⭐⭐⭐
+
+### D4. Acceptance-rejection + augmented MDP
+- Hung, W., Sun, S.-H., & Hsieh, P.-C. (2025)
+  - Title: **Efficient Action-Constrained Reinforcement Learning via Acceptance-Rejection Method and Augmented MDPs**
+  - Source: `ICLR 2025 / arXiv:2503.12932`
+  - 用途：把 infeasible proposal 視為 reject event，並透過 rejection penalty 與 augmented transition 讓 policy 主動靠近 feasible action sets；可直接映射到 V5.1 的 ARAM-lite reject path。
+  - 優先級：⭐⭐⭐⭐⭐
+
+### D5. Hierarchical / potential-based reward shaping
+- Berducci et al. (2025)
+  - Title: **HPRS** (hierarchical potential-based reward shaping for robotics)
+  - 用途：把 reward 明確拆成安全 > 目標 > 舒適的層級，並以 potential-based shaping 把 sparse reaching/manipulation 任務轉成 dense basin-like learning signal；可直接對應我們的 shell / inner-shell / dwell 三圈盆地設計。
+  - 優先級：⭐⭐⭐⭐⭐
+
+### D6. Reward shaping for real robotic manipulation
+- Deng et al. (2025)
+  - Title: **Reward shaping in reinforcement learning for robotic hand manipulation**
+  - 用途：提供真實機器人操作中 reward shaping 提升訓練效率與穩定性的實證依據，支持我們優先處理 near-goal stabilization 而不是只看最終成功率。
+  - 優先級：⭐⭐⭐⭐
+
+### D7. Environment-shift curriculum for sparse manipulation
+- Sayar et al. (2024)
+  - Title: **Curriculum Learning for Robot Manipulation Tasks With Sparse Reward Through Environment Shifts**
+  - 用途：以 performance-triggered environment shifts / curriculum 逐步提升 manipulation 任務難度，對應我們現在的 target curriculum（Stage 1 / 2 / 3）設計。
+  - 優先級：⭐⭐⭐⭐⭐
+
+### D8. Actor-critic churn / late-training drift
+- CHAIN / related 2024 policy-churn work
+  - Topic: **late-training actor-critic drift, deterministic eval, best checkpoint, conservative actor updates**
+  - 用途：支撐在 manipulation RL 中加入 periodic deterministic eval、best checkpoint、early stopping、較保守 actor update 來防止後期把已學到的技能洗掉。
+  - 優先級：⭐⭐⭐⭐
+
 ## E. 非研究論文（不列入架構證據）
 
 以下文件保留但不作為研究證據源：

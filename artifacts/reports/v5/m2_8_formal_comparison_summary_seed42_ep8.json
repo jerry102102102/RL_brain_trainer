@@ -1,0 +1,111 @@
+{
+  "deterministic_seeded_runs": true,
+  "episode_count": 8,
+  "metadata": {
+    "contains_simulated_variants": false,
+    "placeholder_notice": "none",
+    "real_variant_labels": [
+      "rule_l2_v0",
+      "rl_l2_no_shaping",
+      "rl_l2_heuristic",
+      "rl_l2_pbrs"
+    ],
+    "rl_variant_configs": {
+      "rl_l2_heuristic": {
+        "reward_config": {
+          "pbrs_gamma": 0.97,
+          "terminal_failure_penalty": -0.4,
+          "terminal_success_reward": 0.8
+        },
+        "reward_weights": {
+          "coverage": 0.6,
+          "progress": 0.35,
+          "safety": 1.1,
+          "smoothness": 0.25,
+          "subgoal": 1.2
+        }
+      },
+      "rl_l2_no_shaping": {
+        "reward_config": {
+          "pbrs_gamma": 1.0,
+          "terminal_failure_penalty": 0.0,
+          "terminal_success_reward": 0.0
+        },
+        "reward_weights": {
+          "coverage": 0.0,
+          "progress": 0.0,
+          "safety": 1.0,
+          "smoothness": 0.2,
+          "subgoal": 0.0
+        }
+      },
+      "rl_l2_pbrs": {
+        "reward_config": {
+          "pbrs_gamma": 0.99,
+          "terminal_failure_penalty": 0.0,
+          "terminal_success_reward": 0.0
+        },
+        "reward_weights": {
+          "coverage": 0.3,
+          "progress": 1.0,
+          "safety": 1.0,
+          "smoothness": 0.2,
+          "subgoal": 1.5
+        }
+      }
+    },
+    "simulated_variant_labels": [],
+    "variant_execution_modes": {
+      "rl_l2_heuristic": "real",
+      "rl_l2_no_shaping": "real",
+      "rl_l2_pbrs": "real",
+      "rule_l2_v0": "real"
+    }
+  },
+  "primary_variant": "rl_l2_pbrs",
+  "schema": "v5_m2_8_formal_comparison",
+  "seed": 42,
+  "variants": [
+    {
+      "avg_episode_len": 4.125,
+      "avg_reward": 3.564749999999999,
+      "collision_proxy": null,
+      "fail_count": 4,
+      "label": "rule_l2_v0",
+      "run_mode": "real",
+      "status": "ok",
+      "success_count": 4
+    },
+    {
+      "avg_episode_len": 4.125,
+      "avg_reward": -0.50125,
+      "collision_proxy": 0.04242424242424244,
+      "fail_count": 5,
+      "label": "rl_l2_no_shaping",
+      "run_mode": "real",
+      "status": "ok",
+      "success_count": 3
+    },
+    {
+      "avg_episode_len": 3.75,
+      "avg_reward": 1.1291249999999997,
+      "collision_proxy": 0.040000000000000015,
+      "fail_count": 4,
+      "label": "rl_l2_heuristic",
+      "run_mode": "real",
+      "status": "ok",
+      "success_count": 4
+    },
+    {
+      "avg_episode_len": 4.125,
+      "avg_reward": 3.877249999999999,
+      "collision_proxy": 0.03030303030303031,
+      "fail_count": 3,
+      "label": "rl_l2_pbrs",
+      "run_mode": "real",
+      "status": "ok",
+      "success_count": 5
+    }
+  ],
+  "version": "1.0"
+}

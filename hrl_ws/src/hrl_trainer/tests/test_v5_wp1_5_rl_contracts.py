@@ -12,6 +12,7 @@ from hrl_trainer.v5.rollout_integrity import (
 from hrl_trainer.v5.rl_action import (
     RLActionValidationError,
     action_to_skill_command,
+    validate_rl_action,
     validate_rl_action_v1,
     validate_skill_command_boundary,
 )
@@ -78,6 +79,20 @@ class TestV5Wp15RlObservation(unittest.TestCase):
 
 
 class TestV5Wp15RlAction(unittest.TestCase):
+    def test_version_aware_validator_keeps_v1_payloads_working(self):
+        action = {
+            "schema_version": "v1",
+            "skill_mode": "APPROACH",
+            "delta_pose": {"xyz": [0.02, -0.01, 0.03], "rpy": [0.0, 0.0, 0.1]},
+            "gripper_cmd": "HOLD",
+            "speed_profile_id": "SLOW",
+            "guard": {"keep_level": True, "max_tilt": 0.4, "min_clearance": 0.03},
+        }
+        validate_rl_action(action)
+        command = action_to_skill_command(action)
+        self.assertEqual(command.speed_profile_id, "SLOW")
+        self.assertIsNone(command.u_slot_params)
+
     def test_action_validator_and_adapter(self):
         action = {
             "schema_version": "v1",
@@ -106,6 +121,111 @@ class TestV5Wp15RlAction(unittest.TestCase):
         }
         with self.assertRaises(RLActionValidationError):
             validate_rl_action_v1(bad_action)
+
+    def test_action_validator_and_adapter_v2(self):
+        action = {
+            "schema_version": "v2",
+            "skill_mode": "INSERT_SUPPORT",
+            "ee_target_pose": {"xyz": [0.89, -1.01, 1.18], "rpy": [3.14, 0.0, 0.03]},
+            "gripper_cmd": "HOLD",
+            "speed_profile_id": "SLOW",
+            "guard": {"keep_level": True, "max_tilt": 0.5, "min_clearance": 0.02},
+            "u_slot_params": {
+                "insert_depth": 0.03,
+                "lateral_alignment": -0.01,
+                "vertical_clearance": 0.04,
+                "entry_yaw": 0.15,
+            },
+            "timing_params": {
+                "approach_speed_scale": 0.8,
+                "lift_profile_id": "gentle_lift_v1",
+                "contact_settle_time": 0.25,
+            },
+            "fragility_mode_hint": "CAUTIOUS",
+        }
+
+        validate_rl_action(action)
+        command = action_to_skill_command(action)
+        validate_skill_command_boundary(command)
+        self.assertEqual(command.skill_mode, "INSERT_SUPPORT")
+        self.assertIsNone(command.delta_pose)
+        self.assertIsNotNone(command.ee_target_pose)
+        self.assertAlmostEqual(command.u_slot_params.insert_depth, 0.03, places=6)
+        self.assertEqual(command.timing_params.lift_profile_id, "gentle_lift_v1")
+        self.assertEqual(command.gripper_cmd, "HOLD")
+        self.assertEqual(command.fragility_mode_hint, "CAUTIOUS")
+
+    def test_action_validator_v2_rejects_invalid_range(self):
+        bad_action = {
+            "schema_version": "v2",
+            "skill_mode": "INSERT_SUPPORT",
+            "delta_pose": {"xyz": [0.01, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+            "gripper_cmd": "HOLD",
+            "speed_profile_id": "SLOW",
+            "guard": {"keep_level": True, "max_tilt": 0.5, "min_clearance": 0.02},
+            "u_slot_params": {
+                "insert_depth": 0.03,
+                "lateral_alignment": 0.25,
+                "vertical_clearance": 0.04,
+                "entry_yaw": 0.15,
+            },
+            "timing_params": {
+                "approach_speed_scale": 0.8,
+                "lift_profile_id": "gentle_lift_v1",
+                "contact_settle_time": 0.25,
+            },
+        }
+        with self.assertRaisesRegex(
+            RLActionValidationError,
+            "u_slot_params\\.lateral_alignment must be in \\[-0\\.10, 0\\.10\\]",
+        ):
+            validate_rl_action(bad_action)
+
+    def test_action_validator_v2_rejects_deprecated_gripper_only_cmd(self):
+        bad_action = {
+            "schema_version": "v2",
+            "skill_mode": "INSERT_SUPPORT",
+            "ee_target_pose": {"xyz": [0.89, -1.01, 1.18], "rpy": [3.14, 0.0, 0.03]},
+            "gripper_cmd": "OPEN",
+            "speed_profile_id": "SLOW",
+            "guard": {"keep_level": True, "max_tilt": 0.5, "min_clearance": 0.02},
+            "u_slot_params": {
+                "insert_depth": 0.03,
+                "lateral_alignment": -0.01,
+                "vertical_clearance": 0.04,
+                "entry_yaw": 0.15,
+            },
+            "timing_params": {
+                "approach_speed_scale": 0.8,
+                "lift_profile_id": "gentle_lift_v1",
+                "contact_settle_time": 0.25,
+            },
+        }
+        with self.assertRaisesRegex(RLActionValidationError, "deprecated compatibility"):
+            validate_rl_action(bad_action)
+
+    def test_action_validator_v2_rejects_legacy_gripper_first_skill_mode(self):
+        bad_action = {
+            "schema_version": "v2",
+            "skill_mode": "GRASP",
+            "ee_target_pose": {"xyz": [0.89, -1.01, 1.18], "rpy": [3.14, 0.0, 0.03]},
+            "gripper_cmd": "HOLD",
+            "speed_profile_id": "SLOW",
+            "guard": {"keep_level": True, "max_tilt": 0.5, "min_clearance": 0.02},
+            "u_slot_params": {
+                "insert_depth": 0.03,
+                "lateral_alignment": -0.01,
+                "vertical_clearance": 0.04,
+                "entry_yaw": 0.15,
+            },
+            "timing_params": {
+                "approach_speed_scale": 0.8,
+                "lift_profile_id": "gentle_lift_v1",
+                "contact_settle_time": 0.25,
+            },
+        }
+        with self.assertRaisesRegex(RLActionValidationError, "legacy gripper-first skill_mode"):
+            validate_rl_action(bad_action)
 
 
 class TestV5Wp15RewardComposer(unittest.TestCase):

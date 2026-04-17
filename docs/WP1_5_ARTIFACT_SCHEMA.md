@@ -59,3 +59,28 @@ If JSON artifacts are exported with CSV companions, CSV files must include:
 - `hrl_ws/src/hrl_trainer/config/v5_curriculum_hard.yaml`
 
 These fixtures provide fixed seed sets for deterministic replay baselines.
+
+## M2 RL action schema kickoff (`v2`)
+
+`hrl_trainer.v5.rl_action` now accepts both `schema_version: v1` and `schema_version: v2`.
+
+`v2` requirements (U-slot-first policy):
+- Keep existing L2 fields: `skill_mode`, exactly one of `delta_pose|ee_target_pose`, `gripper_cmd`, `speed_profile_id`, `guard`.
+- Primary control intent is `u_slot_params` + `timing_params` (not `gripper_cmd`).
+- `gripper_cmd` is retained as a deprecated compatibility field in `v2`; accepted value is `HOLD` only.
+- Explicitly rejected in `v2`: legacy gripper-first usage (`gripper_cmd=OPEN/CLOSE`, and legacy skill modes like `GRASP/LIFT/TRANSFER`).
+- Add required `u_slot_params`:
+  - `insert_depth` in `[0.0, 0.20]`
+  - `lateral_alignment` in `[-0.10, 0.10]`
+  - `vertical_clearance` in `[0.0, 0.20]`
+  - `entry_yaw` in `[-pi, pi]`
+- Add required `timing_params`:
+  - `approach_speed_scale` in `[0.10, 2.00]`
+  - `lift_profile_id` non-empty string
+  - `contact_settle_time` in `[0.0, 2.0]`
+- Optional guard hint: `fragility_mode_hint` in `{DEFAULT, CAUTIOUS, ROBUST}`.
+
+Usage notes:
+- Existing `validate_rl_action_v1(...)` is unchanged for legacy callers.
+- New `validate_rl_action(...)` dispatches by `schema_version`.
+- `action_to_skill_command(...)` is now version-aware and remains SkillCommand-only (no L3 trajectory fields).

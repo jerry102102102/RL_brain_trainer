@@ -1,0 +1,59 @@
+{
+  "deterministic_seeded_runs": true,
+  "episode_count": 8,
+  "metadata": {
+    "contains_simulated_variants": true,
+    "placeholder_notice": "Simulated variants are deterministic placeholders until concrete runner integrations are implemented.",
+    "simulated_variant_labels": [
+      "rl_l2_no_shaping",
+      "rl_l2_heuristic",
+      "rl_l2_pbrs"
+    ]
+  },
+  "primary_variant": "rl_l2_pbrs",
+  "schema": "v5_m2_8_formal_comparison",
+  "seed": 42,
+  "variants": [
+    {
+      "avg_episode_len": 4.125,
+      "avg_reward": 3.564749999999999,
+      "collision_proxy": null,
+      "fail_count": 4,
+      "label": "rule_l2_v0",
+      "run_mode": "real",
+      "status": "ok",
+      "success_count": 4
+    },
+    {
+      "avg_episode_len": 4.5,
+      "avg_reward": 3.2058788141104717,
+      "collision_proxy": 0.125,
+      "fail_count": 5,
+      "label": "rl_l2_no_shaping",
+      "run_mode": "simulated",
+      "status": "placeholder_simulated",
+      "success_count": 3
+    },
+    {
+      "avg_episode_len": 4.25,
+      "avg_reward": 3.4963049881805066,
+      "collision_proxy": 0.08117647058823531,
+      "fail_count": 4,
+      "label": "rl_l2_heuristic",
+      "run_mode": "simulated",
+      "status": "placeholder_simulated",
+      "success_count": 4
+    },
+    {
+      "avg_episode_len": 4.25,
+      "avg_reward": 3.9704145545120406,
+      "collision_proxy": 0.040588235294117654,
+      "fail_count": 3,
+      "label": "rl_l2_pbrs",
+      "run_mode": "simulated",
+      "status": "placeholder_simulated",
+      "success_count": 5
+    }
+  ],
+  "version": "1.0"
+}

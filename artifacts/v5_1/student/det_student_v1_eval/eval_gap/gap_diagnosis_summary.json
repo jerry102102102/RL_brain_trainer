@@ -1,0 +1,565 @@
+{
+  "episodes": 5,
+  "fixed_eval_suite": {
+    "action_stage_name": "S0_B",
+    "near_home_ori_offset_max_deg": 2.0,
+    "near_home_ori_offset_min_deg": 0.0,
+    "near_home_pos_offset_max_m": 0.1,
+    "near_home_pos_offset_min_m": 0.08,
+    "near_home_profile": "TC0",
+    "resolved_target_mode": "near_home",
+    "suite_id": "det_eval_near_home_700001_TC0_5",
+    "suite_seed": 700001,
+    "suite_size": 5,
+    "target_curriculum_stage_name": "TC0",
+    "targets": [
+      {
+        "ee_target": [
+          -0.2409472345521396,
+          -0.04222335592840334,
+          1.051548570860505,
+          1.574902334716426,
+          -0.02986370543920236,
+          -1.555247474637798
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.004106007921529757,
+            -0.029863705439209222,
+            0.015548852157094749
+          ],
+          "target_delta_ori_l2": 0.033918534859494,
+          "target_delta_pos": [
+            -0.06093697609626104,
+            -0.043987248961738994,
+            -0.04890142913941163
+          ],
+          "target_delta_pos_l2": 0.08966349814085547,
+          "z_not_above_home": true
+        },
+        "episode_index": 0
+      },
+      {
+        "ee_target": [
+          -0.1797317846218273,
+          0.03423611197057337,
+          1.0219742225251036,
+          1.573963942689244,
+          -0.011009793506291832,
+          -1.5551159054993873
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.0031676158943479333,
+            -0.011009793506298467,
+            0.015680421295505564
+          ],
+          "target_delta_ori_l2": 0.019419705340452568,
+          "target_delta_pos": [
+            0.0002784738340512721,
+            0.032472218937237715,
+            -0.07847577747481313
+          ],
+          "target_delta_pos_l2": 0.08492920699418156,
+          "z_not_above_home": true
+        },
+        "episode_index": 1
+      },
+      {
+        "ee_target": [
+          -0.17305484842768148,
+          0.007188051896591566,
+          1.0147952711220523,
+          1.5714227638428948,
+          0.000463576609166072,
+          -1.5710623049288925
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.0006264370479988723,
+            0.0004635766091592649,
+            -0.0002659781339998468
+          ],
+          "target_delta_ori_l2": 0.0008234506757731052,
+          "target_delta_pos": [
+            0.006955410028197089,
+            0.005424158863255911,
+            -0.0856547288778645
+          ],
+          "target_delta_pos_l2": 0.0861076756577174,
+          "z_not_above_home": true
+        },
+        "episode_index": 2
+      },
+      {
+        "ee_target": [
+          -0.11053915416928785,
+          0.06035432712755156,
+          1.0774225159951833,
+          1.5695841837708748,
+          0.0032033871500947164,
+          -1.5717300924458193
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            -0.0012121430240215952,
+            0.003203387150088046,
+            -0.0009337656509265516
+          ],
+          "target_delta_ori_l2": 0.0035500560889771475,
+          "target_delta_pos": [
+            0.06947110428659072,
+            0.0585904340942159,
+            -0.023027484004733378
+          ],
+          "target_delta_pos_l2": 0.0937514710163807,
+          "z_not_above_home": true
+        },
+        "episode_index": 3
+      },
+      {
+        "ee_target": [
+          -0.16062068452173323,
+          0.0842639910169138,
+          1.068280159108669,
+          1.5747415224781562,
+          -0.018791362049219273,
+          -1.5578252035247686
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.003945195683259634,
+            -0.01879136204922614,
+            0.012971123270124216
+          ],
+          "target_delta_ori_l2": 0.023171747787619837,
+          "target_delta_pos": [
+            0.01938957393414533,
+            0.08250009798357814,
+            -0.03216984089124773
+          ],
+          "target_delta_pos_l2": 0.09064833372774084,
+          "z_not_above_home": true
+        },
+        "episode_index": 4
+      }
+    ]
+  },
+  "gap_metrics": {
+    "final_action_l2_ratio_det_over_full": 0.07104269025919457,
+    "mean_final_dpos_gap_det_minus_full": 0.006084670094260211,
+    "raw_norm_ratio_det_over_full": 0.0710426902591946,
+    "success_rate_gap_full_minus_det": 0.0,
+    "true_basin_hit_rate_gap_full_minus_det": 0.2
+  },
+  "mode": "stochastic_to_deterministic_gap_diagnosis",
+  "records": [
+    {
+      "action_stats": {
+        "delta_norm_max": 0.0016680246626675102,
+        "delta_norm_mean": 0.0013103196236647443,
+        "exec_norm_max": 0.08557881648168253,
+        "exec_norm_mean": 0.08195431965123955,
+        "final_action_l2_max": 0.006963555919920262,
+        "final_action_l2_mean": 0.006661171141980077,
+        "mu_l2_mean": 0.08331216449623828,
+        "noise_l2_mean": 0.0,
+        "post_tanh_abs_max_mean": 0.05117922447621823,
+        "post_tanh_l2_mean": 0.08326464123814356,
+        "pre_tanh_abs_max_max": 0.05331675708293915,
+        "pre_tanh_abs_max_mean": 0.05122408337891102,
+        "pre_tanh_l2_mean": 0.08331216449623828,
+        "raw_norm_max": 0.0870444489990033,
+        "raw_norm_mean": 0.08326463927475096,
+        "saturated_dims_mean": 0.0,
+        "std_l2_mean": 2.6457513110645907,
+        "std_scaled_l2_mean": 0.0
+      },
+      "artifacts": {
+        "gap_eval_deterministic_episode_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/deterministic/deterministic_episode_summary.jsonl",
+        "gap_eval_deterministic_logs_root": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/deterministic/logs",
+        "gap_eval_deterministic_reward_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/deterministic/deterministic_reward_trace.jsonl",
+        "gap_eval_deterministic_runtime_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/deterministic/deterministic_runtime_trace.jsonl",
+        "gap_eval_deterministic_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/deterministic/deterministic_summary.json"
+      },
+      "exploration_std_scale": 0.0,
+      "label": "deterministic",
+      "metrics": {
+        "best_min_dpos": 0.052979369697194245,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.0013103196236647443,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.08195431965123955,
+        "final_action_l2_mean": 0.006661171141980077,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.11197008607633316,
+        "mean_final_minus_min": 0.027827607254646836,
+        "mean_min_dpos": 0.08414247882168632,
+        "mu_l2_mean": 0.08331216449623828,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 0.0,
+        "pre_tanh_abs_max_max": 0.05331675708293915,
+        "pre_tanh_abs_max_mean": 0.05122408337891102,
+        "raw_norm_mean": 0.08326463927475096,
+        "regression_rate": 0.8,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 3.7633259653968523,
+        "reward_mean": 0.4094250406371276,
+        "reward_min": -0.6270100255719041,
+        "shell_hit_rate": 0.2,
+        "std_scaled_l2_mean": 0.0,
+        "success_rate": 0.2,
+        "true_basin_hit_rate": 0.2,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.2
+      },
+      "stochastic": false
+    },
+    {
+      "action_stats": {
+        "delta_norm_max": 0.03083701819835646,
+        "delta_norm_mean": 0.0019286135613242503,
+        "exec_norm_max": 0.3929952441449535,
+        "exec_norm_mean": 0.25711182305670355,
+        "final_action_l2_max": 0.031681460987337116,
+        "final_action_l2_mean": 0.02070902137462452,
+        "mu_l2_mean": 0.08349019266109617,
+        "noise_l2_mean": 2.5001306763501443,
+        "post_tanh_abs_max_mean": 0.1748347194492817,
+        "post_tanh_l2_mean": 0.2588627743041646,
+        "pre_tanh_abs_max_max": 0.34359505772590637,
+        "pre_tanh_abs_max_mean": 0.17722877293825148,
+        "pre_tanh_l2_mean": 0.2613201155545928,
+        "raw_norm_max": 0.3960182623417139,
+        "raw_norm_mean": 0.25886276718280654,
+        "saturated_dims_mean": 0.0,
+        "std_l2_mean": 2.6457513110645907,
+        "std_scaled_l2_mean": 0.2645751350489358
+      },
+      "artifacts": {
+        "gap_eval_noise010_episode_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise010/noise010_episode_summary.jsonl",
+        "gap_eval_noise010_logs_root": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise010/logs",
+        "gap_eval_noise010_reward_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise010/noise010_reward_trace.jsonl",
+        "gap_eval_noise010_runtime_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise010/noise010_runtime_trace.jsonl",
+        "gap_eval_noise010_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise010/noise010_summary.json"
+      },
+      "exploration_std_scale": 0.1,
+      "label": "noise010",
+      "metrics": {
+        "best_min_dpos": 0.05307896990700567,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.0019286135613242503,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.25711182305670355,
+        "final_action_l2_mean": 0.02070902137462452,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.11589279081696349,
+        "mean_final_minus_min": 0.03272064969531473,
+        "mean_min_dpos": 0.08317214112164877,
+        "mu_l2_mean": 0.08349019266109617,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 2.5001306763501443,
+        "pre_tanh_abs_max_max": 0.34359505772590637,
+        "pre_tanh_abs_max_mean": 0.17722877293825148,
+        "raw_norm_mean": 0.25886276718280654,
+        "regression_rate": 1.0,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 0.6063920497767055,
+        "reward_mean": -0.2565446634198179,
+        "reward_min": -0.7358134008699703,
+        "shell_hit_rate": 0.2,
+        "std_scaled_l2_mean": 0.2645751350489358,
+        "success_rate": 0.0,
+        "true_basin_hit_rate": 0.2,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.2
+      },
+      "stochastic": true
+    },
+    {
+      "action_stats": {
+        "delta_norm_max": 0.43839022395537947,
+        "delta_norm_mean": 0.11797784840277513,
+        "exec_norm_max": 1.0252218330289884,
+        "exec_norm_mean": 0.621319607580054,
+        "final_action_l2_max": 0.09036484513369357,
+        "final_action_l2_mean": 0.05648593994672888,
+        "mu_l2_mean": 0.08223368007543909,
+        "noise_l2_mean": 2.539321113870215,
+        "post_tanh_abs_max_mean": 0.45847501724958417,
+        "post_tanh_l2_mean": 0.7060742634211308,
+        "pre_tanh_abs_max_max": 1.0590357780456543,
+        "pre_tanh_abs_max_mean": 0.5100593441724777,
+        "pre_tanh_l2_mean": 0.7602200105547713,
+        "raw_norm_max": 1.1295605641711697,
+        "raw_norm_mean": 0.7060742493341111,
+        "saturated_dims_mean": 0.0,
+        "std_l2_mean": 2.6457513110645907,
+        "std_scaled_l2_mean": 0.7937254248591905
+      },
+      "artifacts": {
+        "gap_eval_noise030_episode_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise030/noise030_episode_summary.jsonl",
+        "gap_eval_noise030_logs_root": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise030/logs",
+        "gap_eval_noise030_reward_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise030/noise030_reward_trace.jsonl",
+        "gap_eval_noise030_runtime_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise030/noise030_runtime_trace.jsonl",
+        "gap_eval_noise030_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise030/noise030_summary.json"
+      },
+      "exploration_std_scale": 0.3,
+      "label": "noise030",
+      "metrics": {
+        "best_min_dpos": 0.06312701442976205,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.11797784840277513,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.621319607580054,
+        "final_action_l2_mean": 0.05648593994672888,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.10765114290255891,
+        "mean_final_minus_min": 0.021310264038482924,
+        "mean_min_dpos": 0.08634087886407597,
+        "mu_l2_mean": 0.08223368007543909,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 2.539321113870215,
+        "pre_tanh_abs_max_max": 1.0590357780456543,
+        "pre_tanh_abs_max_mean": 0.5100593441724777,
+        "raw_norm_mean": 0.7060742493341111,
+        "regression_rate": 0.8,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 0.029652974468032667,
+        "reward_mean": -0.33983456387944067,
+        "reward_min": -0.8746444051131645,
+        "shell_hit_rate": 0.4,
+        "std_scaled_l2_mean": 0.7937254248591905,
+        "success_rate": 0.0,
+        "true_basin_hit_rate": 0.4,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.4
+      },
+      "stochastic": true
+    },
+    {
+      "action_stats": {
+        "delta_norm_max": 1.7376279384497855,
+        "delta_norm_mean": 0.4655892452293953,
+        "exec_norm_max": 1.2874743014464107,
+        "exec_norm_mean": 0.7826717323351826,
+        "final_action_l2_max": 0.1390162159397891,
+        "final_action_l2_mean": 0.09376293490121548,
+        "mu_l2_mean": 0.08465278589520883,
+        "noise_l2_mean": 2.413236158662665,
+        "post_tanh_abs_max_mean": 0.7372054494917393,
+        "post_tanh_l2_mean": 1.1720367170727362,
+        "pre_tanh_abs_max_max": 1.8232219219207764,
+        "pre_tanh_abs_max_mean": 1.0122837334871293,
+        "pre_tanh_l2_mean": 1.4547210555033216,
+        "raw_norm_max": 1.7377026992473639,
+        "raw_norm_mean": 1.1720366862651932,
+        "saturated_dims_mean": 0.0,
+        "std_l2_mean": 2.6457513110645907,
+        "std_scaled_l2_mean": 1.5874508497183812
+      },
+      "artifacts": {
+        "gap_eval_noise060_episode_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise060/noise060_episode_summary.jsonl",
+        "gap_eval_noise060_logs_root": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise060/logs",
+        "gap_eval_noise060_reward_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise060/noise060_reward_trace.jsonl",
+        "gap_eval_noise060_runtime_trace": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise060/noise060_runtime_trace.jsonl",
+        "gap_eval_noise060_summary": "artifacts/v5_1/student/det_student_v1_eval/eval_gap/noise060/noise060_summary.json"
+      },
+      "exploration_std_scale": 0.6,
+      "label": "noise060",
+      "metrics": {
+        "best_min_dpos": 0.036556887251625036,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.4655892452293953,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.7826717323351826,
+        "final_action_l2_mean": 0.09376293490121548,
+        "inner_shell_hit_rate": 0.2,
+        "intervention_rate": 0.4,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.10588541598207295,
+        "mean_final_minus_min": 0.03283539371887832,
+        "mean_min_dpos": 0.07305002226319462,
+        "mu_l2_mean": 0.08465278589520883,
+        "near_goal_entries_sum": 1.0,
+        "noise_l2_mean": 2.413236158662665,
+        "pre_tanh_abs_max_max": 1.8232219219207764,
+        "pre_tanh_abs_max_mean": 1.0122837334871293,
+        "raw_norm_mean": 1.1720366862651932,
+        "regression_rate": 0.8,
+        "reject_mean": 0.4,
+        "reject_sum": 2.0,
+        "reward_max": 3.226139249791538,
+        "reward_mean": -0.6388157765465041,
+        "reward_min": -2.3455600880711023,
+        "shell_hit_rate": 0.4,
+        "std_scaled_l2_mean": 1.5874508497183812,
+        "success_rate": 0.2,
+        "true_basin_hit_rate": 0.4,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.2,
+        "true_final_outer_rate": 0.0,
+        "true_inner_hit_rate": 0.2,
+        "true_outer_hit_rate": 0.2
+      },
+      "stochastic": true
+    }
+  ],
+  "run_id": "det_student_v1_eval",
+  "stage": "S0_B",
+  "steps_per_episode": 10,
+  "timestamp_ns": 1776311782141466836
+}

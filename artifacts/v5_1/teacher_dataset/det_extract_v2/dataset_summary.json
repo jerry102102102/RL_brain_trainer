@@ -1,0 +1,105 @@
+{
+  "action_dim": 7,
+  "dataset_counts_plot": "artifacts/v5_1/teacher_dataset/det_extract_v2/plots/dataset_counts.png",
+  "dataset_path": "artifacts/v5_1/teacher_dataset/det_extract_v2/dataset.jsonl",
+  "discard_counts": {
+    "below_priority_threshold": 1161,
+    "delta_norm_too_large": 2994,
+    "poor_retention": 425,
+    "rejected": 94
+  },
+  "filters": {
+    "discard_retention_max": 0.08,
+    "elite_retention_max": 0.02,
+    "max_delta_norm": 0.35,
+    "min_progress_m": 0.003,
+    "outer_final_dpos_max": 0.12,
+    "outer_support_dpos_m": 0.07,
+    "strong_retention_max": 0.04
+  },
+  "obs_dim": 27,
+  "per_run_counts": {
+    "main_reward_bonly_baseline_s0b_tc0_act008_001": 50,
+    "main_reward_bonly_solidify_s0b_tc0_act008_001": 50,
+    "main_reward_collect_bonly_s0b_tc0_act008_seed101": 80,
+    "main_reward_collect_bonly_s0b_tc0_act008_seed202": 88,
+    "main_reward_collect_solidify_s0b_tc0_act008_seed303": 71,
+    "main_reward_collect_solidify_s0b_tc0_act008_seed404": 117
+  },
+  "quality_score_max": 10.5,
+  "quality_score_mean": 3.8777117385972857,
+  "sample_weight_sum": 2025.0245979862907,
+  "source_runs": [
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700001_TC0_5",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/reward_trace.jsonl",
+      "run_id": "main_reward_bonly_baseline_s0b_tc0_act008_001",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700001_TC0_5",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/reward_trace.jsonl",
+      "run_id": "main_reward_bonly_solidify_s0b_tc0_act008_001",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed101/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700102_TC0_3",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed101/reward_trace.jsonl",
+      "run_id": "main_reward_collect_bonly_s0b_tc0_act008_seed101",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed101/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed202/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700203_TC0_3",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed202/reward_trace.jsonl",
+      "run_id": "main_reward_collect_bonly_s0b_tc0_act008_seed202",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_collect_bonly_s0b_tc0_act008_seed202/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed303/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700304_TC0_3",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed303/reward_trace.jsonl",
+      "run_id": "main_reward_collect_solidify_s0b_tc0_act008_seed303",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed303/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed404/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700405_TC0_3",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed404/reward_trace.jsonl",
+      "run_id": "main_reward_collect_solidify_s0b_tc0_act008_seed404",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_collect_solidify_s0b_tc0_act008_seed404/runtime_trace.jsonl"
+    }
+  ],
+  "tier_counts": {
+    "elite": 316,
+    "strong": 140
+  },
+  "total_samples": 456,
+  "zone_counts": {
+    "dwell": 9,
+    "inner": 29,
+    "outer": 268,
+    "outside": 150
+  },
+  "zone_weight_sums": {
+    "dwell": 101.99999999999999,
+    "inner": 191.2175614908337,
+    "outer": 1310.364154076827,
+    "outside": 421.44288241863177
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rl-brain-trainer.local/wp3/hil_runtime_evidence.schema.json",
+  "title": "WP3 HIL Runtime Evidence",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "runtime_source",
+    "policy",
+    "seed",
+    "checks",
+    "pass",
+    "notes"
+  ],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "description": "ISO8601 UTC timestamp for when evidence was captured"
+    },
+    "runtime_source": {
+      "type": "string",
+      "description": "Where evidence came from, e.g. real_robot_hil or simulated_hil_dryrun"
+    },
+    "policy": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "checks": {
+      "type": "object",
+      "required": ["health", "topic", "bridge"],
+      "properties": {
+        "health": {
+          "$ref": "#/$defs/checkItem"
+        },
+        "topic": {
+          "$ref": "#/$defs/checkItem"
+        },
+        "bridge": {
+          "$ref": "#/$defs/checkItem"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pass": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "checkItem": {
+      "type": "object",
+      "required": ["ok"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

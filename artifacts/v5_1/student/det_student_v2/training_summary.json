@@ -1,0 +1,166 @@
+{
+  "best_epoch": 50,
+  "best_val_weighted_loss": 0.0007496880134567618,
+  "checkpoint_best": "artifacts/v5_1/student/det_student_v2/checkpoint_best.pt",
+  "checkpoint_latest": "artifacts/v5_1/student/det_student_v2/checkpoint_latest.pt",
+  "dataset_path": "artifacts/v5_1/teacher_dataset/det_extract_v2/dataset.jsonl",
+  "epochs_completed": 70,
+  "epochs_requested": 120,
+  "history_tail": [
+    {
+      "epoch": 61,
+      "train_mean_action_l2": 0.00645401297758023,
+      "train_target_action_l2": 0.0684078981479009,
+      "train_unweighted_loss": 0.0007142659936410686,
+      "train_weighted_loss": 0.0006949651481894156,
+      "val_unweighted_loss": 0.0007881554192863405,
+      "val_weighted_loss": 0.000749899772927165
+    },
+    {
+      "epoch": 62,
+      "train_mean_action_l2": 0.006433552751938502,
+      "train_target_action_l2": 0.06840790063142776,
+      "train_unweighted_loss": 0.0007142691950624188,
+      "train_weighted_loss": 0.0006964632969660064,
+      "val_unweighted_loss": 0.0007881892379373312,
+      "val_weighted_loss": 0.0007499356288462877
+    },
+    {
+      "epoch": 63,
+      "train_mean_action_l2": 0.006422980533291896,
+      "train_target_action_l2": 0.06840790063142776,
+      "train_unweighted_loss": 0.0007142970571294427,
+      "train_weighted_loss": 0.0006963793615189692,
+      "val_unweighted_loss": 0.0007882414502091706,
+      "val_weighted_loss": 0.0007500047795474529
+    },
+    {
+      "epoch": 64,
+      "train_mean_action_l2": 0.006483502530803283,
+      "train_target_action_l2": 0.06840790063142776,
+      "train_unweighted_loss": 0.0007143424591049552,
+      "train_weighted_loss": 0.0006963326595723629,
+      "val_unweighted_loss": 0.0007883584476076066,
+      "val_weighted_loss": 0.0007501330692321062
+    },
+    {
+      "epoch": 65,
+      "train_mean_action_l2": 0.006519711265961329,
+      "train_target_action_l2": 0.0684078981479009,
+      "train_unweighted_loss": 0.0007143312056238452,
+      "train_weighted_loss": 0.0006959868866639832,
+      "val_unweighted_loss": 0.0007883294019848108,
+      "val_weighted_loss": 0.0007500573992729187
+    },
+    {
+      "epoch": 66,
+      "train_mean_action_l2": 0.006520321282247703,
+      "train_target_action_l2": 0.06840790559848149,
+      "train_unweighted_loss": 0.0007143470187050601,
+      "train_weighted_loss": 0.000696002971380949,
+      "val_unweighted_loss": 0.00078841537469998,
+      "val_weighted_loss": 0.0007501422660425305
+    },
+    {
+      "epoch": 67,
+      "train_mean_action_l2": 0.006522025602559249,
+      "train_target_action_l2": 0.0684078981479009,
+      "train_unweighted_loss": 0.0007143392770861586,
+      "train_weighted_loss": 0.0006965302551786104,
+      "val_unweighted_loss": 0.0007884330698288977,
+      "val_weighted_loss": 0.000750165490899235
+    },
+    {
+      "epoch": 68,
+      "train_mean_action_l2": 0.006531822805603345,
+      "train_target_action_l2": 0.06840790063142776,
+      "train_unweighted_loss": 0.000714299560058862,
+      "train_weighted_loss": 0.0006961296894587576,
+      "val_unweighted_loss": 0.0007884109509177506,
+      "val_weighted_loss": 0.00075012311572209
+    },
+    {
+      "epoch": 69,
+      "train_mean_action_l2": 0.006533500738441944,
+      "train_target_action_l2": 0.06840790063142776,
+      "train_unweighted_loss": 0.0007142952526919544,
+      "train_weighted_loss": 0.0006966270157136023,
+      "val_unweighted_loss": 0.0007883756188675761,
+      "val_weighted_loss": 0.0007500903448089957
+    },
+    {
+      "epoch": 70,
+      "train_mean_action_l2": 0.006523465892920892,
+      "train_target_action_l2": 0.06840789566437404,
+      "train_unweighted_loss": 0.0007143292071608206,
+      "train_weighted_loss": 0.0006957116420380771,
+      "val_unweighted_loss": 0.0007883014623075724,
+      "val_weighted_loss": 0.0007500366773456335
+    }
+  ],
+  "optimizer": {
+    "batch_size": 128,
+    "early_stop_patience": 20,
+    "learning_rate": 0.0003,
+    "val_fraction": 0.15,
+    "weight_decay": 1e-05
+  },
+  "run_id": "det_student_v2",
+  "seed": 0,
+  "splits": {
+    "train": {
+      "count": 384,
+      "tier_counts": {
+        "elite": 259,
+        "strong": 125
+      },
+      "tier_weight_sums": {
+        "elite": 1247.48166355491,
+        "strong": 428.63785376523936
+      },
+      "zone_counts": {
+        "dwell": 8,
+        "inner": 24,
+        "outer": 230,
+        "outside": 122
+      },
+      "zone_weight_sums": {
+        "dwell": 89.69999999999999,
+        "inner": 150.93500998467204,
+        "outer": 1093.1222821248084,
+        "outside": 342.36222521066617
+      }
+    },
+    "validation": {
+      "count": 72,
+      "tier_counts": {
+        "elite": 57,
+        "strong": 15
+      },
+      "tier_weight_sums": {
+        "elite": 293.24660756066424,
+        "strong": 55.658473105480276
+      },
+      "zone_counts": {
+        "dwell": 1,
+        "inner": 5,
+        "outer": 38,
+        "outside": 28
+      },
+      "zone_weight_sums": {
+        "dwell": 12.299999999999999,
+        "inner": 40.28255150616168,
+        "outer": 217.24187195201702,
+        "outside": 79.08065720796587
+      }
+    }
+  },
+  "student_config": {
+    "action_dim": 7,
+    "action_scale": 0.08,
+    "device": "cpu",
+    "hidden_dim": 128,
+    "obs_dim": 27
+  },
+  "training_curves_plot": "artifacts/v5_1/student/det_student_v2/plots/training_curves.png"
+}

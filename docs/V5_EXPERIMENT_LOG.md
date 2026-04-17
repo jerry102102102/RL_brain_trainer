@@ -27,3 +27,19 @@
   - remediation list linkage in `docs/WP1_5_READINESS_RISK_REPORT.md`
 - Added unit tests:
   - `tests/test_v5_runtime_parity_check.py`
+
+## 2026-03-18 - WP2 M1 kickoff: Rule-L2 v0 baseline (deterministic)
+- Added deterministic Rule-L2 v0 baseline module:
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/rule_l2_v0.py`
+- Added runtime/rollout policy selector wiring:
+  - `hrl_ws/src/hrl_trainer/hrl_trainer/v5/l2_policy.py`
+- Updated SkillCommand mode validation to include WP2 U-slot flow stages (`INSERT_SUPPORT`, `LIFT_CARRY`, `WITHDRAW`) while keeping legacy stage names.
+- Added minimal tests for deterministic sequencing + boundary validity:
+  - `hrl_ws/src/hrl_trainer/tests/test_v5_rule_l2_v0.py`
+
+Usage (minimal):
+```bash
+cd hrl_ws/src/hrl_trainer
+python -m pytest -q tests/test_v5_rule_l2_v0.py
+```
+

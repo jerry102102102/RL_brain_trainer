@@ -105,6 +105,22 @@ wait_for_topic() {
   return 1
 }
 
+wait_for_any_topic() {
+  local timeout_sec="$1"
+  shift
+  local topic
+  for ((i=0; i<timeout_sec; i++)); do
+    for topic in "$@"; do
+      if timeout 3 ros2 topic list 2>/dev/null | grep -qx "$topic"; then
+        echo "$topic"
+        return 0
+      fi
+    done
+    sleep 1
+  done
+  return 1
+}
+
 cleanup() {
   if [[ -n "${LAUNCH_PID:-}" ]] && kill -0 "$LAUNCH_PID" >/dev/null 2>&1; then
     kill "$LAUNCH_PID" >/dev/null 2>&1 || true
@@ -165,7 +181,6 @@ REQUIRED_TOPICS=(
   /arm_controller/joint_trajectory
   /v5/cam/overhead/rgb
   /v5/cam/side/rgb
-  /tray_tracking/pose_stream_raw
 )
 
 for topic in "${REQUIRED_TOPICS[@]}"; do
@@ -175,6 +190,14 @@ for topic in "${REQUIRED_TOPICS[@]}"; do
     exit 1
   fi
 done
+
+log "Check tray tracking topic (accept raw or normalized stream)"
+TRAY_TOPIC="$(wait_for_any_topic "$TOPIC_WAIT_SEC" /tray_tracking/pose_stream_raw /tray_tracking/pose_stream || true)"
+if [[ -z "$TRAY_TOPIC" ]]; then
+  log "ERROR: tray topic not ready within ${TOPIC_WAIT_SEC}s: /tray_tracking/pose_stream_raw or /tray_tracking/pose_stream"
+  exit 1
+fi
+log "PASS: tray topic ready: $TRAY_TOPIC"
 
 log "Trigger control via joint_reset_node"
 timeout 12 ros2 topic echo /arm_controller/joint_trajectory --once >"$TRAJ_LOG" 2>&1 &

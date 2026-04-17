@@ -1,0 +1,24 @@
+{
+  "episodes": 4,
+  "fallback_used": false,
+  "passed": true,
+  "policy_executed": "rl_l2",
+  "policy_requested": "rl_l2",
+  "schema": "v5_eval_harness",
+  "seed": 13,
+  "status_code": 0,
+  "summary": {
+    "fail_count": 2,
+    "reward": {
+      "average_episode_length": 5.0,
+      "average_reward": 4.225
+    },
+    "stage": {
+      "benchmark_schema": "v5_rl_l2_v0_benchmark",
+      "benchmark_version": "1.0",
+      "name": "l2_policy_benchmark"
+    },
+    "success_count": 2
+  },
+  "version": "1.0"
+}

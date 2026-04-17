@@ -1,0 +1,36 @@
+{
+  "checks": {
+    "fallback_not_used": true,
+    "harness_passed": false,
+    "policy_is_rule_l2_v0": true
+  },
+  "eval_summary": {
+    "episodes": 2,
+    "fallback_used": false,
+    "passed": false,
+    "policy_executed": "rule_l2_v0",
+    "policy_requested": "rule_l2_v0",
+    "schema": "v5_eval_harness",
+    "seed": 42,
+    "status_code": 1,
+    "summary": {
+      "fail_count": 2,
+      "reward": {
+        "average_episode_length": 4.5,
+        "average_reward": 2.544999999999999
+      },
+      "stage": {
+        "benchmark_schema": "v5_rule_l2_v0_benchmark",
+        "benchmark_version": "1.0",
+        "name": "l2_policy_benchmark"
+      },
+      "success_count": 0
+    },
+    "version": "1.0"
+  },
+  "gate": "WS3_SAFETY_ROLLBACK",
+  "generated_at_utc": "2026-03-22T19:30:13.185133+00:00",
+  "passed": false,
+  "rollback_target_policy": "rule_l2_v0",
+  "strict_policy": true
+}

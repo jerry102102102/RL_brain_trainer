@@ -1,0 +1,520 @@
+{
+  "action_scale": 0.08,
+  "artifacts": {
+    "gap_eval_deterministic_episode_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/deterministic/deterministic_episode_summary.jsonl",
+    "gap_eval_deterministic_logs_root": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/deterministic/logs",
+    "gap_eval_deterministic_reward_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/deterministic/deterministic_reward_trace.jsonl",
+    "gap_eval_deterministic_runtime_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/deterministic/deterministic_runtime_trace.jsonl",
+    "gap_eval_deterministic_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/deterministic/deterministic_summary.json",
+    "gap_eval_noise010_episode_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise010/noise010_episode_summary.jsonl",
+    "gap_eval_noise010_logs_root": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise010/logs",
+    "gap_eval_noise010_reward_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise010/noise010_reward_trace.jsonl",
+    "gap_eval_noise010_runtime_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise010/noise010_runtime_trace.jsonl",
+    "gap_eval_noise010_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise010/noise010_summary.json",
+    "gap_eval_noise030_episode_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise030/noise030_episode_summary.jsonl",
+    "gap_eval_noise030_logs_root": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise030/logs",
+    "gap_eval_noise030_reward_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise030/noise030_reward_trace.jsonl",
+    "gap_eval_noise030_runtime_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise030/noise030_runtime_trace.jsonl",
+    "gap_eval_noise030_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise030/noise030_summary.json",
+    "gap_eval_noise060_episode_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise060/noise060_episode_summary.jsonl",
+    "gap_eval_noise060_logs_root": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise060/logs",
+    "gap_eval_noise060_reward_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise060/noise060_reward_trace.jsonl",
+    "gap_eval_noise060_runtime_trace": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise060/noise060_runtime_trace.jsonl",
+    "gap_eval_noise060_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/noise060/noise060_summary.json",
+    "gap_eval_root": "artifacts/v5_1/student/det_student_v2_eval/eval_gap",
+    "gap_eval_summary": "artifacts/v5_1/student/det_student_v2_eval/eval_gap/gap_diagnosis_summary.json",
+    "student_post_train_eval_episode_summary": "artifacts/v5_1/student/det_student_v2_eval/eval/deterministic_student_episode_summary.jsonl",
+    "student_post_train_eval_logs_root": "artifacts/v5_1/student/det_student_v2_eval/eval/logs",
+    "student_post_train_eval_reward_trace": "artifacts/v5_1/student/det_student_v2_eval/eval/deterministic_student_reward_trace.jsonl",
+    "student_post_train_eval_runtime_trace": "artifacts/v5_1/student/det_student_v2_eval/eval/deterministic_student_runtime_trace.jsonl",
+    "student_post_train_eval_summary": "artifacts/v5_1/student/det_student_v2_eval/eval/deterministic_student_summary.json"
+  },
+  "best_teacher_metrics": {
+    "mean_final_dpos": 0.09848562018049288,
+    "regression_rate": 0.8,
+    "success_rate": 0.2,
+    "true_basin_hit_rate": 0.2,
+    "true_dwell_hit_rate": 0.0,
+    "true_inner_hit_rate": 0.0,
+    "true_outer_hit_rate": 0.2
+  },
+  "fixed_eval_suite": {
+    "action_stage_name": "S0_B",
+    "near_home_ori_offset_max_deg": 2.0,
+    "near_home_ori_offset_min_deg": 0.0,
+    "near_home_pos_offset_max_m": 0.1,
+    "near_home_pos_offset_min_m": 0.08,
+    "near_home_profile": "TC0",
+    "resolved_target_mode": "near_home",
+    "suite_id": "det_eval_near_home_700001_TC0_5",
+    "suite_seed": 700001,
+    "suite_size": 5,
+    "target_curriculum_stage_name": "TC0",
+    "targets": [
+      {
+        "ee_target": [
+          -0.2409472345521396,
+          -0.04222335592840334,
+          1.051548570860505,
+          1.574902334716426,
+          -0.02986370543920236,
+          -1.555247474637798
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.004106007921529757,
+            -0.029863705439209222,
+            0.015548852157094749
+          ],
+          "target_delta_ori_l2": 0.033918534859494,
+          "target_delta_pos": [
+            -0.06093697609626104,
+            -0.043987248961738994,
+            -0.04890142913941163
+          ],
+          "target_delta_pos_l2": 0.08966349814085547,
+          "z_not_above_home": true
+        },
+        "episode_index": 0
+      },
+      {
+        "ee_target": [
+          -0.1797317846218273,
+          0.03423611197057337,
+          1.0219742225251036,
+          1.573963942689244,
+          -0.011009793506291832,
+          -1.5551159054993873
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.0031676158943479333,
+            -0.011009793506298467,
+            0.015680421295505564
+          ],
+          "target_delta_ori_l2": 0.019419705340452568,
+          "target_delta_pos": [
+            0.0002784738340512721,
+            0.032472218937237715,
+            -0.07847577747481313
+          ],
+          "target_delta_pos_l2": 0.08492920699418156,
+          "z_not_above_home": true
+        },
+        "episode_index": 1
+      },
+      {
+        "ee_target": [
+          -0.17305484842768148,
+          0.007188051896591566,
+          1.0147952711220523,
+          1.5714227638428948,
+          0.000463576609166072,
+          -1.5710623049288925
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.0006264370479988723,
+            0.0004635766091592649,
+            -0.0002659781339998468
+          ],
+          "target_delta_ori_l2": 0.0008234506757731052,
+          "target_delta_pos": [
+            0.006955410028197089,
+            0.005424158863255911,
+            -0.0856547288778645
+          ],
+          "target_delta_pos_l2": 0.0861076756577174,
+          "z_not_above_home": true
+        },
+        "episode_index": 2
+      },
+      {
+        "ee_target": [
+          -0.11053915416928785,
+          0.06035432712755156,
+          1.0774225159951833,
+          1.5695841837708748,
+          0.0032033871500947164,
+          -1.5717300924458193
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            -0.0012121430240215952,
+            0.003203387150088046,
+            -0.0009337656509265516
+          ],
+          "target_delta_ori_l2": 0.0035500560889771475,
+          "target_delta_pos": [
+            0.06947110428659072,
+            0.0585904340942159,
+            -0.023027484004733378
+          ],
+          "target_delta_pos_l2": 0.0937514710163807,
+          "z_not_above_home": true
+        },
+        "episode_index": 3
+      },
+      {
+        "ee_target": [
+          -0.16062068452173323,
+          0.0842639910169138,
+          1.068280159108669,
+          1.5747415224781562,
+          -0.018791362049219273,
+          -1.5578252035247686
+        ],
+        "ee_target_source": {
+          "home_ee": [
+            -0.18001025845587856,
+            0.0017638930333356549,
+            1.1004499999999167,
+            1.5707963267948963,
+            6.722570487708295e-15,
+            -1.5707963267948928
+          ],
+          "home_q": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ori_offset_max_deg": 2.0,
+          "ori_offset_min_deg": 0.0,
+          "pos_offset_max_m": 0.1,
+          "pos_offset_min_m": 0.08,
+          "profile": "TC0",
+          "provider": "near_home_randomized",
+          "target_delta_ori": [
+            0.003945195683259634,
+            -0.01879136204922614,
+            0.012971123270124216
+          ],
+          "target_delta_ori_l2": 0.023171747787619837,
+          "target_delta_pos": [
+            0.01938957393414533,
+            0.08250009798357814,
+            -0.03216984089124773
+          ],
+          "target_delta_pos_l2": 0.09064833372774084,
+          "z_not_above_home": true
+        },
+        "episode_index": 4
+      }
+    ]
+  },
+  "reward_profile": "phase_a_bootstrap_v2",
+  "student_checkpoint": "artifacts/v5_1/student/det_student_v2/checkpoint_best.pt",
+  "student_gap_metrics": {
+    "final_action_l2_ratio_det_over_full": 0.06303156588386635,
+    "mean_final_dpos_gap_det_minus_full": -0.016193021238131572,
+    "raw_norm_ratio_det_over_full": 0.06303156588386634,
+    "success_rate_gap_full_minus_det": 0.0,
+    "true_basin_hit_rate_gap_full_minus_det": 0.0
+  },
+  "student_metrics": {
+    "best_min_dpos": 0.05908175873132016,
+    "clamp_mean": 0.0,
+    "clamp_sum": 0.0,
+    "delta_norm_mean": 0.0013200963634532436,
+    "dwell_hit_rate": 0.0,
+    "episodes_completed": 5,
+    "episodes_requested": 5,
+    "exec_norm_mean": 0.07864556672880772,
+    "final_action_l2_mean": 0.006397253047374759,
+    "inner_shell_hit_rate": 0.0,
+    "intervention_rate": 0.0,
+    "max_dwell_max": 0.0,
+    "mean_final_dpos": 0.10081994002879754,
+    "mean_final_minus_min": 0.016502402789526777,
+    "mean_min_dpos": 0.0843175372392708,
+    "mu_l2_mean": 0.08001320229539617,
+    "near_goal_entries_sum": 0.0,
+    "noise_l2_mean": 0.0,
+    "pre_tanh_abs_max_max": 0.051326364278793335,
+    "pre_tanh_abs_max_mean": 0.04777814470231533,
+    "raw_norm_mean": 0.07996566309218447,
+    "regression_rate": 0.8,
+    "reject_mean": 0.0,
+    "reject_sum": 0.0,
+    "reward_max": 3.6353158508370265,
+    "reward_mean": 0.5143104015032449,
+    "reward_min": -0.4503002752614792,
+    "shell_hit_rate": 0.2,
+    "std_scaled_l2_mean": 0.0,
+    "success_rate": 0.2,
+    "true_basin_hit_rate": 0.2,
+    "true_dwell_hit_rate": 0.0,
+    "true_final_basin_rate": 0.2,
+    "true_final_dwell_rate": 0.0,
+    "true_final_inner_rate": 0.0,
+    "true_final_outer_rate": 0.2,
+    "true_inner_hit_rate": 0.0,
+    "true_outer_hit_rate": 0.2
+  },
+  "student_run_id": "det_student_v2",
+  "success_criteria": {
+    "level1_outer_mean_final": false,
+    "level2_inner_nonzero": false,
+    "level3_success_higher": false
+  },
+  "teacher_references": [
+    {
+      "best_checkpoint_episode": 29,
+      "best_checkpoint_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/train/checkpoint_best.pt",
+      "deterministic_metrics": {
+        "best_min_dpos": 0.0707961140936611,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.0009609961637376613,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.04171300040622119,
+        "final_action_l2_mean": 0.0034139197248090414,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.09848562018049288,
+        "mean_final_minus_min": 0.012038183508566072,
+        "mean_min_dpos": 0.08644743667192681,
+        "mu_l2_mean": 0.04267957923025437,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 0.0,
+        "pre_tanh_abs_max_max": 0.02394714578986168,
+        "pre_tanh_abs_max_mean": 0.023308174312114717,
+        "raw_norm_mean": 0.04267399656011302,
+        "regression_rate": 0.8,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 3.425229407886833,
+        "reward_mean": 0.5235688353304708,
+        "reward_min": -0.3249241050969829,
+        "shell_hit_rate": 0.2,
+        "std_scaled_l2_mean": 0.0,
+        "success_rate": 0.2,
+        "true_basin_hit_rate": 0.2,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.2
+      },
+      "gap_metrics": {
+        "final_action_l2_ratio_det_over_full": 0.03904019110868981,
+        "mean_final_dpos_gap_det_minus_full": -0.06838826268666151,
+        "raw_norm_ratio_det_over_full": 0.0390401911086898,
+        "success_rate_gap_full_minus_det": 0.0,
+        "true_basin_hit_rate_gap_full_minus_det": 0.0
+      },
+      "run_id": "main_reward_bonly_baseline_s0b_tc0_act008_001",
+      "run_root": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001",
+      "suite_id": "det_eval_near_home_700001_TC0_5"
+    },
+    {
+      "best_checkpoint_episode": 24,
+      "best_checkpoint_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/train/checkpoint_best.pt",
+      "deterministic_metrics": {
+        "best_min_dpos": 0.06517933469036036,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.0011334813706426698,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.06859960702441682,
+        "final_action_l2_mean": 0.0055786470712435535,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.10232232213688586,
+        "mean_final_minus_min": 0.01658553829116354,
+        "mean_min_dpos": 0.08573678384572232,
+        "mu_l2_mean": 0.06976346615271951,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 0.0,
+        "pre_tanh_abs_max_max": 0.04376698285341263,
+        "pre_tanh_abs_max_mean": 0.042736625000834465,
+        "raw_norm_mean": 0.06973308839054441,
+        "regression_rate": 0.8,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 3.5230706850016955,
+        "reward_mean": 0.48707443281784746,
+        "reward_min": -0.4111947000834979,
+        "shell_hit_rate": 0.2,
+        "std_scaled_l2_mean": 0.0,
+        "success_rate": 0.2,
+        "true_basin_hit_rate": 0.2,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.2
+      },
+      "gap_metrics": {
+        "final_action_l2_ratio_det_over_full": 0.060176178349244054,
+        "mean_final_dpos_gap_det_minus_full": -0.04887359647941965,
+        "raw_norm_ratio_det_over_full": 0.06017617834924403,
+        "success_rate_gap_full_minus_det": -0.2,
+        "true_basin_hit_rate_gap_full_minus_det": 0.0
+      },
+      "run_id": "main_reward_bonly_solidify_s0b_tc0_act008_001",
+      "run_root": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001",
+      "suite_id": "det_eval_near_home_700001_TC0_5"
+    },
+    {
+      "best_checkpoint_episode": 24,
+      "best_checkpoint_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_v2_s0b_tc0_act008_001/train/checkpoint_best.pt",
+      "deterministic_metrics": {
+        "best_min_dpos": 0.06561308490859638,
+        "clamp_mean": 0.0,
+        "clamp_sum": 0.0,
+        "delta_norm_mean": 0.0014068282335171344,
+        "dwell_hit_rate": 0.0,
+        "episodes_completed": 5,
+        "episodes_requested": 5,
+        "exec_norm_mean": 0.09213108976616874,
+        "final_action_l2_mean": 0.007483033439822196,
+        "inner_shell_hit_rate": 0.0,
+        "intervention_rate": 0.0,
+        "max_dwell_max": 0.0,
+        "mean_final_dpos": 0.1017339448097346,
+        "mean_final_minus_min": 0.015923503012649113,
+        "mean_min_dpos": 0.08581044179708548,
+        "mu_l2_mean": 0.09369498741997498,
+        "near_goal_entries_sum": 0.0,
+        "noise_l2_mean": 0.0,
+        "pre_tanh_abs_max_max": 0.08252332359552383,
+        "pre_tanh_abs_max_mean": 0.08086113840341567,
+        "raw_norm_mean": 0.09353791799777747,
+        "regression_rate": 0.8,
+        "reject_mean": 0.0,
+        "reject_sum": 0.0,
+        "reward_max": 3.515771078876375,
+        "reward_mean": 0.4923797608383186,
+        "reward_min": -0.40397481428509385,
+        "shell_hit_rate": 0.2,
+        "std_scaled_l2_mean": 0.0,
+        "success_rate": 0.2,
+        "true_basin_hit_rate": 0.2,
+        "true_dwell_hit_rate": 0.0,
+        "true_final_basin_rate": 0.2,
+        "true_final_dwell_rate": 0.0,
+        "true_final_inner_rate": 0.0,
+        "true_final_outer_rate": 0.2,
+        "true_inner_hit_rate": 0.0,
+        "true_outer_hit_rate": 0.2
+      },
+      "gap_metrics": {
+        "final_action_l2_ratio_det_over_full": 0.08259051521038935,
+        "mean_final_dpos_gap_det_minus_full": -0.03235236583981921,
+        "raw_norm_ratio_det_over_full": 0.08259051521038936,
+        "success_rate_gap_full_minus_det": 0.0,
+        "true_basin_hit_rate_gap_full_minus_det": 0.39999999999999997
+      },
+      "run_id": "main_reward_bonly_solidify_v2_s0b_tc0_act008_001",
+      "run_root": "artifacts/v5_1/e2e/main_reward_bonly_solidify_v2_s0b_tc0_act008_001",
+      "suite_id": "det_eval_near_home_700001_TC0_5"
+    }
+  ]
+}

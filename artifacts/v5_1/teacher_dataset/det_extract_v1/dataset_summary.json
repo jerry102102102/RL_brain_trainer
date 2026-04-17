@@ -1,0 +1,63 @@
+{
+  "action_dim": 7,
+  "dataset_counts_plot": "artifacts/v5_1/teacher_dataset/det_extract_v1/plots/dataset_counts.png",
+  "dataset_path": "artifacts/v5_1/teacher_dataset/det_extract_v1/dataset.jsonl",
+  "discard_counts": {
+    "below_priority_threshold": 276,
+    "delta_norm_too_large": 760,
+    "poor_retention": 98,
+    "rejected": 22
+  },
+  "filters": {
+    "discard_retention_max": 0.08,
+    "elite_retention_max": 0.02,
+    "max_delta_norm": 0.35,
+    "min_progress_m": 0.003,
+    "outer_final_dpos_max": 0.12,
+    "outer_support_dpos_m": 0.07,
+    "strong_retention_max": 0.04
+  },
+  "obs_dim": 27,
+  "per_run_counts": {
+    "main_reward_bonly_baseline_s0b_tc0_act008_001": 50,
+    "main_reward_bonly_solidify_s0b_tc0_act008_001": 50
+  },
+  "quality_score_max": 10.5,
+  "quality_score_mean": 3.9129135221242906,
+  "sample_weight_sum": 441.62374679322045,
+  "source_runs": [
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700001_TC0_5",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/reward_trace.jsonl",
+      "run_id": "main_reward_bonly_baseline_s0b_tc0_act008_001",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_baseline_s0b_tc0_act008_001/runtime_trace.jsonl"
+    },
+    {
+      "action_scale": 0.08,
+      "episode_summary_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/episode_reward_summary.jsonl",
+      "fixed_eval_suite_id": "det_eval_near_home_700001_TC0_5",
+      "reward_profile": "phase_a_bootstrap_v2",
+      "reward_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/reward_trace.jsonl",
+      "run_id": "main_reward_bonly_solidify_s0b_tc0_act008_001",
+      "runtime_trace_path": "artifacts/v5_1/e2e/main_reward_bonly_solidify_s0b_tc0_act008_001/runtime_trace.jsonl"
+    }
+  ],
+  "tier_counts": {
+    "elite": 59,
+    "strong": 41
+  },
+  "total_samples": 100,
+  "zone_counts": {
+    "inner": 9,
+    "outer": 68,
+    "outside": 23
+  },
+  "zone_weight_sums": {
+    "inner": 50.88888254314661,
+    "outer": 326.8891619833806,
+    "outside": 63.84570226669314
+  }
+}

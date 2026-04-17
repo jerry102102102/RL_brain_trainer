@@ -1,0 +1,20 @@
+{
+  "checked_paths": {
+    "hil_checklist": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/docs/wp3/hil_env_checklist.md",
+    "hil_profile": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/configs/hil_runtime_profile.yaml",
+    "hil_runtime_evidence_dir": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/wp3/hil_dryrun",
+    "hil_schema": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/docs/wp3/hil_runtime_evidence.schema.json",
+    "real_path_probe": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/reports/v5/m2_8_formal_comparison_summary_seed42_ep8.json",
+    "runtime_contract": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/docs/wp3/ws1_runtime_contract.md"
+  },
+  "gate": "WS1_RUNTIME_HIL",
+  "generated_at_utc": "2026-03-22T19:56:26.373365+00:00",
+  "hil_evidence_checks_all_ok": true,
+  "hil_evidence_file": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/wp3/hil_dryrun/2026-03-22_155626/hil_runtime_evidence.json",
+  "hil_evidence_pass": true,
+  "hil_evidence_schema_valid": true,
+  "hil_runtime_evidence_ready": true,
+  "notes": [],
+  "passed": true,
+  "real_path_evidence_ready": true
+}

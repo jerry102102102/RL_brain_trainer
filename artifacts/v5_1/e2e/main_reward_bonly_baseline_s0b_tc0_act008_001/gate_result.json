@@ -1,0 +1,95 @@
+{
+  "each_gate": [
+    {
+      "metrics": {
+        "reset_failures": 0.0
+      },
+      "name": "P0.reset_fail_fast",
+      "passed": true,
+      "priority": "P0",
+      "reason": "No reset failures detected",
+      "threshold": {
+        "op": "<=",
+        "value": 0.0
+      }
+    },
+    {
+      "metrics": {
+        "episodes_completed": 70.0,
+        "episodes_requested": 80.0,
+        "execution_ratio": 0.875
+      },
+      "name": "P0.execution_complete",
+      "passed": false,
+      "priority": "P0",
+      "reason": "execution_ratio=0.875 below 1.000",
+      "threshold": {
+        "op": ">=",
+        "value": 1.0
+      }
+    },
+    {
+      "metrics": {
+        "expected_per_layer": 700.0,
+        "l1_log_lines": 694.0,
+        "l2_log_lines": 694.0,
+        "l3_log_lines": 694.0,
+        "log_integrity_ratio": 0.9914285714285714
+      },
+      "name": "P0.log_integrity",
+      "passed": false,
+      "priority": "P0",
+      "reason": "log_integrity_ratio=0.991 below 1.000",
+      "threshold": {
+        "op": ">=",
+        "value": 1.0
+      }
+    },
+    {
+      "metrics": {
+        "success_rate": 0.05714285714285714
+      },
+      "name": "P1.success_rate_floor",
+      "passed": true,
+      "priority": "P1",
+      "reason": "Success rate is above floor",
+      "threshold": {
+        "op": ">=",
+        "value": 0.01
+      }
+    },
+    {
+      "metrics": {
+        "success_delta": 0.0,
+        "success_rate_first": 0.0,
+        "success_rate_last": 0.0
+      },
+      "name": "P1.success_trend",
+      "passed": true,
+      "priority": "P1",
+      "reason": "Success trend is non-degrading",
+      "threshold": {
+        "op": ">=",
+        "value": 0.0
+      }
+    },
+    {
+      "metrics": {
+        "intervention_delta": 1.0,
+        "intervention_rate_first": 0.0,
+        "intervention_rate_last": 1.0
+      },
+      "name": "P1.intervention_non_worsening",
+      "passed": false,
+      "priority": "P1",
+      "reason": "intervention_delta=1.000 exceeds 0.000",
+      "threshold": {
+        "op": "<=",
+        "value": 0.0
+      }
+    }
+  ],
+  "gate_version": "v5.1.gates.v2",
+  "overall_decision": "HOLD",
+  "run_id": "main_reward_bonly_baseline_s0b_tc0_act008_001"
+}

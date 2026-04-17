@@ -1,0 +1,26 @@
+{
+  "episodes": 30,
+  "fallback_used": false,
+  "passed": false,
+  "policy_executed": "rl_l2",
+  "policy_requested": "rl_l2",
+  "schema": "v5_eval_harness",
+  "seed": 20260331,
+  "status_code": 2,
+  "summary": {
+    "gate_decision": "HOLD",
+    "gate_reasons": [
+      "success_rate<0.55",
+      "median_min_goal_error>0.045"
+    ],
+    "intervention_rate": 0.0,
+    "median_min_goal_error": 0.05079004541039467,
+    "median_return": -33.77472315914929,
+    "p50_episode_length": 180.0,
+    "p90_near_goal_dwell_steps": 37.599998474121094,
+    "p95_episode_length": 180.0,
+    "safety_abort_rate": 0.0,
+    "success_rate": 0.06666666666666667
+  },
+  "version": "1.0"
+}

@@ -1,0 +1,160 @@
+{
+  "best_epoch": 1,
+  "best_val_weighted_loss": 0.0009202146902680397,
+  "checkpoint_best": "artifacts/v5_1/student/det_student_v1/checkpoint_best.pt",
+  "checkpoint_latest": "artifacts/v5_1/student/det_student_v1/checkpoint_latest.pt",
+  "dataset_path": "artifacts/v5_1/teacher_dataset/det_extract_v1/dataset.jsonl",
+  "epochs_completed": 21,
+  "epochs_requested": 120,
+  "history_tail": [
+    {
+      "epoch": 12,
+      "train_mean_action_l2": 0.006774530280381441,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008005895651876926,
+      "train_weighted_loss": 0.0007869097753427923,
+      "val_unweighted_loss": 0.0009253151947632432,
+      "val_weighted_loss": 0.0009327389416284859
+    },
+    {
+      "epoch": 13,
+      "train_mean_action_l2": 0.006854265462607145,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008006466086953878,
+      "train_weighted_loss": 0.0007867016829550266,
+      "val_unweighted_loss": 0.0009260688675567508,
+      "val_weighted_loss": 0.0009337057126685977
+    },
+    {
+      "epoch": 14,
+      "train_mean_action_l2": 0.006930672563612461,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008007058058865368,
+      "train_weighted_loss": 0.0007865168736316264,
+      "val_unweighted_loss": 0.0009267677669413388,
+      "val_weighted_loss": 0.0009345955913886428
+    },
+    {
+      "epoch": 15,
+      "train_mean_action_l2": 0.0070037548430264,
+      "train_target_action_l2": 0.07216314226388931,
+      "train_unweighted_loss": 0.0008007625001482666,
+      "train_weighted_loss": 0.0007863512728363276,
+      "val_unweighted_loss": 0.0009274075855500996,
+      "val_weighted_loss": 0.0009354043868370354
+    },
+    {
+      "epoch": 16,
+      "train_mean_action_l2": 0.007071542087942362,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.000800815992988646,
+      "train_weighted_loss": 0.0007862033671699464,
+      "val_unweighted_loss": 0.0009279815712943673,
+      "val_weighted_loss": 0.0009361255797557533
+    },
+    {
+      "epoch": 17,
+      "train_mean_action_l2": 0.007133525796234608,
+      "train_target_action_l2": 0.0721631571650505,
+      "train_unweighted_loss": 0.000800860405433923,
+      "train_weighted_loss": 0.0007860686164349318,
+      "val_unweighted_loss": 0.0009284832631237805,
+      "val_weighted_loss": 0.0009367528255097568
+    },
+    {
+      "epoch": 18,
+      "train_mean_action_l2": 0.007188440766185522,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.000800895388238132,
+      "train_weighted_loss": 0.000785946671385318,
+      "val_unweighted_loss": 0.000928910740185529,
+      "val_weighted_loss": 0.0009372844360768795
+    },
+    {
+      "epoch": 19,
+      "train_mean_action_l2": 0.007236449513584375,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008009157027117908,
+      "train_weighted_loss": 0.0007858299650251865,
+      "val_unweighted_loss": 0.0009292693575844169,
+      "val_weighted_loss": 0.0009377308306284249
+    },
+    {
+      "epoch": 20,
+      "train_mean_action_l2": 0.007277807220816612,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008009190205484629,
+      "train_weighted_loss": 0.0007857168675400317,
+      "val_unweighted_loss": 0.0009295599302276969,
+      "val_weighted_loss": 0.0009380931151099503
+    },
+    {
+      "epoch": 21,
+      "train_mean_action_l2": 0.007311984430998564,
+      "train_target_action_l2": 0.07216314971446991,
+      "train_unweighted_loss": 0.0008009062148630619,
+      "train_weighted_loss": 0.0007856086594983935,
+      "val_unweighted_loss": 0.0009297984652221203,
+      "val_weighted_loss": 0.0009383867727592587
+    }
+  ],
+  "optimizer": {
+    "batch_size": 128,
+    "early_stop_patience": 20,
+    "learning_rate": 0.0003,
+    "val_fraction": 0.15,
+    "weight_decay": 1e-05
+  },
+  "run_id": "det_student_v1",
+  "seed": 0,
+  "splits": {
+    "train": {
+      "count": 90,
+      "tier_counts": {
+        "elite": 53,
+        "strong": 37
+      },
+      "tier_weight_sums": {
+        "elite": 266.11418333277095,
+        "strong": 128.5826320076982
+      },
+      "zone_counts": {
+        "inner": 7,
+        "outer": 60,
+        "outside": 23
+      },
+      "zone_weight_sums": {
+        "inner": 39.87527932077646,
+        "outer": 290.9758337529996,
+        "outside": 63.84570226669314
+      }
+    },
+    "validation": {
+      "count": 10,
+      "tier_counts": {
+        "elite": 6,
+        "strong": 4
+      },
+      "tier_weight_sums": {
+        "elite": 35.8801841519773,
+        "strong": 11.046747300773859
+      },
+      "zone_counts": {
+        "inner": 2,
+        "outer": 8
+      },
+      "zone_weight_sums": {
+        "inner": 11.013603222370147,
+        "outer": 35.91332823038101
+      }
+    }
+  },
+  "student_config": {
+    "action_dim": 7,
+    "action_scale": 0.08,
+    "device": "cpu",
+    "hidden_dim": 128,
+    "obs_dim": 27
+  },
+  "training_curves_plot": "artifacts/v5_1/student/det_student_v1/plots/training_curves.png"
+}

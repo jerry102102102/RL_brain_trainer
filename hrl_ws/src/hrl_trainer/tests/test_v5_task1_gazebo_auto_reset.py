@@ -76,6 +76,68 @@ class _FakeGazeboExecutorFail(_FakeGazeboExecutorOk):
         raise err
 
 
+class _ResetFakeFuture:
+    def __init__(self, *, done: bool, result_obj=None):
+        self._done = done
+        self._result_obj = result_obj
+
+    def done(self):
+        return self._done
+
+    def result(self):
+        return self._result_obj
+
+
+class _ResetFakeGoalHandle:
+    def __init__(self, *, accepted: bool, result_future: _ResetFakeFuture):
+        self.accepted = accepted
+        self._result_future = result_future
+
+    def get_result_async(self):
+        return self._result_future
+
+
+class _ResetFakeActionClient:
+    def __init__(self, *, wait_ok=True, send_future=None):
+        self._wait_ok = wait_ok
+        self._send_future = send_future
+
+    def wait_for_server(self, timeout_sec):
+        _ = timeout_sec
+        return self._wait_ok
+
+    def send_goal_async(self, goal):
+        _ = goal
+        return self._send_future
+
+
+class _ResetFakeRclpy:
+    def spin_until_future_complete(self, _node, _future, timeout_sec):
+        _ = (_node, _future, timeout_sec)
+
+
+class _ResetFakeJointTrajectory:
+    def __init__(self):
+        self.joint_names = []
+        self.header = types.SimpleNamespace(stamp=None)
+        self.points = []
+
+
+class _ResetFakeJointTrajectoryPoint:
+    def __init__(self):
+        self.positions = []
+        self.time_from_start = types.SimpleNamespace(sec=0)
+
+
+class _ResetFakeGoal:
+    def __init__(self):
+        self.trajectory = None
+
+
+class _ResetFakeFollowJointTrajectory:
+    Goal = _ResetFakeGoal
+
+
 class TestTask1GazeboAutoReset(unittest.TestCase):
     def test_gazebo_path_invokes_reset_between_episodes(self):
         _FakeGazeboExecutorOk.reset_calls = 0
@@ -110,7 +172,9 @@ class TestTask1GazeboAutoReset(unittest.TestCase):
         ex.q_min = np.array([-1.0] * 7, dtype=float)
         ex.q_max = np.array([1.0] * 7, dtype=float)
         ex.reset_position_tol = 0.01
+        ex.reset_topic_fallback_attempts = 2
         ex.verbose_debug = False
+        ex._canonical_joint_names_or_fail = lambda n_joints: tuple(f"joint_{i}" for i in range(n_joints))
 
         action_calls = []
 
@@ -140,14 +204,37 @@ class TestTask1GazeboAutoReset(unittest.TestCase):
         ex.q_min = np.array([-1.0] * 7, dtype=float)
         ex.q_max = np.array([1.0] * 7, dtype=float)
         ex.reset_position_tol = 0.01
+        ex.reset_topic_fallback_attempts = 2
         ex.verbose_debug = False
+        ex._canonical_joint_names_or_fail = lambda n_joints: tuple(f"joint_{i}" for i in range(n_joints))
 
         ex._send_reset_target = lambda **_kwargs: True
         ex._wait_reset_convergence = lambda **_kwargs: (False, np.full(7, 0.5), np.zeros(7), None)
         ex.read_runtime_state = lambda n_joints: (np.ones(n_joints, dtype=float), np.zeros(n_joints, dtype=float), None)
+        ex._last_reset_action_diag = {"path": "action", "status": "result_timeout", "detail": "timeout=0.50"}
 
-        with self.assertRaisesRegex(RuntimeError, "arm reset did not converge"):
+        with self.assertRaisesRegex(RuntimeError, "top_joint_errors") as ctx:
             ex.reset_arm_to_initial(n_joints=7, timeout_sec=0.5)
+        self.assertIn("action_diag=path=action status=result_timeout", str(ctx.exception))
+
+    def test_send_reset_target_action_requires_result_success(self):
+        ex = object.__new__(GazeboRuntimeL3Executor)
+        ex._JointTrajectory = _ResetFakeJointTrajectory
+        ex._JointTrajectoryPoint = _ResetFakeJointTrajectoryPoint
+        ex._FollowJointTrajectory = _ResetFakeFollowJointTrajectory
+        ex._node = object()
+        ex._rclpy = _ResetFakeRclpy()
+        ex._traj_pub = types.SimpleNamespace(publish=lambda _msg: None)
+        ex._canonical_joint_names_or_fail = lambda n_joints: tuple(f"joint_{i}" for i in range(n_joints))
+
+        wrapped = types.SimpleNamespace(status=6, result=types.SimpleNamespace(error_code=1))
+        result_future = _ResetFakeFuture(done=True, result_obj=wrapped)
+        goal_handle = _ResetFakeGoalHandle(accepted=True, result_future=result_future)
+        ex._traj_action_client = _ResetFakeActionClient(wait_ok=True, send_future=_ResetFakeFuture(done=True, result_obj=goal_handle))
+
+        ok = ex._send_reset_target(n_joints=7, q_goal=np.zeros(7, dtype=float), timeout_sec=0.5, use_action=True)
+        self.assertFalse(ok)
+        self.assertEqual(ex._last_reset_action_diag.get("status"), "result_rejected")
 
 
 if __name__ == "__main__":

@@ -7,12 +7,21 @@ from hrl_trainer.v5.task1_train import GazeboRuntimeL3Executor, Task1Config, Tas
 
 
 class _FakeFuture:
-    def __init__(self, *, done: bool, result_obj=None):
+    def __init__(self, *, done: bool, result_obj=None, done_after_spins: int | None = None):
         self._done = done
         self._result = result_obj
+        self._done_after_spins = done_after_spins
+        self._spins = 0
+
+    def advance(self):
+        self._spins += 1
 
     def done(self):
-        return self._done
+        if self._done:
+            return True
+        if self._done_after_spins is None:
+            return False
+        return self._spins >= int(self._done_after_spins)
 
     def result(self):
         return self._result
@@ -45,6 +54,8 @@ class _FakeActionClient:
 class _FakeRclpy:
     def spin_until_future_complete(self, _node, _future, timeout_sec):
         _ = timeout_sec
+        if hasattr(_future, "advance"):
+            _future.advance()
 
 
 class _FakeJointTrajectory:
@@ -78,6 +89,8 @@ class TestTask1L3ActionExecution(unittest.TestCase):
         ex.action_min_motion_tol = 1e-4
         ex.action_name = "/arm_controller/follow_joint_trajectory"
         ex.action_post_result_wait_sec = 0.01
+        ex.action_result_timeout_retries = 1
+        ex.action_result_retry_wait_sec = 0.05
         ex.l3_exec_mode = "action"
         ex.q_min = np.array([-1.0] * 7, dtype=float)
         ex.q_max = np.array([1.0] * 7, dtype=float)
@@ -153,6 +166,50 @@ class TestTask1L3ActionExecution(unittest.TestCase):
         self.assertFalse(out.accepted)
         self.assertTrue(any("action_result_timeout=" in s for s in out.logs))
 
+    def test_action_result_timeout_with_motion_falls_back_to_readback_accept(self):
+        ex = self._build_executor()
+        ex._wait_for_joint_state_advance = lambda **_kwargs: True
+        goal_handle = _FakeGoalHandle(accepted=True, result_future=_FakeFuture(done=False, result_obj=None))
+        ex._traj_action_client = _FakeActionClient(wait_ok=True, send_future=_FakeFuture(done=True, result_obj=goal_handle))
+
+        q0 = np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        q1 = np.array([0.015, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        calls = [(q0, np.zeros(7), q0[:3].copy()), (q1, np.zeros(7), q1[:3].copy())]
+        ex.read_runtime_state = lambda n_joints: calls.pop(0)
+
+        out = ex.execute_with_safety(self._state(), np.array([0.02, 0, 0, 0, 0, 0, 0], dtype=float))
+        self.assertTrue(out.accepted)
+        self.assertTrue(any("action_result_timeout_fallback=readback_motion" in s for s in out.logs))
+
+    def test_action_result_completes_during_retry_window(self):
+        ex = self._build_executor()
+        ex.action_result_timeout_retries = 2
+        ex.action_result_retry_wait_sec = 0.05
+        wrapped = types.SimpleNamespace(error_code=0, error_string="")
+        result_future = _FakeFuture(done=False, done_after_spins=2, result_obj=types.SimpleNamespace(status=4, result=wrapped))
+        goal_handle = _FakeGoalHandle(accepted=True, result_future=result_future)
+        ex._traj_action_client = _FakeActionClient(wait_ok=True, send_future=_FakeFuture(done=True, result_obj=goal_handle))
+
+        q0 = np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        q1 = np.array([0.02, 0.0, 0.25, 0, 0, 0, 0], dtype=float)
+        calls = [(q0, np.zeros(7), q0[:3].copy()), (q1, np.zeros(7), q1[:3].copy())]
+        ex.read_runtime_state = lambda n_joints: calls.pop(0)
+
+        out = ex.execute_with_safety(self._state(), np.array([0.02, 0, 0, 0, 0, 0, 0], dtype=float))
+        self.assertTrue(out.accepted)
+        self.assertFalse(any("action_result_timeout=" in s for s in out.logs))
+
+    def test_action_result_timeout_reports_retry_exhaustion(self):
+        ex = self._build_executor()
+        ex.action_result_timeout_retries = 2
+        goal_handle = _FakeGoalHandle(accepted=True, result_future=_FakeFuture(done=False, result_obj=None))
+        ex._traj_action_client = _FakeActionClient(wait_ok=True, send_future=_FakeFuture(done=True, result_obj=goal_handle))
+        ex.read_runtime_state = lambda n_joints: (np.array([0.0, 0.0, 0.25, 0, 0, 0, 0], dtype=float), np.zeros(7), np.array([0.0, 0.0, 0.25]))
+
+        out = ex.execute_with_safety(self._state(), np.array([0.01, 0, 0, 0, 0, 0, 0], dtype=float))
+        self.assertFalse(out.accepted)
+        self.assertTrue(any("action_result_retries_exhausted=2" in s for s in out.logs))
+
     def test_action_status_success_but_error_code_marks_rejected(self):
         ex = self._build_executor()
         wrapped = types.SimpleNamespace(error_code=1, error_string="INVALID_GOAL")
@@ -217,6 +274,7 @@ class TestTask1L3ActionExecution(unittest.TestCase):
         self.assertTrue(out.accepted)
         self.assertIsNotNone(action_client.last_goal)
         self.assertEqual(action_client.last_goal.trajectory.joint_names, list(ex._external_canonical_joint_names))
+        self.assertIsNone(action_client.last_goal.trajectory.header.stamp)
 
     def test_readback_timestamp_uses_pre_send_stamp(self):
         ex = self._build_executor()

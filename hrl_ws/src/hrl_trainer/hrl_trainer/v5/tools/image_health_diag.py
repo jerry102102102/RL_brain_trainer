@@ -122,12 +122,49 @@ def main() -> int:
             samples = node.samples.get(topic, [])
             recv = [s.recv_ns for s in samples]
             header = [s.header_ns for s in samples]
+
+            # Replay path: normalize to relative timeline to avoid absolute epoch offsets
+            # (record-time header stamp vs replay-time receive stamp) inflating latency.
+            latency_header = header
+            latency_basis = "absolute_recv_minus_header"
+            recv_non_none = [x for x in recv if x is not None]
+            header_non_none = [x for x in header if x is not None]
+            if args.replay_mode and recv_non_none and header_non_none:
+                recv0 = int(recv_non_none[0])
+                header0 = int(header_non_none[0])
+                latency_header = [None if h is None else int(h) - header0 for h in header]
+                recv = [int(r) - recv0 for r in recv]
+                latency_basis = "relative_timeline_recv_minus_header"
+
+            recv_eval = recv
+            header_eval = latency_header
+            dropped_mixed = 0
+            if args.replay_mode:
+                filt_recv: list[int] = []
+                filt_header: list[int | None] = []
+                for r, h in zip(recv, latency_header):
+                    if h is None:
+                        continue
+                    d_ms = (int(r) - int(h)) / 1e6
+                    # Replay-only filter: reject mixed live stream samples with huge offset.
+                    if abs(d_ms) <= 5000.0:
+                        filt_recv.append(int(r))
+                        filt_header.append(int(h))
+                    else:
+                        dropped_mixed += 1
+                if filt_recv:
+                    recv_eval = filt_recv
+                    header_eval = filt_header
+
             metrics = summarize_image_health(
-                recv_stamps_ns=recv,
-                header_stamps_ns=header,
+                recv_stamps_ns=recv_eval,
+                header_stamps_ns=header_eval,
                 expected_fps=float(cam.get("expected_fps", 0.0) or 0.0),
                 latency_p95_limit_ms=latency_limit_ms,
             )
+            metrics["latency_basis"] = latency_basis
+            if args.replay_mode:
+                metrics["dropped_mixed_stream_samples"] = dropped_mixed
             metrics["camera_info_topic"] = cam.get("camera_info_topic")
             if cam.get("camera_info_topic"):
                 metrics["camera_info_seen"] = int(node.camera_info_seen.get(cam["camera_info_topic"], 0))

@@ -1,0 +1,90 @@
+{
+  "aggregate": {
+    "harness_failed_seeds": 0,
+    "harness_passed_seeds": 2,
+    "seeds_total": 2,
+    "total_fail_count": 6,
+    "total_success_count": 10
+  },
+  "checks": {
+    "at_least_one_seed_passed": true,
+    "fallback_not_used": true,
+    "policy_is_rule_l2_v0": true
+  },
+  "episodes": 8,
+  "gate": "WS3_SAFETY_ROLLBACK",
+  "gate_status": "pass",
+  "generated_at_utc": "2026-03-22T20:16:10.841386+00:00",
+  "notes": [],
+  "passed": true,
+  "per_seed": [
+    {
+      "fail_count": 4,
+      "passed": true,
+      "seed": 42,
+      "status_code": 0,
+      "success_count": 4,
+      "summary": {
+        "episodes": 8,
+        "fallback_used": false,
+        "passed": true,
+        "policy_executed": "rule_l2_v0",
+        "policy_requested": "rule_l2_v0",
+        "schema": "v5_eval_harness",
+        "seed": 42,
+        "status_code": 0,
+        "summary": {
+          "fail_count": 4,
+          "reward": {
+            "average_episode_length": 4.125,
+            "average_reward": 3.564749999999999
+          },
+          "stage": {
+            "benchmark_schema": "v5_rule_l2_v0_benchmark",
+            "benchmark_version": "1.0",
+            "name": "l2_policy_benchmark"
+          },
+          "success_count": 4
+        },
+        "version": "1.0"
+      }
+    },
+    {
+      "fail_count": 2,
+      "passed": true,
+      "seed": 43,
+      "status_code": 0,
+      "success_count": 6,
+      "summary": {
+        "episodes": 8,
+        "fallback_used": false,
+        "passed": true,
+        "policy_executed": "rule_l2_v0",
+        "policy_requested": "rule_l2_v0",
+        "schema": "v5_eval_harness",
+        "seed": 43,
+        "status_code": 0,
+        "summary": {
+          "fail_count": 2,
+          "reward": {
+            "average_episode_length": 4.25,
+            "average_reward": 4.322749999999999
+          },
+          "stage": {
+            "benchmark_schema": "v5_rule_l2_v0_benchmark",
+            "benchmark_version": "1.0",
+            "name": "l2_policy_benchmark"
+          },
+          "success_count": 6
+        },
+        "version": "1.0"
+      }
+    }
+  ],
+  "rollback_target_policy": "rule_l2_v0",
+  "seeds": [
+    42,
+    43
+  ],
+  "strict_policy": true
+}

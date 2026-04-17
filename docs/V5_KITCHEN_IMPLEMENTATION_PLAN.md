@@ -180,6 +180,17 @@ Output:
 #### Legacy path status（明確標示）
 - `/tray_tracking/pose_stream` 僅為 legacy/disabled-by-default 參考路徑，不作為 WP2 主線輸入。
 
+#### Jazzy Pose_V limitation + degraded-mode policy
+- 已確認在當前 Jazzy 環境：
+  - `ros_gz_interfaces.msg` 無可用 `Pose_V` Python 型別（dedicated extractor import 會失敗）。
+  - `ros_gz_bridge` 對 `/world/empty/dynamic_pose/info @ ros_gz_interfaces/msg/Pose_V` 缺少 template specialization。
+- Runtime/launch 切換規則：
+  - `enable_dedicated_tray_source:=true` 且 capability 支援 -> `tray_pose_mode=dedicated`
+  - `enable_dedicated_tray_source:=true` 且 capability 不支援，且 `auto_fallback_legacy_on_unsupported:=true` -> `tray_pose_mode=legacy_degraded`（自動啟用 legacy adapter）
+  - `enable_dedicated_tray_source:=false` + `enable_legacy_tray_pose_adapter:=true` -> 強制 legacy
+- 強制 dedicated（僅在環境支援時）:
+  - `enable_dedicated_tray_source:=true auto_fallback_legacy_on_unsupported:=false`
+
 ### 5.1.b Real-world deployment pipelines（真實環境）
 
 > 原則：真實環境沿用同一份 L1/L2/L3 契約，不改語義介面，只替換資料來源與控制落地端。

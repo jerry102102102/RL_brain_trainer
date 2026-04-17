@@ -27,6 +27,8 @@ REQUIRED_TOPICS = [
     "/joint_states",
     "/v5/cam/overhead/rgb",
     "/v5/cam/side/rgb",
+    "/tray1/pose",
+    "/v5/perception/object_pose_est",
 ]
 
 
@@ -108,6 +110,7 @@ def _blocked_path(reason: str) -> dict[str, Any]:
     return {
         "status": STATUS_BLOCKED,
         "blocked_reason": reason,
+        "tray_pose_mode": "unknown",
         "topics": _rows_json([]),
     }
 
@@ -123,6 +126,7 @@ def _kill_scene_processes() -> None:
         "ros2 launch kitchen_robot_description gazebo.launch.py",
         "ros_gz_sim create",
         "/opt/ros/jazzy/lib/ros_gz_bridge/parameter_bridge",
+        "tray_pose_extractor_node",
         "tray_pose_adapter_node",
         "object_id_publisher_node",
         "static_transform_publisher",
@@ -134,10 +138,20 @@ def _kill_scene_processes() -> None:
     time.sleep(2.0)
 
 
+def _detect_tray_pose_mode() -> str:
+    topics = _list_topics()
+    if "/tray_tracking/pose_stream_raw" in topics:
+        return "dedicated"
+    if "/tray_tracking/pose_stream" in topics:
+        return "legacy_degraded"
+    return "unknown"
+
+
 def _run_manual_path(timeout_sec: float) -> dict[str, Any]:
     rows = _probe_topics(timeout_sec)
     return {
         "status": _path_status(rows),
+        "tray_pose_mode": _detect_tray_pose_mode(),
         "topics": _rows_json(rows),
     }
 
@@ -167,6 +181,7 @@ def _run_auto_path(timeout_sec: float, launch_cmd: list[str], kill_before_auto: 
     return {
         "status": _path_status(rows, blocked_reason=blocked_reason),
         "blocked_reason": blocked_reason,
+        "tray_pose_mode": _detect_tray_pose_mode() if not blocked_reason else "unknown",
         "launch_command": launch_cmd,
         "topics": _rows_json(rows),
     }
@@ -271,6 +286,7 @@ def main() -> int:
             "auto": auto_report,
         },
         "parity": parity,
+        "tray_pose_mode": auto_report.get("tray_pose_mode") if args.mode in ("auto", "both") else manual_report.get("tray_pose_mode"),
         "overall": {
             "result": STATUS_PASS if overall_ok else STATUS_FAIL,
             "pass": overall_ok,

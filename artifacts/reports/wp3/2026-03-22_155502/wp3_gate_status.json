@@ -1,0 +1,8 @@
+{
+  "note": "WS1 requires valid HIL evidence JSON + checks + pass=true under artifacts/wp3/hil_dryrun.",
+  "overall_pass": true,
+  "with_hil_dryrun": true,
+  "ws1_exit_code": 0,
+  "ws2_exit_code": 0,
+  "ws3_exit_code": 0
+}

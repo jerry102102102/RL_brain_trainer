@@ -1,0 +1,17 @@
+profile_name: wp3_hil_runtime
+robot_runtime:
+  mode: hil
+  controller: l3_runtime_bridge
+  safety_watchdog_hz: 20
+  max_action_latency_ms: 120
+  emergency_stop_required: true
+logging:
+  evidence_dir: artifacts/wp3/hil_dryrun
+  required_fields:
+    - timestamp
+    - episode_id
+    - action_latency_ms
+    - safety_state
+    - rollback_flag
+notes:
+  - "This profile defines expected HIL runtime constraints; actual HIL proof still requires real runtime logs."

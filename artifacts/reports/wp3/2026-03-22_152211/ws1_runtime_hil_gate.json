@@ -1,0 +1,17 @@
+{
+  "checked_paths": {
+    "hil_checklist": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/docs/wp3/hil_env_checklist.md",
+    "hil_profile": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/configs/hil_runtime_profile.yaml",
+    "hil_runtime_evidence_dir": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/wp3/hil_dryrun",
+    "real_path_probe": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/reports/v5/m2_8_formal_comparison_summary_seed42_ep8.json",
+    "runtime_contract": "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/docs/wp3/ws1_runtime_contract.md"
+  },
+  "gate": "WS1_RUNTIME_HIL",
+  "generated_at_utc": "2026-03-22T19:22:11.916700+00:00",
+  "hil_runtime_evidence_ready": false,
+  "notes": [
+    "No HIL/runtime evidence file found under artifacts/wp3/hil_dryrun; this remains a blocker."
+  ],
+  "passed": false,
+  "real_path_evidence_ready": true
+}
