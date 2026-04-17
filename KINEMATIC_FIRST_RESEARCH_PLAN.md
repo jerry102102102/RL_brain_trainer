@@ -147,6 +147,10 @@ This means the learning problem should first be solved in a cheaper and cleaner 
 
 The new plan is intentionally decomposed into three phases.
 
+Companion implementation specification:
+
+- `KINEMATIC_PHASE1_IMPLEMENTATION_SPEC.md`
+
 ## Phase 1: Gymnasium + Stable-Baselines3 for Basic Kinematic Skills
 
 ### 4.1 Objective
@@ -219,6 +223,10 @@ Success at this stage does **not** mean solving the final tray task. It means:
 - deterministic evaluation is stable and interpretable,
 - near-goal stabilization is clearly better than random or naive control,
 - and training throughput is much higher than the Gazebo-based loop.
+
+The implementation-level contract for this phase is intentionally frozen in:
+
+- `KINEMATIC_PHASE1_IMPLEMENTATION_SPEC.md`
 
 ## Phase 2: Supervised Learning for Waypoint and Orientation-Constrained Tasks
 
