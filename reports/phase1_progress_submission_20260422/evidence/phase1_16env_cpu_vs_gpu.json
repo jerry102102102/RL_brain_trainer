@@ -1,0 +1,23 @@
+{
+  "benchmark": "phase1_16env_cpu_vs_gpu",
+  "results": [
+    {
+      "device": "cpu",
+      "n_envs": 16,
+      "total_timesteps": 3200,
+      "wall_time_s": 1.8164608759998373,
+      "aggregate_timesteps_per_s": 1761.6674503042182,
+      "aggregate_episodes_per_s": 88.08337251521091,
+      "effective_episode_time_per_env_s": 0.18164608759998374
+    },
+    {
+      "device": "cuda",
+      "n_envs": 16,
+      "total_timesteps": 3200,
+      "wall_time_s": 1.7874396199995317,
+      "aggregate_timesteps_per_s": 1790.2702637870577,
+      "aggregate_episodes_per_s": 89.51351318935289,
+      "effective_episode_time_per_env_s": 0.17874396199995318
+    }
+  ]
+}

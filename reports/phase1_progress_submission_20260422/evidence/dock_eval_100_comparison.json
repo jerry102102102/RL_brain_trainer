@@ -1,0 +1,26 @@
+{
+  "rows": [
+    {
+      "name": "strict_v2_mid",
+      "checkpoint_path": "artifacts/kinematic_phase1/phase1b/frozen_dock_strict_0p5cm_v2_001/model_latest.zip",
+      "strict_success_rate": 0.23,
+      "dwell_success_rate": 0.58,
+      "mean_final_position_error": 0.016897589889925117,
+      "mean_final_orientation_error": 0.0812010987163953,
+      "regression_rate": 0.34,
+      "mean_final_minus_min_position_error": 0.006965596493551074,
+      "average_action_magnitude": 0.3222186399804628
+    },
+    {
+      "name": "strict_v2_long_latest",
+      "checkpoint_path": "artifacts/kinematic_phase1/phase1b/dock_handoff_strict_0p5cm_v2_long_001/model_latest.zip",
+      "strict_success_rate": 0.44,
+      "dwell_success_rate": 0.74,
+      "mean_final_position_error": 0.013239698393658681,
+      "mean_final_orientation_error": 0.09418527819495698,
+      "regression_rate": 0.27,
+      "mean_final_minus_min_position_error": 0.005441850513327367,
+      "average_action_magnitude": 0.2458110337137385
+    }
+  ]
+}

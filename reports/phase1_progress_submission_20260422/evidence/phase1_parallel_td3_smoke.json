@@ -1,0 +1,58 @@
+{
+  "benchmark": "phase1_parallel_td3_smoke",
+  "device": "cpu",
+  "episode_length": 20,
+  "results": [
+    {
+      "n_envs": 1,
+      "vec_env": "DummyVecEnv",
+      "total_timesteps": 2560,
+      "episode_length": 20,
+      "wall_time_s": 9.410722978000194,
+      "effective_episode_time_per_env_s": 0.07352127326562652,
+      "aggregate_episodes_per_s": 13.60150546341981,
+      "aggregate_timesteps_per_s": 272.03010926839625,
+      "deterministic_eval": {
+        "success_rate": 0.0,
+        "near_goal_hit_rate": 0.0,
+        "mean_final_position_error": 0.705034524266521,
+        "regression_rate": 0.6,
+        "average_action_magnitude": 2.0544643436686703
+      }
+    },
+    {
+      "n_envs": 4,
+      "vec_env": "SubprocVecEnv",
+      "total_timesteps": 2560,
+      "episode_length": 20,
+      "wall_time_s": 2.898863319999691,
+      "effective_episode_time_per_env_s": 0.09058947874999035,
+      "aggregate_episodes_per_s": 44.155238060693954,
+      "aggregate_timesteps_per_s": 883.1047612138791,
+      "deterministic_eval": {
+        "success_rate": 0.0,
+        "near_goal_hit_rate": 0.0,
+        "mean_final_position_error": 0.7925603733085864,
+        "regression_rate": 0.8,
+        "average_action_magnitude": 2.5004663180550266
+      }
+    },
+    {
+      "n_envs": 8,
+      "vec_env": "SubprocVecEnv",
+      "total_timesteps": 2560,
+      "episode_length": 20,
+      "wall_time_s": 1.5443734809996386,
+      "effective_episode_time_per_env_s": 0.09652334256247741,
+      "aggregate_episodes_per_s": 82.881506044217,
+      "aggregate_timesteps_per_s": 1657.6301208843402,
+      "deterministic_eval": {
+        "success_rate": 0.0,
+        "near_goal_hit_rate": 0.0,
+        "mean_final_position_error": 0.7879374780211028,
+        "regression_rate": 0.9,
+        "average_action_magnitude": 2.565023711397997
+      }
+    }
+  ]
+}

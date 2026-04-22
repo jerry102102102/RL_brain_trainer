@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "name": "previous_best_dwell5",
+      "checkpoint_path": "artifacts/kinematic_phase1/phase1b/frozen_approach_best_3cm_dwell5_001/model_latest.zip",
+      "episodes": 100,
+      "success_rate": 0.72,
+      "pre_near_goal_hit_rate": 0.89,
+      "near_goal_hit_rate": 0.77,
+      "mean_min_position_error": 0.024618034622409694,
+      "failed_due_to_dwell_count": 5,
+      "mean_time_to_enter_near_goal": 14.87012987012987,
+      "average_action_magnitude": 0.9404887113069377
+    },
+    {
+      "name": "balanced_best20",
+      "checkpoint_path": "artifacts/kinematic_phase1/phase1b/frozen_approach_best_3cm_balanced_dwell5_001/model_latest.zip",
+      "episodes": 100,
+      "success_rate": 0.71,
+      "pre_near_goal_hit_rate": 0.89,
+      "near_goal_hit_rate": 0.74,
+      "mean_min_position_error": 0.024639847344525675,
+      "failed_due_to_dwell_count": 3,
+      "mean_time_to_enter_near_goal": 14.68918918918919,
+      "average_action_magnitude": 0.9337080641968913
+    },
+    {
+      "name": "balanced_final",
+      "checkpoint_path": "artifacts/kinematic_phase1/phase1b/approach_workspace_long_balanced_dwell5_lr1e4_3cm_12env_resume_4194304_001/model_latest.zip",
+      "episodes": 100,
+      "success_rate": 0.28,
+      "pre_near_goal_hit_rate": 0.92,
+      "near_goal_hit_rate": 0.46,
+      "mean_min_position_error": 0.0334705013457253,
+      "failed_due_to_dwell_count": 18,
+      "mean_time_to_enter_near_goal": 16.065217391304348,
+      "average_action_magnitude": 0.7986778405848217
+    }
+  ]
+}

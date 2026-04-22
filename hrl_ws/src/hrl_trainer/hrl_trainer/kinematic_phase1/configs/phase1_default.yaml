@@ -1,0 +1,75 @@
+env:
+  n_joints: 7
+  goal_sample_margin_fraction: 0.10
+  start_sample_margin_fraction: 0.20
+  episode_length: 20
+  observation:
+    pos_err_scale_m: 0.5
+    ori_err_scale_rad: 3.141592653589793
+  reward:
+    position_progress_weight: 8.0
+    orientation_progress_weight: 1.5
+    pre_near_goal_pos_threshold_m: 0.12
+    near_goal_pos_threshold_m: 0.08
+    near_goal_ori_threshold_rad: 0.10
+    use_orientation_gate: true
+    pre_near_goal_bonus: 0.03
+    near_goal_bonus: 0.10
+    dwell_bonus: 0.12
+    drift_penalty_weight: 3.0
+    action_magnitude_weight: 0.002
+    action_delta_weight: 0.004
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 1.0
+  termination:
+    max_episode_steps: 20
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 3
+    require_orientation: true
+  curriculum:
+    enabled: true
+    success_rate_threshold: 0.80
+    window_episodes: 20
+    min_episodes_per_stage: 30
+    stages:
+      - name: region_small
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.01, 0.03, 0.04, 0.03, 0.02, 0.02, 0.01]
+      - name: region_medium
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.02, 0.06, 0.08, 0.06, 0.04, 0.04, 0.03]
+      - name: region_medium_wide
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.03, 0.09, 0.12, 0.09, 0.06, 0.05, 0.04]
+      - name: region_large
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.04, 0.12, 0.16, 0.12, 0.08, 0.06, 0.05]
+      - name: region_large_offset
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.0, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+        goal_q: [0.03, -0.04, 0.05, -0.03, 0.02, -0.01, 0.01]
+        goal_noise: [0.05, 0.14, 0.18, 0.14, 0.09, 0.07, 0.06]
+      - name: region_wide_local_random
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.0, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.06, 0.18, 0.22, 0.16, 0.10, 0.08, 0.07]
+eval:
+  suite_seed: 700001
+  episodes: 20
+  regression_tolerance_m: 0.01
+training:
+  checkpoint_freq: 20000
+  n_envs: 16
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+algorithms:
+  td3: {}
+  ppo: {}

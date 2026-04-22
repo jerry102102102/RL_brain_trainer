@@ -1,0 +1,18 @@
+switch:
+  dock_enter_pos_threshold_m: 0.03
+  dock_enter_ori_threshold_rad: 3.2
+  dock_enter_dwell_steps: 2
+  dock_enter_action_threshold: 0.35
+  dock_enter_regression_threshold_m: 0.01
+  dock_enter_confirm_steps: 2
+  dock_exit_pos_threshold_m: 0.05
+  dock_exit_ori_threshold_rad: 3.2
+  dock_exit_regression_threshold_m: 0.03
+  dock_exit_confirm_steps: 2
+  dock_timeout_steps: 8
+  dock_timeout_min_improvement_m: 0.01
+  min_approach_steps_before_switch: 3
+eval:
+  suite_seed: 700001
+  episodes: 20
+  regression_tolerance_m: 0.01
