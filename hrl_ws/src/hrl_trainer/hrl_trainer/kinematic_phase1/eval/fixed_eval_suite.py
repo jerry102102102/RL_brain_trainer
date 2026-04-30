@@ -20,13 +20,20 @@ class EvalEpisodeSpec:
     initial_q: list[float]
     goal_q: list[float]
     goal_pose6: list[float]
+    initial_dq: list[float] | None = None
+    initial_prev_action: list[float] | None = None
 
     def reset_options(self) -> dict[str, list[float]]:
-        return {
+        options = {
             "initial_q": self.initial_q,
             "goal_q": self.goal_q,
             "goal_pose6": self.goal_pose6,
         }
+        if self.initial_dq is not None:
+            options["initial_dq"] = self.initial_dq
+        if self.initial_prev_action is not None:
+            options["initial_prev_action"] = self.initial_prev_action
+        return options
 
 
 def build_fixed_eval_suite(
@@ -120,6 +127,8 @@ def build_dock_eval_suite(
                 initial_q=sample.initial_q.tolist(),
                 goal_q=sample.goal_q.tolist(),
                 goal_pose6=sample.goal_pose6.tolist(),
+                initial_dq=sample.initial_dq.tolist() if sample.initial_dq is not None else None,
+                initial_prev_action=sample.initial_prev_action.tolist() if sample.initial_prev_action is not None else None,
             )
         )
     return episodes

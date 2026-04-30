@@ -1,0 +1,141 @@
+env:
+  mode: dock
+  n_joints: 7
+  action_delta_scale: 0.012
+  episode_length: 36
+  observation:
+    pos_err_scale_m: 0.50
+    ori_err_scale_rad: 3.141592653589793
+
+  reward:
+    pre_near_goal_pos_threshold_m: 0.03
+    near_goal_pos_threshold_m: 0.015
+    near_goal_ori_threshold_rad: 0.08
+    use_orientation_gate: true
+    position_progress_weight: 0.0
+    orientation_progress_weight: 0.0
+
+  dock_reward:
+    # No-op handoff adaptation: if Approach already gives a good state, Dock
+    # should preserve it with tiny actions rather than aggressively re-dock.
+    position_progress_weight: 0.25
+    orientation_progress_weight: 0.20
+    stay_in_zone_bonus: 0.0
+    dwell_bonus: 0.0
+    leave_zone_penalty: 0.0
+    drift_penalty_position_weight: 10.0
+    drift_penalty_orientation_weight: 4.0
+    action_magnitude_weight: 0.85
+    action_delta_weight: 1.10
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 0.08
+
+    tight_pose_pos_threshold_m: 0.005
+    tight_pose_ori_threshold_rad: 0.05
+    tight_pose_bonus: 0.015
+    tight_pose_dwell_bonus: 0.035
+    strict_pose_leave_penalty: 2.20
+    strict_center_reward_weight: 0.20
+    strict_center_position_weight: 0.25
+    strict_center_orientation_weight: 0.10
+    strict_center_small_action_bonus_weight: 0.95
+    strict_center_small_action_pos_radius_m: 0.0055
+    strict_center_small_action_ori_radius_rad: 0.05
+    strict_center_small_action_scale: 0.035
+    strict_center_small_action_power: 2.5
+    strict_center_dwell_bonus_weight: 0.35
+    strict_center_dwell_start: 2
+    strict_center_dwell_escalation_start: 5
+    strict_center_dwell_escalation_per_step: 0.08
+    strict_zone_drift_penalty_multiplier: 3.0
+    strict_zone_action_penalty_multiplier: 3.5
+
+    tight_position_shaping_radius_m: 0.006
+    tight_position_shaping_weight: 0.015
+    tight_orientation_shaping_radius_rad: 0.05
+    tight_orientation_shaping_weight: 0.010
+
+    convergence_position_radius_m: 0.008
+    convergence_position_progress_weight: 0.60
+    convergence_orientation_radius_rad: 0.05
+    convergence_orientation_progress_weight: 0.35
+    position_first_orientation_pos_threshold_m: 0.006
+    position_first_orientation_pre_scale: 0.35
+
+    action_delta_violation_threshold: 0.018
+    action_delta_violation_weight: 7.0
+    delta_q_change_penalty_threshold: 0.006
+    delta_q_change_penalty_weight: 6.0
+
+    near_strict_pos_threshold_m: 0.006
+    near_strict_ori_threshold_rad: 0.06
+    preserve_state_bonus: 0.55
+    preserve_position_tolerance_m: 0.0006
+    preserve_orientation_tolerance_rad: 0.004
+    strict_hold_bonus: 0.42
+    low_motion_bonus: 0.60
+    low_motion_action_threshold: 0.045
+    low_motion_dq_threshold: 0.002
+    tiny_correction_bonus: 0.025
+    tiny_correction_action_threshold: 0.045
+    worse_than_entry_position_weight: 42.0
+    worse_than_entry_orientation_weight: 7.0
+    worse_than_entry_position_tolerance_m: 0.0008
+    worse_than_entry_orientation_tolerance_rad: 0.006
+    near_strict_regression_multiplier: 2.4
+    aggressive_action_weight: 0.70
+    aggressive_action_threshold: 0.080
+    dq_penalty_weight: 0.55
+    dq_penalty_threshold: 0.003
+    near_strict_action_penalty_multiplier: 3.0
+    near_strict_dq_penalty_multiplier: 3.0
+
+  dock_reset:
+    goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    goal_noise: [0.25, 1.80, 1.80, 1.80, 1.50, 2.20, 1.50]
+    init_q_noise: [0.001, 0.002, 0.003, 0.002, 0.0015, 0.0015, 0.001]
+    close_bucket_probability: 0.3
+    close_init_q_noise: [0.002, 0.004, 0.006, 0.004, 0.003, 0.003, 0.002]
+    close_bucket_min_pos_error_m: 0.0005
+    close_bucket_max_pos_error_m: 0.004
+    close_bucket_max_ori_error_rad: 0.04
+    handoff_state_probability: 0.90
+    handoff_state_buffer_path: artifacts/kinematic_phase1/phase1c/handoff_buffer_approach_v2_settle_for_dock_001/handoff_state_buffer.json
+    handoff_state_max_position_error_m: 0.006
+    handoff_state_max_orientation_error_rad: 0.06
+    handoff_state_max_action_l2: 0.25
+
+  termination:
+    max_episode_steps: 36
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 5
+    require_orientation: true
+    terminate_on_success: false
+
+  curriculum:
+    enabled: false
+
+eval:
+  suite_seed: 700001
+  episodes: 80
+  regression_tolerance_m: 0.005
+
+training:
+  checkpoint_freq: 50000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 500000
+    seed: 7
+    learning_rate: 0.000005
+    n_steps: 256
+    batch_size: 256
+    n_epochs: 6
+    gamma: 0.98
+    gae_lambda: 0.95
+    clip_range: 0.10

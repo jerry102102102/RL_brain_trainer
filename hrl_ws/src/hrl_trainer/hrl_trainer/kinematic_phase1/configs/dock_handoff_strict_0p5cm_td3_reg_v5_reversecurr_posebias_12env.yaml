@@ -1,0 +1,157 @@
+env:
+  mode: dock
+  n_joints: 7
+  action_delta_scale: 0.011
+  dock_residual_action_limit: 0.11
+  dock_delta_q_change_limit_scale: 0.08
+  episode_length: 32
+  observation:
+    pos_err_scale_m: 0.50
+    ori_err_scale_rad: 3.141592653589793
+
+  reward:
+    position_progress_weight: 0.0
+    orientation_progress_weight: 0.0
+
+  dock_reward:
+    position_progress_weight: 1.2
+    orientation_progress_weight: 1.2
+    stay_in_zone_bonus: 0.0
+    dwell_bonus: 0.0
+    leave_zone_penalty: 0.0
+    drift_penalty_position_weight: 4.2
+    drift_penalty_orientation_weight: 2.4
+    action_magnitude_weight: 0.18
+    action_delta_weight: 0.26
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 0.25
+
+    tight_pose_pos_threshold_m: 0.005
+    tight_pose_ori_threshold_rad: 0.05
+    tight_pose_bonus: 0.03
+    tight_pose_dwell_bonus: 0.06
+    strict_pose_leave_penalty: 1.2
+    strict_center_reward_weight: 0.95
+    strict_center_position_weight: 0.95
+    strict_center_orientation_weight: 0.18
+    strict_center_small_action_bonus_weight: 0.18
+    strict_center_small_action_pos_radius_m: 0.0055
+    strict_center_small_action_ori_radius_rad: 0.05
+    strict_center_small_action_scale: 0.05
+    strict_center_small_action_power: 3.0
+    strict_zone_drift_penalty_multiplier: 1.9
+    strict_zone_action_penalty_multiplier: 2.0
+
+    tight_position_shaping_radius_m: 0.0
+    tight_position_shaping_weight: 0.0
+    tight_orientation_shaping_radius_rad: 0.0
+    tight_orientation_shaping_weight: 0.0
+
+    convergence_position_radius_m: 0.012
+    convergence_position_progress_weight: 4.2
+    convergence_orientation_radius_rad: 0.05
+    convergence_orientation_progress_weight: 1.2
+    position_first_orientation_pos_threshold_m: 0.0075
+    position_first_orientation_pre_scale: 0.20
+
+  dock_reset:
+    goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    goal_noise: [0.25, 1.80, 1.80, 1.80, 1.50, 2.20, 1.50]
+    init_q_noise: [0.0030, 0.0060, 0.0090, 0.0060, 0.0045, 0.0045, 0.0030]
+    close_bucket_probability: 1.0
+    close_init_q_noise: [0.0060, 0.0120, 0.0180, 0.0120, 0.0090, 0.0090, 0.0060]
+    close_bucket_min_pos_error_m: 0.007
+    close_bucket_max_pos_error_m: 0.010
+    close_bucket_max_ori_error_rad: 0.10
+
+  termination:
+    max_episode_steps: 32
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 5
+    require_orientation: true
+    terminate_on_success: false
+
+  curriculum:
+    enabled: false
+
+eval:
+  suite_seed: 700001
+  episodes: 50
+  regression_tolerance_m: 0.005
+
+training:
+  checkpoint_freq: 50000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+  dock_reverse_curriculum:
+    enabled: true
+    window_episodes: 120
+    stages:
+      - name: anchor_hold
+        min_episodes: 400
+        window_episodes: 80
+        success_rate_threshold: 0.85
+        action_delta_scale: 0.0075
+        dock_residual_action_limit: 0.07
+        dock_delta_q_change_limit_scale: 0.05
+        close_bucket_probability: 1.0
+        close_bucket_min_pos_error_m: 0.0010
+        close_bucket_max_pos_error_m: 0.0025
+        close_bucket_max_ori_error_rad: 0.030
+        close_init_q_noise: [0.0010, 0.0020, 0.0030, 0.0020, 0.0015, 0.0015, 0.0010]
+      - name: micro_capture
+        min_episodes: 500
+        window_episodes: 100
+        success_rate_threshold: 0.80
+        action_delta_scale: 0.0085
+        dock_residual_action_limit: 0.08
+        dock_delta_q_change_limit_scale: 0.06
+        close_bucket_probability: 1.0
+        close_bucket_min_pos_error_m: 0.0025
+        close_bucket_max_pos_error_m: 0.0045
+        close_bucket_max_ori_error_rad: 0.040
+        close_init_q_noise: [0.0015, 0.0030, 0.0045, 0.0030, 0.0025, 0.0025, 0.0015]
+      - name: local_capture
+        min_episodes: 600
+        window_episodes: 100
+        success_rate_threshold: 0.74
+        action_delta_scale: 0.0095
+        dock_residual_action_limit: 0.09
+        dock_delta_q_change_limit_scale: 0.07
+        close_bucket_probability: 1.0
+        close_bucket_min_pos_error_m: 0.0045
+        close_bucket_max_pos_error_m: 0.0070
+        close_bucket_max_ori_error_rad: 0.060
+        close_init_q_noise: [0.0025, 0.0050, 0.0075, 0.0050, 0.0035, 0.0035, 0.0025]
+      - name: handoff_edge
+        min_episodes: 700
+        window_episodes: 120
+        success_rate_threshold: 0.66
+        action_delta_scale: 0.011
+        dock_residual_action_limit: 0.11
+        dock_delta_q_change_limit_scale: 0.08
+        close_bucket_probability: 1.0
+        close_bucket_min_pos_error_m: 0.0070
+        close_bucket_max_pos_error_m: 0.0100
+        close_bucket_max_ori_error_rad: 0.100
+        close_init_q_noise: [0.0060, 0.0120, 0.0180, 0.0120, 0.0090, 0.0090, 0.0060]
+
+algorithms:
+  td3:
+    total_timesteps: 1400000
+    seed: 7
+    learning_rate: 0.00008
+    buffer_size: 300000
+    learning_starts: 5000
+    batch_size: 256
+    train_freq: 1
+    gradient_steps: 1
+    tau: 0.005
+    gamma: 0.99
+    policy_delay: 2
+    target_policy_noise: 0.015
+    target_noise_clip: 0.03
+    exploration_noise_std: 0.008

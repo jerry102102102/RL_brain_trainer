@@ -15,6 +15,12 @@
 
 > 當前主軸已收斂到 **V5.1：L2 joint-space SAC + L3 deterministic safety execution**。
 
+- Phase 1 kinematic Approach -> Dock closeout:
+  - `docs/PHASE1_APPROACH_DOCK_CLOSEOUT.md`
+  - Current conclusion: the pure kinematic two-policy pipeline is successful
+    within the current curriculum workspace; remaining work is workspace
+    expansion and precision refinement, not basic Approach/Dock viability.
+
 - Stage closeout summaries for the current maintained branch:
   - `V5_1_STAGE_SUMMARY.md`
   - `V5_1_EXECUTIVE_SUMMARY.md`

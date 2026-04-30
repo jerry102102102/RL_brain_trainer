@@ -1,0 +1,137 @@
+env:
+  mode: dock
+  n_joints: 7
+  # Capture policy: position starts near enough for Approach handoff, but
+  # orientation is intentionally imperfect. The goal is to expand Dock from a
+  # hold-only controller into a 1.0 rad orientation capture controller.
+  action_delta_scale: 0.055
+  dock_residual_action_limit: 0.34
+  dock_delta_q_change_limit_scale: 0.20
+  episode_length: 56
+  observation:
+    pos_err_scale_m: 0.50
+    ori_err_scale_rad: 3.141592653589793
+
+  reward:
+    position_progress_weight: 0.0
+    orientation_progress_weight: 0.0
+    pre_near_goal_pos_threshold_m: 0.030
+    near_goal_pos_threshold_m: 0.030
+    near_goal_ori_threshold_rad: 3.20
+    use_orientation_gate: false
+
+  dock_reward:
+    # In capture, orientation cleanup is the first-class objective, but
+    # position must remain inside the handoff working range.
+    position_progress_weight: 1.6
+    orientation_progress_weight: 5.0
+    stay_in_zone_bonus: 0.10
+    dwell_bonus: 0.08
+    leave_zone_penalty: 0.55
+    working_range_bonus: 0.10
+    working_range_dwell_bonus: 0.06
+    working_range_dwell_start: 2
+    working_range_exit_penalty: 0.65
+    drift_penalty_position_weight: 9.0
+    drift_penalty_orientation_weight: 5.0
+    action_magnitude_weight: 0.040
+    action_delta_weight: 0.070
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 3.0
+
+    basin_outer_radius_m: 0.030
+    basin_inner_radius_m: 0.015
+    basin_dwell_radius_m: 0.008
+    basin_outer_bonus: 0.08
+    basin_inner_bonus: 0.16
+    basin_dwell_bonus: 0.28
+    basin_outer_exit_penalty: 0.45
+    basin_inner_exit_penalty: 0.55
+    basin_dwell_break_penalty: 0.65
+    basin_drift_penalty_weight: 10.0
+
+    tight_pose_pos_threshold_m: 0.005
+    tight_pose_ori_threshold_rad: 0.05
+    tight_pose_bonus: 0.12
+    tight_pose_dwell_bonus: 0.24
+    strict_pose_leave_penalty: 1.4
+    strict_center_reward_weight: 0.55
+    strict_center_position_weight: 0.30
+    strict_center_orientation_weight: 0.35
+    strict_center_small_action_bonus_weight: 0.10
+    strict_center_small_action_pos_radius_m: 0.0055
+    strict_center_small_action_ori_radius_rad: 0.05
+    strict_center_small_action_scale: 0.08
+    strict_center_small_action_power: 2.0
+    strict_center_dwell_bonus_weight: 0.12
+    strict_center_dwell_start: 3
+    strict_center_dwell_escalation_start: 6
+    strict_center_dwell_escalation_per_step: 0.05
+    strict_zone_drift_penalty_multiplier: 1.8
+    strict_zone_action_penalty_multiplier: 1.8
+
+    convergence_position_radius_m: 0.030
+    convergence_position_progress_weight: 2.0
+    convergence_orientation_radius_rad: 1.20
+    convergence_orientation_progress_weight: 5.0
+    position_first_orientation_pos_threshold_m: 0.0
+    position_first_orientation_pre_scale: 1.0
+
+    action_delta_violation_threshold: 0.12
+    action_delta_violation_weight: 0.55
+    delta_q_change_penalty_threshold: 0.018
+    delta_q_change_penalty_weight: 0.55
+
+  dock_reset:
+    close_bucket_probability: 1.0
+    close_init_q_noise: [0.0250, 0.1200, 0.1600, 0.1600, 0.1800, 0.2600, 0.1800]
+    close_bucket_min_pos_error_m: 0.0050
+    close_bucket_max_pos_error_m: 0.0150
+    close_bucket_min_ori_error_rad: 0.20
+    close_bucket_max_ori_error_rad: 1.00
+    close_bucket_max_attempts: 2048
+    handoff_state_probability: 0.50
+    handoff_state_buffer_path: "/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/artifacts/kinematic_phase1/phase1c/dock_capture_ori1p0_handoff_buffer/handoff_state_buffer.json"
+    handoff_state_max_position_error_m: 0.030
+    handoff_state_max_orientation_error_rad: 1.50
+    handoff_state_max_action_l2: 0.60
+
+  termination:
+    max_episode_steps: 56
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 5
+    require_orientation: true
+    terminate_on_success: false
+
+  curriculum:
+    enabled: false
+
+eval:
+  suite_seed: 700001
+  episodes: 100
+  regression_tolerance_m: 0.005
+
+training:
+  checkpoint_freq: 50000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  td3:
+    total_timesteps: 1048576
+    seed: 7
+    learning_rate: 0.00008
+    buffer_size: 400000
+    learning_starts: 5000
+    batch_size: 256
+    train_freq: 1
+    gradient_steps: 1
+    tau: 0.005
+    gamma: 0.99
+    policy_delay: 2
+    target_policy_noise: 0.020
+    target_noise_clip: 0.040
+    exploration_noise_std: 0.025

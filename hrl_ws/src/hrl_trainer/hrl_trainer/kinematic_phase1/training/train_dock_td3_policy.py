@@ -65,6 +65,7 @@ def main() -> None:  # pragma: no cover - CLI integration
     from stable_baselines3 import TD3
     from stable_baselines3.common.callbacks import CallbackList
     from stable_baselines3.common.env_util import make_vec_env
+    from stable_baselines3.common.utils import get_schedule_fn
     from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
     parser = build_arg_parser()
@@ -106,6 +107,7 @@ def main() -> None:  # pragma: no cover - CLI integration
         if "learning_rate" in model_kwargs:
             learning_rate = float(model_kwargs["learning_rate"])
             model.learning_rate = learning_rate
+            model.lr_schedule = get_schedule_fn(learning_rate)
             for param_group in model.actor.optimizer.param_groups:
                 param_group["lr"] = learning_rate
             for param_group in model.critic.optimizer.param_groups:

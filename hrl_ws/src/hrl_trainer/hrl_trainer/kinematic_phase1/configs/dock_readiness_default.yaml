@@ -1,0 +1,15 @@
+readiness:
+  threshold: 0.50
+  val_fraction: 0.20
+  seed: 17
+  epochs: 80
+  batch_size: 64
+  learning_rate: 0.001
+  hidden_sizes: [128, 64]
+  positive_weight: auto
+
+eval:
+  suite_seed: 700001
+  episodes: 50
+  regression_tolerance_m: 0.008
+

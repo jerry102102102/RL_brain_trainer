@@ -1,0 +1,76 @@
+env:
+  mode: bridge
+  episode_length: 112
+  action_delta_scale: 0.10
+  reward:
+    pre_near_goal_pos_threshold_m: 0.080
+    near_goal_pos_threshold_m: 0.080
+    near_goal_ori_threshold_rad: 10.0
+    use_orientation_gate: false
+  termination:
+    max_episode_steps: 112
+    success_pos_threshold_m: 0.030
+    success_ori_threshold_rad: 0.60
+    success_dwell_steps: 1
+    require_orientation: true
+    terminate_on_success: true
+
+bridge:
+  reset:
+    handoff_dataset_path: artifacts/kinematic_phase1/phase1c/handoff_v1/handoff_dataset.jsonl
+    max_position_error_m: 0.030
+    max_orientation_error_rad: 4.10
+    dirty_orientation_min_rad: 1.0
+    dirty_motion_min_norm: 0.20
+    dirty_orientation_probability: 0.85
+    dirty_motion_probability: 0.00
+    mixed_dirty_probability: 0.15
+    perturb_q_noise: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+  reward:
+    position_keep_radius_m: 0.080
+    position_progress_weight: 0.35
+    orientation_progress_weight: 18.0
+    orientation_reward_requires_position: true
+    position_keep_bonus: 0.05
+    position_soft_keep_weight: 25.0
+    orientation_center_weight: 0.16
+    orientation_milestone_thresholds_rad: [2.0, 1.5, 1.0, 0.75, 0.60]
+    orientation_milestone_bonuses: [0.06, 0.12, 0.24, 0.45, 0.90]
+    realign_return_enabled: false
+    coarse_orientation_threshold_rad: 0.60
+    coarse_orientation_bonus: 2.5
+    return_position_progress_weight: 0.0
+    return_position_center_weight: 0.0
+    return_position_bonus: 0.0
+    return_orientation_progress_weight: 0.0
+    motion_cleanup_weight: 0.03
+    action_magnitude_weight: 0.035
+    action_delta_weight: 0.055
+    leave_near_goal_penalty: 4.0
+    terminate_on_leave_near_goal: false
+    position_regression_weight: 2.0
+    orientation_regression_weight: 20.0
+    joint_limit_penalty_weight: 0.05
+    acceptance_region_bonus: 10.0
+    acceptance_pos_threshold_m: 0.030
+    acceptance_ori_threshold_rad: 0.60
+    success_bonus: 15.0
+
+training:
+  checkpoint_freq: 50000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 524288
+    seed: 91
+    learning_rate: 0.00003
+    n_steps: 1024
+    batch_size: 256
+    n_epochs: 8
+    gamma: 0.995
+    gae_lambda: 0.95
+    clip_range: 0.15

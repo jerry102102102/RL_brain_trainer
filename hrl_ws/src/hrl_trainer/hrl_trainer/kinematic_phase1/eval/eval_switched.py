@@ -15,6 +15,27 @@ from .fixed_eval_suite import build_curriculum_local_eval_suite, build_fixed_eva
 from .metrics import EvalConfig
 
 
+def _merge_switched_env_config(approach_env_config, dock_env_config):
+    """Build the shared switched env while preserving dock-time runtime controls."""
+
+    return replace(
+        approach_env_config,
+        dock_action_delta_scale=dock_env_config.action_delta_scale,
+        dwell_steps_target=dock_env_config.dwell_steps_target,
+        dock_reward_config=dock_env_config.dock_reward_config,
+        dock_reset_config=dock_env_config.dock_reset_config,
+        dock_residual_action_limit=dock_env_config.dock_residual_action_limit,
+        dock_delta_q_change_limit_scale=dock_env_config.dock_delta_q_change_limit_scale,
+        dock_dynamic_action_limit_near_pos_threshold_m=dock_env_config.dock_dynamic_action_limit_near_pos_threshold_m,
+        dock_dynamic_action_limit_far_pos_threshold_m=dock_env_config.dock_dynamic_action_limit_far_pos_threshold_m,
+        dock_dynamic_residual_action_limit_near=dock_env_config.dock_dynamic_residual_action_limit_near,
+        dock_dynamic_residual_action_limit_far=dock_env_config.dock_dynamic_residual_action_limit_far,
+        dock_dynamic_delta_q_change_limit_scale_near=dock_env_config.dock_dynamic_delta_q_change_limit_scale_near,
+        dock_dynamic_delta_q_change_limit_scale_far=dock_env_config.dock_dynamic_delta_q_change_limit_scale_far,
+        termination_config=dock_env_config.termination_config,
+    )
+
+
 def evaluate_switched_policies(
     *,
     approach_algorithm: str,
@@ -37,14 +58,7 @@ def evaluate_switched_policies(
         suite = build_fixed_eval_suite(seed=eval_config.suite_seed, n_episodes=eval_config.episodes, joint_specs=approach_env_config.joint_specs)
         scope = "fixed_random"
 
-    merged_env_config = replace(
-        approach_env_config,
-        dock_reward_config=dock_env_config.dock_reward_config,
-        dock_reset_config=dock_env_config.dock_reset_config,
-        dock_residual_action_limit=dock_env_config.dock_residual_action_limit,
-        dock_delta_q_change_limit_scale=dock_env_config.dock_delta_q_change_limit_scale,
-        termination_config=dock_env_config.termination_config,
-    )
+    merged_env_config = _merge_switched_env_config(approach_env_config, dock_env_config)
     env = ArmKinematicEnv(config=merged_env_config)
     env.set_curriculum_stage(stage_index)
     episode_metrics: list[dict[str, object]] = []

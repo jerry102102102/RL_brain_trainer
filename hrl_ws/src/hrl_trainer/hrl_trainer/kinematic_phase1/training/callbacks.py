@@ -135,6 +135,11 @@ class DockReverseCurriculumCallback(BaseCallback):  # pragma: no cover - exercis
             "close_bucket_max_ori_error_rad",
             "close_init_q_noise",
             "init_q_noise",
+            "handoff_state_probability",
+            "handoff_state_buffer_path",
+            "handoff_state_max_position_error_m",
+            "handoff_state_max_orientation_error_rad",
+            "handoff_state_max_action_l2",
         ):
             if key in stage:
                 payload["dock_reset"][key] = stage[key]

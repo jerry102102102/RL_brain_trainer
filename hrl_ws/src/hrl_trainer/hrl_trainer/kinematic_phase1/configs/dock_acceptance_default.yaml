@@ -1,0 +1,24 @@
+acceptance:
+  seed: 700777
+  base_state_count: 20
+  samples_per_bucket: 4
+  source: clean_reset
+  position_buckets_m:
+    - [0.0, 0.005]
+    - [0.005, 0.010]
+    - [0.010, 0.020]
+    - [0.020, 0.040]
+  orientation_buckets_rad:
+    - [0.0, 0.05]
+    - [0.05, 0.20]
+    - [0.20, 0.50]
+    - [0.50, 1.00]
+    - [1.00, 2.00]
+    - [2.00, 3.20]
+  dq_norm_values: [0.0]
+  prev_action_norm_values: [0.0]
+
+labeling:
+  dock_rollout_horizon: 32
+  regression_tolerance_m: 0.008
+

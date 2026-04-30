@@ -1,0 +1,19 @@
+handoff:
+  candidate_pos_threshold_m: 0.030
+  max_samples: 500
+  rollout_episodes: 200
+  suite_seed: 700001
+  min_steps_between_samples: 1
+  include_pre_near_goal: true
+  include_near_goal: true
+  switch_rule:
+    dock_enter_pos_threshold_m: 0.009
+    dock_enter_ori_threshold_rad: 3.2
+    dock_enter_dwell_steps: 2
+    dock_enter_action_threshold: 0.30
+    dock_enter_regression_threshold_m: 0.003
+
+labeling:
+  dock_rollout_horizon: 32
+  regression_tolerance_m: 0.008
+

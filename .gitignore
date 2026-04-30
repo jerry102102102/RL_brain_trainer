@@ -38,6 +38,12 @@ artifacts/wp0/rosbag_print_commands.json
 artifacts/wp0/scene_colcon_build.log
 artifacts/wp0/scene_launch.log
 
+# --- Phase 1 kinematic training outputs ---
+# Model checkpoints, tensorboard logs, sweeps, and evaluation dumps are large
+# local research artifacts. Keep code/configs/docs in git, but not generated
+# training runs.
+artifacts/kinematic_phase1/
+
 # --- Nested project caches ---
 external/**/__pycache__/
 hrl_ws/**/__pycache__/

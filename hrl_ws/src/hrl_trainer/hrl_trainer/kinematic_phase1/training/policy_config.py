@@ -17,6 +17,9 @@ from ..envs.reward_dock import DockRewardConfig
 from ..envs.termination import TerminationConfig
 from ..eval.metrics import EvalConfig
 from ..kinematics.joint_limits import default_joint_specs
+from ..bridge.bridge_reset_samplers import BridgeResetConfig
+from ..bridge.reward_bridge import BridgeRewardConfig
+from ..dock_coarse.reward_dock_coarse import DockCoarseRewardConfig
 
 
 def _repo_root_from_file(path: Path) -> Path:
@@ -58,6 +61,14 @@ def switch_default_config_path() -> Path:
     return config_dir() / "switch_default.yaml"
 
 
+def bridge_default_config_path() -> Path:
+    return config_dir() / "bridge_default.yaml"
+
+
+def dock_coarse_default_config_path() -> Path:
+    return config_dir() / "dock_coarse_default.yaml"
+
+
 def load_yaml_file(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text()) or {}
 
@@ -86,7 +97,12 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
     env_cfg = config.get("env", {})
     reward_cfg = env_cfg.get("reward", {})
     dock_reward_cfg = env_cfg.get("dock_reward", {})
+    dock_coarse_cfg = config.get("dock_coarse", {})
+    dock_coarse_reward_cfg = dock_coarse_cfg.get("reward", env_cfg.get("dock_coarse_reward", {}))
     dock_reset_cfg = env_cfg.get("dock_reset", {})
+    bridge_cfg = config.get("bridge", {})
+    bridge_reward_cfg = bridge_cfg.get("reward", env_cfg.get("bridge_reward", {}))
+    bridge_reset_cfg = bridge_cfg.get("reset", env_cfg.get("bridge_reset", {}))
     termination_cfg = env_cfg.get("termination", {})
     observation_cfg = env_cfg.get("observation", {})
     curriculum_cfg = env_cfg.get("curriculum", {})
@@ -111,8 +127,15 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
         goal_sample_margin_fraction=float(env_cfg.get("goal_sample_margin_fraction", 0.10)),
         start_sample_margin_fraction=float(env_cfg.get("start_sample_margin_fraction", 0.20)),
         action_delta_scale=float(env_cfg.get("action_delta_scale", 1.0)),
+        dock_action_delta_scale=float(env_cfg.get("dock_action_delta_scale", 0.0)),
         dock_residual_action_limit=float(env_cfg.get("dock_residual_action_limit", 1.0)),
         dock_delta_q_change_limit_scale=float(env_cfg.get("dock_delta_q_change_limit_scale", 0.0)),
+        dock_dynamic_action_limit_near_pos_threshold_m=float(env_cfg.get("dock_dynamic_action_limit_near_pos_threshold_m", 0.0)),
+        dock_dynamic_action_limit_far_pos_threshold_m=float(env_cfg.get("dock_dynamic_action_limit_far_pos_threshold_m", 0.0)),
+        dock_dynamic_residual_action_limit_near=float(env_cfg.get("dock_dynamic_residual_action_limit_near", env_cfg.get("dock_residual_action_limit", 1.0))),
+        dock_dynamic_residual_action_limit_far=float(env_cfg.get("dock_dynamic_residual_action_limit_far", env_cfg.get("dock_residual_action_limit", 1.0))),
+        dock_dynamic_delta_q_change_limit_scale_near=float(env_cfg.get("dock_dynamic_delta_q_change_limit_scale_near", env_cfg.get("dock_delta_q_change_limit_scale", 0.0))),
+        dock_dynamic_delta_q_change_limit_scale_far=float(env_cfg.get("dock_dynamic_delta_q_change_limit_scale_far", env_cfg.get("dock_delta_q_change_limit_scale", 0.0))),
         episode_length=int(env_cfg.get("episode_length", 75)),
         dwell_steps_target=int(termination_cfg.get("success_dwell_steps", 3)),
         curriculum_config=PointCurriculumConfig(
@@ -124,7 +147,10 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
         ),
         reward_config=ApproachRewardConfig(**reward_cfg),
         dock_reward_config=DockRewardConfig(**dock_reward_cfg),
+        dock_coarse_reward_config=DockCoarseRewardConfig(**dock_coarse_reward_cfg),
         dock_reset_config=DockResetConfig(**dock_reset_cfg) if dock_reset_cfg else DockResetConfig(),
+        bridge_reward_config=BridgeRewardConfig(**bridge_reward_cfg),
+        bridge_reset_config=BridgeResetConfig(**bridge_reset_cfg) if bridge_reset_cfg else BridgeResetConfig(),
         termination_config=TerminationConfig(**termination_cfg),
         observation_config=ObservationBuilderConfig(**observation_cfg),
     )
