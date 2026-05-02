@@ -1,0 +1,162 @@
+{
+  "backend": "mock_qwen",
+  "intent_resolution": {
+    "command": "MOVE_PLATE(shelf_A1, shelf_B1)",
+    "intent_packet": {
+      "constraints": {
+        "clearance_m": 0.02,
+        "speed_cap": "SLOW",
+        "timeout_s": 10.0
+      },
+      "grasp_hint": {
+        "approach_axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "pregrasp_offset": 0.08,
+        "wrist_yaw_range": [
+          -3.14,
+          3.14
+        ]
+      },
+      "object_id": "tray1",
+      "pick_pose_candidates": [
+        {
+          "approach_axis": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "pos_std": 0.001,
+          "pregrasp_offset": 0.08,
+          "rpy": [
+            3.14,
+            0.0,
+            0.0
+          ],
+          "score": 1.0,
+          "xyz": [
+            0.86,
+            -1.1,
+            1.32
+          ],
+          "yaw_std": 0.01
+        }
+      ],
+      "place_pose_candidates": [
+        {
+          "approach_axis": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "pos_std": 0.001,
+          "pregrasp_offset": 0.08,
+          "rpy": [
+            3.14,
+            0.0,
+            3.14
+          ],
+          "score": 1.0,
+          "xyz": [
+            -0.92,
+            -1.16,
+            1.22
+          ],
+          "yaw_std": 0.01
+        }
+      ],
+      "reachability_hint": {
+        "ik_feasible": true,
+        "min_clearance_est": 0.02,
+        "preferred_approach": "top_down"
+      },
+      "source_slot": "shelf_A1",
+      "subtask_graph": {
+        "nodes": [
+          "APPROACH",
+          "GRASP",
+          "LIFT",
+          "TRANSFER",
+          "PLACE",
+          "RETREAT"
+        ],
+        "recovery_edges": [
+          {
+            "from": "APPROACH",
+            "on_fail": "RETREAT"
+          },
+          {
+            "from": "GRASP",
+            "on_fail": "APPROACH"
+          },
+          {
+            "from": "PLACE",
+            "on_fail": "TRANSFER"
+          }
+        ]
+      },
+      "target_slot": "shelf_B1"
+    },
+    "next_recommended_tool": "prepare_phase1_skill_request",
+    "schema_version": "v5.qwen_mcp.intent_resolution.v1",
+    "status": "ok"
+  },
+  "model_text": "{\n  \"arguments\": {\n    \"constraints\": {\n      \"clearance_m\": 0.02,\n      \"speed_cap\": \"SLOW\",\n      \"timeout_s\": 10.0\n    },\n    \"object_id\": \"tray1\",\n    \"source_slot\": \"shelf_A1\",\n    \"target_slot\": \"shelf_B1\"\n  },\n  \"tool\": \"resolve_intent_packet\"\n}",
+  "prompt": "You are the L1 semantic task interpreter for a modular robot arm system.\nYour job is to select an object, source slot, target slot, and constraints.\nDo not output joint actions, trajectories, torques, delta_q, or raw controls.\nReturn exactly one JSON object with this schema:\n{\"tool\":\"resolve_intent_packet\",\"arguments\":{\"object_id\":\"...\",\"source_slot\":\"...\",\"target_slot\":\"...\",\"constraints\":{\"speed_cap\":\"SLOW\"}}}\n\nUser command: Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose.\n\nScene context JSON:\n{\n  \"available_high_level_pipeline\": {\n    \"action_contract\": \"normalized joint delta inside L2/L3 only; Qwen must not emit it\",\n    \"description\": \"U-shaped arm kinematic skill stack: approach, preserve pose, and insert/finish.\",\n    \"name\": \"phase1_approach_to_finisher\",\n    \"skills\": [\n      \"APPROACH\",\n      \"FINISHER\"\n    ]\n  },\n  \"forbidden_control_outputs\": [\n    \"delta_q\",\n    \"executor_command\",\n    \"joint_action\",\n    \"joint_trajectory\",\n    \"raw_action\",\n    \"spline_points\",\n    \"time_parameterized_trajectory\",\n    \"torque\",\n    \"trajectory_points\"\n  ],\n  \"known_objects\": [\n    \"tray1\"\n  ],\n  \"slots\": [\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        0.9,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_A1\"\n    },\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        0.7,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_A2\"\n    },\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        0.5,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_A3\"\n    },\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        -0.92,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_B1\"\n    },\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        -0.72,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_B2\"\n    },\n    {\n      \"allowed_objects\": [\n        \"tray1\"\n      ],\n      \"center_xyz\": [\n        -0.52,\n        -1.16,\n        1.22\n      ],\n      \"slot_id\": \"shelf_B3\"\n    }\n  ]\n}\n",
+  "skill_request": {
+    "boundary_note": "This request is intentionally high level. Qwen produced intent; L2/L3 own policy rollout, safety, and joint-level commands.",
+    "constraints": {
+      "clearance_m": 0.02,
+      "speed_cap": "SLOW",
+      "timeout_s": 10.0
+    },
+    "dry_run": true,
+    "object_id": "tray1",
+    "phase1_policy_assets": {
+      "approach_checkpoint": "artifacts/kinematic_phase1/phase1c/approach_finisher_ready_v2_settle_ft_786k_001/model_latest.zip",
+      "finisher_checkpoint": "artifacts/kinematic_phase1/phase1c/dock_workspace_handoff_noop_ft_1m_001/model_latest.zip"
+    },
+    "pipeline": "APPROACH -> FINISHER",
+    "schema_version": "v5.qwen_mcp.phase1_skill_request.v1",
+    "source_slot": "shelf_A1",
+    "status": "accepted_dry_run",
+    "target_pose": {
+      "approach_axis": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "pos_std": 0.001,
+      "pregrasp_offset": 0.08,
+      "rpy": [
+        3.14,
+        0.0,
+        3.14
+      ],
+      "score": 1.0,
+      "xyz": [
+        -0.92,
+        -1.16,
+        1.22
+      ],
+      "yaw_std": 0.01
+    },
+    "target_slot": "shelf_B1"
+  },
+  "tool_call": {
+    "arguments": {
+      "constraints": {
+        "clearance_m": 0.02,
+        "speed_cap": "SLOW",
+        "timeout_s": 10.0
+      },
+      "object_id": "tray1",
+      "source_slot": "shelf_A1",
+      "target_slot": "shelf_B1"
+    },
+    "tool": "resolve_intent_packet"
+  },
+  "user_command": "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose."
+}

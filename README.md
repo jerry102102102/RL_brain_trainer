@@ -15,6 +15,16 @@
 
 > 當前主軸已收斂到 **V5.1：L2 joint-space SAC + L3 deterministic safety execution**。
 
+- Phase 2 final demonstration / Qwen L1 bridge:
+  - `docs/PHASE2_FINAL_DEMONSTRATION_REPORT.md`
+  - `docs/V5_QWEN_MCP_BRIDGE.md`
+  - Evidence artifacts:
+    - `artifacts/v5/phase2_report/phase2_final_demonstration_report.pdf`
+    - `artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json`
+  - Current result: the kinematic arm skill stack is effectively complete for
+    the current trained workspace, and local Qwen can produce a validated
+    `IntentPacket` plus dry-run `APPROACH -> FINISHER` RL skill request.
+
 - Phase 1 kinematic Approach -> Dock closeout:
   - `docs/PHASE1_APPROACH_DOCK_CLOSEOUT.md`
   - Current conclusion: the pure kinematic two-policy pipeline is successful
@@ -54,6 +64,39 @@
   - `python -m hrl_trainer.v5_1.eval_deterministic_student ...`
 - This line is part of the same maintained branch state and is summarized in:
   - `V5_1_STAGE_SUMMARY.md`
+
+### Phase 2 Qwen L1 -> RL input demo
+The Qwen/VLM layer is connected as the L1 semantic interpreter, not as a raw
+motor controller. The first working path is:
+
+```text
+Qwen / LLM
+-> MCP tool call
+-> IntentPacket
+-> dry-run APPROACH -> FINISHER skill request
+```
+
+Run the deterministic mock backend:
+
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source hrl_ws/.venv/bin/activate
+export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend mock_qwen \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
+```
+
+Run with local Qwen:
+
+```bash
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend qwen_subprocess \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json
+```
 
 
 - 任務票（可直接執行）：`docs/V5_1_TASK_BOARD.md`

@@ -37,6 +37,41 @@ source .venv/bin/activate
   - `../V5_1_EXECUTIVE_SUMMARY.md`
   - `../V5_1_TIMELINE.md`
 
+### Phase 2：Qwen L1 bridge + kinematic RL skill handoff
+- 新增 Qwen-facing MCP / L1 client：
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_tools.py`
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_server.py`
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_l1_client.py`
+  - `src/hrl_trainer/hrl_trainer/v5/tools/qwenvl_text_runner.py`
+- Phase 2 報告與介面文件：
+  - `../docs/PHASE2_FINAL_DEMONSTRATION_REPORT.md`
+  - `../docs/V5_QWEN_MCP_BRIDGE.md`
+- Demo artifacts：
+  - `../artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json`
+  - `../artifacts/v5/phase2_report/phase2_final_demonstration_report.pdf`
+
+快速跑 L1 -> RL input demo：
+
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source hrl_ws/.venv/bin/activate
+export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend mock_qwen \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
+```
+
+若本機 Qwen runtime 可用，可改成：
+
+```bash
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend qwen_subprocess \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json
+```
+
 執行 V4（範例）
 ```bash
 python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
@@ -135,6 +170,34 @@ source .venv/bin/activate
   - `../V5_1_STAGE_SUMMARY.md`
   - `../V5_1_EXECUTIVE_SUMMARY.md`
   - `../V5_1_TIMELINE.md`
+
+### Phase 2: Qwen L1 bridge + kinematic RL skill handoff
+- New Qwen-facing MCP / L1 client:
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_tools.py`
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_server.py`
+  - `src/hrl_trainer/hrl_trainer/v5/qwen_l1_client.py`
+  - `src/hrl_trainer/hrl_trainer/v5/tools/qwenvl_text_runner.py`
+- Phase 2 report and interface docs:
+  - `../docs/PHASE2_FINAL_DEMONSTRATION_REPORT.md`
+  - `../docs/V5_QWEN_MCP_BRIDGE.md`
+- Demo artifacts:
+  - `../artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json`
+  - `../artifacts/v5/phase2_report/phase2_final_demonstration_report.pdf`
+
+Run the L1 -> RL input demo:
+
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source hrl_ws/.venv/bin/activate
+export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend mock_qwen \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
+```
+
+Use `--backend qwen_subprocess` to run the local Qwen model through the repo-tracked text runner.
 
 Run V4 (example)
 ```bash
