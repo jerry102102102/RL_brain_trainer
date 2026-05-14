@@ -1,0 +1,101 @@
+base_config: workspace_expansion_1h_extend.yaml
+
+env:
+  episode_length: 160
+  termination:
+    max_episode_steps: 160
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 2
+    require_orientation: true
+    terminate_on_success: false
+  workspace_stage_sampling:
+    enabled: true
+    current_stage_ratio: 0.48
+    previous_stage_ratio: 0.20
+    old_workspace_replay_ratio: 0.22
+    failure_replay_ratio: 0.10
+    old_workspace_max_stage_index: 7
+    random_start_pair_sampling:
+      enabled: true
+      # Phase 1-ish overnight mix: preserve known behavior while breaking the
+      # home-start dependency. Later eval decides if the frontier can be pushed.
+      home_start_ratio: 0.15
+      old_successful_start_ratio: 0.25
+      random_valid_q_start_ratio: 0.25
+      frontier_pair_ratio: 0.20
+      failure_recovery_start_ratio: 0.10
+      stress_start_ratio: 0.05
+      known_target_max_stage_index: 8
+      mixed_target_max_stage_index: 10
+      frontier_min_stage_index: 8
+      frontier_max_stage_index: 11
+      frontier_target_min_stage_index: 8
+      frontier_target_max_stage_index: 11
+      stress_target_min_stage_index: 9
+      stress_target_max_stage_index: 11
+      old_success_max_stage_index: 7
+      random_valid_start_margin_fraction: 0.12
+      stress_start_margin_fraction: 0.10
+      failure_recovery_q_noise: [0.035, 0.055, 0.055, 0.055, 0.045, 0.045, 0.035]
+      initial_dq_noise: [0.0008, 0.0008, 0.0008, 0.0008, 0.0008, 0.0008, 0.0008]
+      initial_prev_action_noise: [0.025, 0.025, 0.025, 0.025, 0.025, 0.025, 0.025]
+      min_pair_joint_l2: 0.04
+
+training:
+  checkpoint_freq: 200000
+  n_envs: 16
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 8000000
+    seed: 931
+    learning_rate: 2.0e-06
+    n_steps: 2048
+    batch_size: 512
+    n_epochs: 8
+    gamma: 0.995
+    gae_lambda: 0.95
+    clip_range: 0.08
+    ent_coef: 0.00025
+
+workspace_expansion:
+  init_approach_checkpoint: artifacts/kinematic_phase1/workspace_expansion/workspace_expand_stage10_11_ppo_1h_002/best_checkpoint/model_best_by_gate.zip
+  finisher_checkpoint: artifacts/kinematic_phase1/phase1c/dock_workspace_handoff_noop_ft_1m_001/model_latest.zip
+  finisher_config: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/dock_workspace_handoff_noop_ft_12env.yaml
+  start_stage_index: 8
+  eval_interval: 200000
+  gate_eval_episodes: 24
+  final_eval_episodes: 100
+  eval_seed: 760001
+  gate:
+    score_stage_index: 9
+    retention_stage_thresholds: [0.98, 0.98, 0.98, 0.95, 0.90, 0.90, 0.85, 0.75]
+    retention_stage0_4_success: 0.95
+    retention_stage5_success: 0.88
+    promotion_stage_success: 0.55
+    promotion_ready_rate: 0.60
+    max_mean_position_error_m: 0.024
+    max_mean_orientation_error_rad: 0.16
+
+full_workspace_randomstart:
+  run_id: workspace_full_coverage_randomstart_overnight_001
+  smoke_run_id: workspace_full_coverage_randomstart_smoke_001
+  target_stage_samples_per_stage: 96
+  target_random_samples: 384
+  start_stage_samples_per_stage: 64
+  start_random_samples: 384
+  pair_count: 2048
+  eval_episodes_per_split: 96
+  retention_gate:
+    stage0: 0.98
+    stage1: 0.98
+    stage2: 0.98
+    stage3: 0.95
+    stage4: 0.95
+    stage5: 0.90
+    stage6: 0.85
+    stage7: 0.75

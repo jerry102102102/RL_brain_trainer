@@ -1,0 +1,96 @@
+env:
+  mode: approach
+  n_joints: 7
+  action_delta_scale: 0.08
+  episode_length: 90
+  observation:
+    pos_err_scale_m: 1.50
+    ori_err_scale_rad: 3.141592653589793
+  reward:
+    position_progress_weight: 4.0
+    orientation_progress_weight: 1.0
+    pre_near_goal_pos_threshold_m: 0.12
+    near_goal_pos_threshold_m: 0.010
+    near_goal_ori_threshold_rad: 0.150
+    use_orientation_gate: true
+    success_bonus: 0.2
+  termination:
+    max_episode_steps: 90
+    success_pos_threshold_m: 0.010
+    success_ori_threshold_rad: 0.150
+    success_dwell_steps: 1
+    require_orientation: true
+    terminate_on_success: true
+  curriculum:
+    enabled: false
+
+route:
+  route_path: artifacts/kinematic_phase1/phase1c/scene_route_curriculum/tray1_holder1_to_8_route_q_dense.json
+  init_checkpoint: artifacts/kinematic_phase1/phase1c/approach_scene_route_curriculum_tray1_h1_to_h8_3m_001/model_latest.zip
+  reset:
+    mode: mixed_prefix_segment
+    min_route_index: 1
+    max_route_index: 20
+    segment_start_index: 1
+    segment_end_index: 20
+    prefix_start_reset_ratio: 0.10
+    random_prefix_reset_ratio: 0.55
+    segment_reset_ratio: 0.20
+    recovery_reset_ratio: 0.15
+    q_noise_std: 0.001
+    dq_noise_std: 0.0004
+    prev_action_noise_std: 0.015
+  curriculum:
+    prefix_stages: [20]
+    promotion_success_rate: 0.90
+    promotion_route_ready_hit_rate: 0.90
+    promotion_orientation_hit_rate: 0.90
+    promotion_max_regression_rate: 0.15
+    promotion_window_episodes: 256
+    min_episodes_per_stage: 1024
+  reward:
+    q_goal_progress_weight: 3.0
+    ee_position_progress_weight: 6.0
+    ee_orientation_progress_weight: 8.0
+    route_tangent_progress_weight: 0.35
+    same_step_route_ready_bonus: 2.5
+    route_ready_dwell_bonus: 1.0
+    low_motion_near_waypoint_bonus: 0.7
+    orientation_regression_penalty_weight: 6.0
+    q_route_regression_penalty_weight: 2.0
+    off_route_penalty_weight: 0.20
+    action_magnitude_weight: 0.025
+    action_delta_weight: 0.035
+    dq_penalty_weight: 0.9
+    no_progress_penalty: 0.02
+    route_ready_pos_threshold_m: 0.010
+    route_ready_ori_threshold_rad: 0.150
+    route_ready_q_threshold: 0.500
+    route_ready_action_threshold: 1.20
+    route_ready_dq_threshold: 0.040
+
+eval:
+  suite_seed: 700001
+  episodes: 120
+  regression_tolerance_m: 0.012
+
+training:
+  checkpoint_freq: 250000
+  n_envs: 16
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 1048576
+    seed: 809
+    learning_rate: 0.000012
+    n_steps: 1024
+    batch_size: 512
+    n_epochs: 6
+    gamma: 0.995
+    gae_lambda: 0.95
+    clip_range: 0.10
+    ent_coef: 0.0003
+

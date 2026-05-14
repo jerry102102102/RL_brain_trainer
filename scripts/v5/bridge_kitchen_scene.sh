@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-DEFAULT_SCENE_REPO="/home/jerry/.openclaw/workspace/repos/personal/ENPM662_Group4_FinalProject"
+DEFAULT_SCENE_REPO="$REPO_ROOT/external/ENPM662_Group4_FinalProject"
 DEFAULT_LINK_PATH="$REPO_ROOT/external/kitchen_scene"
 
 usage() {
@@ -72,7 +72,7 @@ ERR
 fi
 
 if [[ ! -d "$SCENE_REPO/.git" ]]; then
-  echo "WARNING: $SCENE_REPO exists but does not look like a git repo (.git missing)." >&2
+  echo "INFO: $SCENE_REPO exists without .git metadata; treating it as a vendored scene checkout."
 fi
 
 if [[ -L "$LINK_PATH" ]]; then

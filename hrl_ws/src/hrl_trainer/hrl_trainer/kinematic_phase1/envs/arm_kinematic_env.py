@@ -8,7 +8,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from .curriculum import PointCurriculumConfig
-from .reset_samplers import DockResetConfig, sample_approach_reset, sample_dock_reset
+from .reset_samplers import DockResetConfig, RouteResetConfig, sample_approach_reset, sample_dock_reset
 from .reward_approach import ApproachRewardConfig, compute_approach_reward
 from .reward_dock import DockRewardConfig, compute_dock_reward
 from ..kinematics.fk_interface import compute_ee_pose6, sample_reachable_target
@@ -37,6 +37,11 @@ class Phase1EnvConfig:
     goal_sample_margin_fraction: float = 0.10
     start_sample_margin_fraction: float = 0.20
     action_delta_scale: float = 1.0
+    dynamic_action_delta_scale_enabled: bool = False
+    dynamic_action_delta_scale_near_pos_threshold_m: float = 0.0
+    dynamic_action_delta_scale_far_pos_threshold_m: float = 0.0
+    dynamic_action_delta_scale_near_multiplier: float = 1.0
+    dynamic_action_delta_scale_far_multiplier: float = 1.0
     dock_action_delta_scale: float = 0.0
     dock_residual_action_limit: float = 1.0
     dock_delta_q_change_limit_scale: float = 0.0
@@ -49,10 +54,12 @@ class Phase1EnvConfig:
     episode_length: int = 75
     dwell_steps_target: int = 3
     curriculum_config: PointCurriculumConfig = field(default_factory=PointCurriculumConfig)
+    workspace_stage_sampling: dict[str, Any] = field(default_factory=dict)
     reward_config: ApproachRewardConfig = field(default_factory=ApproachRewardConfig)
     dock_reward_config: DockRewardConfig = field(default_factory=DockRewardConfig)
     dock_coarse_reward_config: DockCoarseRewardConfig = field(default_factory=DockCoarseRewardConfig)
     dock_reset_config: DockResetConfig = field(default_factory=DockResetConfig)
+    route_reset_config: RouteResetConfig = field(default_factory=RouteResetConfig)
     bridge_reward_config: BridgeRewardConfig = field(default_factory=BridgeRewardConfig)
     bridge_reset_config: BridgeResetConfig = field(default_factory=BridgeResetConfig)
     termination_config: TerminationConfig = field(default_factory=TerminationConfig)
@@ -162,6 +169,8 @@ class ArmKinematicEnv(EnvBase):
                     stage_index=self._curriculum_stage_index,
                     start_margin_fraction=self.config.start_sample_margin_fraction,
                     goal_margin_fraction=self.config.goal_sample_margin_fraction,
+                    route_reset_config=self.config.route_reset_config,
+                    workspace_stage_sampling=self.config.workspace_stage_sampling,
                 )
             self._q = reset_sample.initial_q
         if initial_dq is not None:
@@ -223,6 +232,8 @@ class ArmKinematicEnv(EnvBase):
         action_delta_scale = float(self.config.action_delta_scale)
         if self._policy_mode_name in {"dock", "dock_coarse"} and self.config.dock_action_delta_scale > 0.0:
             action_delta_scale = float(self.config.dock_action_delta_scale)
+        elif self._policy_mode_name not in {"dock", "dock_coarse"}:
+            action_delta_scale = self._dynamic_action_delta_scale(prev_pos_norm)
         max_delta_q = delta_limits(self.config.joint_specs) * action_delta_scale
         delta_q_cmd = action_arr * max_delta_q
         if self._policy_mode_name in {"dock", "dock_coarse"} and dynamic_dq_change_limit_scale > 0.0:
@@ -515,6 +526,20 @@ class ArmKinematicEnv(EnvBase):
             fallback=float(self.config.dock_delta_q_change_limit_scale),
         )
         return float(max(limit, 0.0))
+
+    def _dynamic_action_delta_scale(self, pos_error_norm: float) -> float:
+        base_scale = float(self.config.action_delta_scale)
+        if not self.config.dynamic_action_delta_scale_enabled:
+            return base_scale
+        multiplier = self._interpolate_dock_control_value(
+            pos_error_norm=pos_error_norm,
+            near_threshold=float(self.config.dynamic_action_delta_scale_near_pos_threshold_m),
+            far_threshold=float(self.config.dynamic_action_delta_scale_far_pos_threshold_m),
+            near_value=float(self.config.dynamic_action_delta_scale_near_multiplier),
+            far_value=float(self.config.dynamic_action_delta_scale_far_multiplier),
+            fallback=1.0,
+        )
+        return float(base_scale * max(multiplier, 0.0))
 
     def _mode_index(self) -> int:
         if self._policy_mode_name == "approach":

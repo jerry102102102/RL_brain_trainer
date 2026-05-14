@@ -1,0 +1,116 @@
+env:
+  mode: approach
+  n_joints: 7
+  action_delta_scale: 0.08
+  episode_length: 90
+  observation:
+    pos_err_scale_m: 1.50
+    ori_err_scale_rad: 3.141592653589793
+  reward:
+    # Route-specific transport curriculum: keep the familiar approach reward,
+    # but loosen the early gate enough that long scene-route segments can learn
+    # before tightening into the finisher-ready zone.
+    position_progress_weight: 8.0
+    orientation_progress_weight: 0.35
+    near_field_orientation_progress_weight: 4.0
+    pre_near_goal_pos_threshold_m: 0.12
+    near_goal_pos_threshold_m: 0.010
+    near_goal_ori_threshold_rad: 0.080
+    coarse_orientation_bonus_threshold_rad: 0.16
+    use_orientation_gate: true
+    pre_near_goal_bonus: 0.02
+    near_goal_bonus: 0.02
+    near_goal_bonus_decay: 0.45
+    coarse_orientation_bonus: 0.02
+    dock_coarse_ready_pos_threshold_m: 0.010
+    dock_coarse_ready_ori_threshold_rad: 0.080
+    dock_coarse_ready_action_threshold: 0.14
+    dock_coarse_ready_dq_threshold: 0.004
+    finisher_ready_pos_threshold_m: 0.010
+    finisher_ready_ori_threshold_rad: 0.080
+    finisher_ready_action_threshold: 0.14
+    finisher_ready_dq_threshold: 0.004
+    finisher_ready_bonus: 3.0
+    finisher_ready_retention_bonus: 2.4
+    finisher_ready_dwell_bonus: 3.2
+    finisher_ready_leave_penalty: 3.8
+    finisher_ready_regression_weight: 15.0
+    near_handoff_pos_threshold_m: 0.025
+    near_handoff_ori_threshold_rad: 0.20
+    near_handoff_action_weight: 1.5
+    near_handoff_dq_weight: 6.0
+    near_handoff_motion_bonus_weight: 2.5
+    near_handoff_settle_bonus_weight: 2.5
+    same_step_alignment_bonus: 0.10
+    dwell_bonus: 0.0
+    drift_penalty_weight: 2.0
+    drift_penalty_escalation_start: 1
+    drift_penalty_escalation_per_count: 0.6
+    action_magnitude_weight: 0.025
+    action_delta_weight: 0.030
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 0.25
+  termination:
+    max_episode_steps: 90
+    success_pos_threshold_m: 0.010
+    success_ori_threshold_rad: 0.080
+    success_dwell_steps: 1
+    require_orientation: true
+    terminate_on_success: true
+  route_reset:
+    enabled: true
+    route_path: artifacts/kinematic_phase1/phase1c/scene_route_curriculum/tray1_holder1_to_8_route_q_dense.json
+    min_stride_by_stage: [1, 2, 4, 8, 12, 16]
+    max_stride_by_stage: [1, 3, 6, 10, 18, 28]
+    start_q_noise: [0.002, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006]
+    goal_q_noise: [0.002, 0.006, 0.006, 0.006, 0.006, 0.006, 0.006]
+    reverse_probability: 0.10
+  curriculum:
+    enabled: true
+    success_rate_threshold: 0.70
+    window_episodes: 64
+    min_episodes_per_stage: 128
+    stages:
+      - name: route_stride_1
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+      - name: route_stride_2_to_3
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+      - name: route_stride_4_to_6
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+      - name: route_stride_8_to_10
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+      - name: route_stride_12_to_18
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+      - name: route_stride_16_to_28
+        start_q: [0, 0, 0, 0, 0, 0, 0]
+        goal_q: [0, 0, 0, 0, 0, 0, 0]
+
+eval:
+  suite_seed: 700001
+  episodes: 240
+  regression_tolerance_m: 0.012
+
+training:
+  checkpoint_freq: 300000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 3145728
+    seed: 707
+    learning_rate: 0.000012
+    n_steps: 2048
+    batch_size: 512
+    n_epochs: 7
+    gamma: 0.995
+    gae_lambda: 0.95
+    clip_range: 0.12
+    ent_coef: 0.0005

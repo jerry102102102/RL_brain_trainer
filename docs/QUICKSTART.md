@@ -1,126 +1,109 @@
-# QUICKSTART (V4) — 10 分鐘上手
+# Quickstart
 
-這份文件給「第一次接手」的人：只做最短步驟，先把 V4 跑起來。
+This quickstart follows the current final-project path. Older V4/V5.1 commands are preserved in legacy docs, but they are not the main demo path.
 
-## 0) 前置條件
-- Python 3.11+
-- 已安裝 `uv`
-- 在 repo 根目錄
+## 1. Python Environment
 
-## 1) 建環境
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source hrl_ws/.venv/bin/activate
+export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+```
+
+If `.venv` does not exist:
+
 ```bash
 cd hrl_ws
 uv sync
 source .venv/bin/activate
 ```
 
-## 2) 檢查關鍵路徑
-```bash
-ls src/hrl_trainer/hrl_trainer/sim2d
-ls src/hrl_trainer/config | grep v4
-```
+## 2. L1 Qwen / MCP Semantic Bridge
 
-## 3) 先跑診斷（推薦）
-> 目標：先確認 L0/L1 基礎路徑沒壞。
+Mock backend:
 
 ```bash
-python src/hrl_trainer/hrl_trainer/sim2d/diag_l0_rbf_straight.py
-python src/hrl_trainer/hrl_trainer/sim2d/diag_l1_planner_straight.py
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend mock_qwen \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
 ```
 
-## 4) 跑 V4 主實驗（快速版）
-```bash
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml
-```
-
-## 5) 跑複雜場景設定（建議）
-```bash
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v4.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
-```
-
-## 6) 結果整理（最小要求）
-- 記錄本輪核心 metric（success / collision / timeout）
-- 保存 artifact 路徑（例如 `/tmp/v4_*.json`, checkpoint, rollout gif）
-- 更新對應報告或進度板（V4 only）
-
-## 7) 常見雷點
-- 不要把 L1/L2/L3 契約混掉：L1 給語意/約束，L2 規劃，L3 deterministic follower。
-- 不要讓記憶模組覆蓋安全控制器；記憶是輔助，不是取代可行性。
-- 評估先看成功率與碰撞/可行性，不只看 RMSE。
-
----
-
-介面契約：`docs/V4_INTERFACE_SPEC.md`
-
-## V5 M2.4 快速命令（deterministic）
-
-### 1) 產生 trainer_loop artifact（JSON + JSONL smoke run）
-```bash
-cd hrl_ws/src/hrl_trainer
-python3 -m hrl_trainer.v5.artifacts \
-  --episode-index 0 \
-  --steps 3 \
-  --json-path /tmp/v5_m2_4_smoke_artifact.json \
-  --jsonl-path /tmp/v5_m2_4_smoke_artifact.jsonl
-```
-
-### 2) 跑 Rule-L2 v0 baseline benchmark 並輸出 summary JSON
-```bash
-cd hrl_ws/src/hrl_trainer
-python3 -m hrl_trainer.v5.benchmark_rule_l2_v0 \
-  --episodes 8 \
-  --seed 42 \
-  --output /tmp/v5_rule_l2_v0_benchmark_summary.json
-```
-
-## V5 M2.5 Eval Harness 快速命令（一行）
+Local Qwen backend, if available:
 
 ```bash
-cd hrl_ws/src/hrl_trainer && python3 -m hrl_trainer.v5.eval_harness
+python -m hrl_trainer.v5.qwen_l1_client \
+  --backend qwen_subprocess \
+  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
+  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json
 ```
 
-- 預設 output path: `artifacts/reports/v5/v5_eval_rule_l2_v0_seed42_ep8.json`
-- Strict RL-L2（real path in eval harness, no fallback；非實機/HIL）:
-```bash
-cd hrl_ws/src/hrl_trainer && python3 -m hrl_trainer.v5.eval_harness --policy rl_l2 --strict-policy
+Expected contract:
+
+```text
+Qwen / L1 -> IntentPacket -> APPROACH -> FINISHER skill request
 ```
 
-- 預期輸出重點欄位:
-  - `policy_requested`: `rl_l2`
-  - `policy_executed`: `rl_l2`
-  - `fallback_used`: `false`
-  - `summary.stage.benchmark_schema`: `v5_rl_l2_v0_benchmark`
-  - `summary.stage.benchmark_version`: `1.0`
+L1 must not output raw joint commands.
 
-## V5 WP2 M2-9 一鍵重跑（推薦入口）
+## 3. Gazebo / RViz Recording Path
+
+Terminal 1: launch the original external scene directly.
 
 ```bash
 cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
-./scripts/m2_9_rerun_wp2.sh
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+ros2 launch kitchen_robot_description gazebo.launch.py use_sim_time:=true headless:=false
 ```
 
-預期會一次完成：
-- M2-7 integration tests
-- M2-8 benchmark tests
-- M2-8a eval harness tests
-- M2-8b formal comparison tests
-- 主要輸出 JSON 產生（`artifacts/reports/v5/*.json`）
+Terminal 2: launch RViz.
 
-### 術語定義（重要）
-- **real path**：benchmark/eval harness 的真實程式路徑執行（非 placeholder/simulated rows）。
-- **real robot runtime**：實體機器人/控制器/HIL 執行。
-- 本 repo 目前 WP2 M2-9 closeout 屬於前者，不代表已完成後者。
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+rviz2 -d config/rviz/phase3a_demo.rviz
+```
 
-更多細節：`docs/WP2_IMPLEMENTATION_NOTE.md`
+Terminal 3: run the demo without relaunching the scene.
 
-## V5.1 Note
+```bash
+cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
+bash scripts/final/run_live_gz_screen_recording_demo.sh local_skill --no-launch-scene
+```
 
-The maintained V5.1 path is now centered on the `pipeline_e2e` / `sac_torch` / deterministic-student workflow.  
-Older Bundle-v1 toy-SAC files and their gate-eval commands are no longer part of the active branch.
+Planning showcase mode:
 
-For the cleaned stage summary, see:
-- `V5_1_STAGE_SUMMARY.md`
-- `V5_1_EXECUTIVE_SUMMARY.md`
-- `V5_1_TIMELINE.md`
+```bash
+bash scripts/final/run_live_gz_screen_recording_demo.sh tray_like_transport --no-launch-scene
+```
+
+## 4. Final Package Checks
+
+```bash
+bash scripts/final/check_final_package.sh
+bash scripts/final/check_live_demo_ready.sh
+```
+
+Workspace random-start status:
+
+```bash
+bash scripts/final/check_full_workspace_randomstart_status.sh workspace_full_coverage_randomstart_overnight_003
+```
+
+## 5. Current Claims
+
+This repo demonstrates:
+
+- Qwen semantic L1 bridge,
+- kinematic `Approach -> Finisher` RL skill stack,
+- route-curriculum prefix improvement,
+- workspace expansion and random-start coverage experiments,
+- Gazebo/RViz live demo path.
+
+This repo does not claim:
+
+- full holder1 -> holder8 transport solved,
+- full continuous workspace solved,
+- real robot deployment complete.

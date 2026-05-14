@@ -1,0 +1,103 @@
+env:
+  mode: approach
+  n_joints: 7
+  action_delta_scale: 0.08
+  episode_length: 72
+  observation:
+    pos_err_scale_m: 0.75
+    ori_err_scale_rad: 3.141592653589793
+  reward:
+    # Keep the Phase 1C finisher-ready objective, but expose the policy to a
+    # wider local workspace matching the visible Gazebo FK target stress test.
+    position_progress_weight: 6.5
+    orientation_progress_weight: 0.35
+    near_field_orientation_progress_weight: 3.5
+    pre_near_goal_pos_threshold_m: 0.08
+    near_goal_pos_threshold_m: 0.005
+    near_goal_ori_threshold_rad: 0.05
+    coarse_orientation_bonus_threshold_rad: 0.10
+    use_orientation_gate: true
+    pre_near_goal_bonus: 0.015
+    near_goal_bonus: 0.015
+    near_goal_bonus_decay: 0.45
+    coarse_orientation_bonus: 0.015
+    dock_coarse_ready_pos_threshold_m: 0.005
+    dock_coarse_ready_ori_threshold_rad: 0.05
+    dock_coarse_ready_action_threshold: 0.10
+    dock_coarse_ready_dq_threshold: 0.002
+    finisher_ready_pos_threshold_m: 0.005
+    finisher_ready_ori_threshold_rad: 0.05
+    finisher_ready_action_threshold: 0.10
+    finisher_ready_dq_threshold: 0.002
+    finisher_ready_bonus: 3.2
+    finisher_ready_retention_bonus: 2.7
+    finisher_ready_dwell_bonus: 3.7
+    finisher_ready_leave_penalty: 4.2
+    finisher_ready_regression_weight: 18.0
+    near_handoff_pos_threshold_m: 0.012
+    near_handoff_ori_threshold_rad: 0.12
+    near_handoff_action_weight: 2.0
+    near_handoff_dq_weight: 8.0
+    near_handoff_motion_bonus_weight: 4.0
+    near_handoff_settle_bonus_weight: 4.0
+    same_step_alignment_bonus: 0.12
+    dwell_bonus: 0.0
+    drift_penalty_weight: 2.6
+    drift_penalty_escalation_start: 1
+    drift_penalty_escalation_per_count: 1.0
+    action_magnitude_weight: 0.045
+    action_delta_weight: 0.050
+    joint_limit_penalty_weight: 0.05
+    success_bonus: 0.2
+  termination:
+    max_episode_steps: 72
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 2
+    require_orientation: true
+    terminate_on_success: false
+  curriculum:
+    enabled: true
+    success_rate_threshold: 0.70
+    window_episodes: 32
+    min_episodes_per_stage: 64
+    stages:
+      - name: visible_local_medium
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.00, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.08, 0.18, 0.16, 0.14, 0.10, 0.10, 0.09]
+      - name: visible_workspace_match
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.00, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.12, 0.24, 0.20, 0.18, 0.13, 0.13, 0.12]
+      - name: visible_workspace_wide
+        start_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        start_noise: [0.00, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+        goal_q: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        goal_noise: [0.16, 0.30, 0.24, 0.22, 0.16, 0.16, 0.15]
+
+eval:
+  suite_seed: 700001
+  episodes: 200
+  regression_tolerance_m: 0.008
+
+training:
+  checkpoint_freq: 200000
+  n_envs: 12
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+
+algorithms:
+  ppo:
+    total_timesteps: 3932160
+    seed: 503
+    learning_rate: 0.00001
+    n_steps: 2048
+    batch_size: 256
+    n_epochs: 8
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.12

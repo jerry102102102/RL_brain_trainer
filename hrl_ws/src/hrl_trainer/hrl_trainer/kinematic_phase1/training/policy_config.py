@@ -11,7 +11,7 @@ import yaml
 from ..envs.arm_kinematic_env import Phase1EnvConfig
 from ..envs.curriculum import CurriculumStageConfig, PointCurriculumConfig, default_point_curriculum_stages
 from ..envs.observation_builder import ObservationBuilderConfig
-from ..envs.reset_samplers import DockResetConfig
+from ..envs.reset_samplers import DockResetConfig, RouteResetConfig
 from ..envs.reward_approach import ApproachRewardConfig
 from ..envs.reward_dock import DockRewardConfig
 from ..envs.termination import TerminationConfig
@@ -100,6 +100,7 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
     dock_coarse_cfg = config.get("dock_coarse", {})
     dock_coarse_reward_cfg = dock_coarse_cfg.get("reward", env_cfg.get("dock_coarse_reward", {}))
     dock_reset_cfg = env_cfg.get("dock_reset", {})
+    route_reset_cfg = env_cfg.get("route_reset", {})
     bridge_cfg = config.get("bridge", {})
     bridge_reward_cfg = bridge_cfg.get("reward", env_cfg.get("bridge_reward", {}))
     bridge_reset_cfg = bridge_cfg.get("reset", env_cfg.get("bridge_reset", {}))
@@ -127,6 +128,11 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
         goal_sample_margin_fraction=float(env_cfg.get("goal_sample_margin_fraction", 0.10)),
         start_sample_margin_fraction=float(env_cfg.get("start_sample_margin_fraction", 0.20)),
         action_delta_scale=float(env_cfg.get("action_delta_scale", 1.0)),
+        dynamic_action_delta_scale_enabled=bool(env_cfg.get("dynamic_action_delta_scale_enabled", False)),
+        dynamic_action_delta_scale_near_pos_threshold_m=float(env_cfg.get("dynamic_action_delta_scale_near_pos_threshold_m", 0.0)),
+        dynamic_action_delta_scale_far_pos_threshold_m=float(env_cfg.get("dynamic_action_delta_scale_far_pos_threshold_m", 0.0)),
+        dynamic_action_delta_scale_near_multiplier=float(env_cfg.get("dynamic_action_delta_scale_near_multiplier", 1.0)),
+        dynamic_action_delta_scale_far_multiplier=float(env_cfg.get("dynamic_action_delta_scale_far_multiplier", 1.0)),
         dock_action_delta_scale=float(env_cfg.get("dock_action_delta_scale", 0.0)),
         dock_residual_action_limit=float(env_cfg.get("dock_residual_action_limit", 1.0)),
         dock_delta_q_change_limit_scale=float(env_cfg.get("dock_delta_q_change_limit_scale", 0.0)),
@@ -145,10 +151,12 @@ def to_env_config(config: dict[str, Any]) -> Phase1EnvConfig:
             min_episodes_per_stage=int(curriculum_cfg.get("min_episodes_per_stage", 30)),
             stages=stages,
         ),
+        workspace_stage_sampling=dict(env_cfg.get("workspace_stage_sampling", {})),
         reward_config=ApproachRewardConfig(**reward_cfg),
         dock_reward_config=DockRewardConfig(**dock_reward_cfg),
         dock_coarse_reward_config=DockCoarseRewardConfig(**dock_coarse_reward_cfg),
         dock_reset_config=DockResetConfig(**dock_reset_cfg) if dock_reset_cfg else DockResetConfig(),
+        route_reset_config=RouteResetConfig(**route_reset_cfg) if route_reset_cfg else RouteResetConfig(),
         bridge_reward_config=BridgeRewardConfig(**bridge_reward_cfg),
         bridge_reset_config=BridgeResetConfig(**bridge_reset_cfg) if bridge_reset_cfg else BridgeResetConfig(),
         termination_config=TerminationConfig(**termination_cfg),

@@ -1,69 +1,41 @@
-# HRL Workspace Guide (V5 Active / V4 Legacy)
+# HRL Workspace
 
-## 中文版
+This workspace contains the Python package used by the project. The active final-project line is the kinematic `Approach -> Finisher` stack plus Qwen/L1 and Phase 3A demo integration.
 
-`hrl_ws` 是本專案的實驗工作區，當前主軸為 **V5 manipulation**，同時保留 **sim2d V4** 作為 legacy baseline。
+## Active Paths
 
-### Workspace 結構
-```text
-hrl_ws/
-├── pyproject.toml
-└── src/hrl_trainer/
-    ├── config/                    # v4 + v5 設定（WP0/WP1/WP1.5/WP2 等）
-    ├── hrl_trainer/sim2d/         # V4 sim2d 環境、訓練、評估與可視化
-    └── hrl_trainer/v5/            # V5 三層架構模組（intent/skill/control 與相關工具）
-```
+- `hrl_trainer.kinematic_phase1`: Gymnasium-style kinematic arm environment, rewards, PPO/TD3 training, deterministic eval, workspace expansion, route curriculum, and random-start coverage tools.
+- `hrl_trainer.v5`: Qwen/MCP L1 bridge, Phase 3A runtime/demo helpers, target markers, tray-like waypoint planning, and Gazebo controlled-sim utilities.
+- `hrl_trainer.v5_1`: older SAC/deterministic-extraction research path retained for reference, not the final ENPM690 demo mainline.
+- `hrl_trainer.sim2d`: legacy 2D baseline retained for historical comparison only.
 
-### 快速開始
-```bash
-cd hrl_ws
-uv sync
-source .venv/bin/activate
-```
-
-### 當前維護中的 V5.1 / 5.2 主線
-- 目前這條分支的實際維護主線是：
-  - `src/hrl_trainer/hrl_trainer/v5_1/pipeline_e2e.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/sac_torch.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/reward.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/build_teacher_dataset.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/train_deterministic_student.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/eval_deterministic_student.py`
-- 這條主線同時包含：
-  - V5.1：SAC teacher + deterministic safety execution
-  - 5.2：teacher-student deterministic extraction
-- 階段性總結文件在 repo root：
-  - `../V5_1_STAGE_SUMMARY.md`
-  - `../V5_1_EXECUTIVE_SUMMARY.md`
-  - `../V5_1_TIMELINE.md`
-
-### Phase 2：Qwen L1 bridge + kinematic RL skill handoff
-- 新增 Qwen-facing MCP / L1 client：
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_tools.py`
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_server.py`
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_l1_client.py`
-  - `src/hrl_trainer/hrl_trainer/v5/tools/qwenvl_text_runner.py`
-- Phase 2 報告與介面文件：
-  - `../docs/PHASE2_FINAL_DEMONSTRATION_REPORT.md`
-  - `../docs/V5_QWEN_MCP_BRIDGE.md`
-- Demo artifacts：
-  - `../artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json`
-  - `../artifacts/v5/phase2_report/phase2_final_demonstration_report.pdf`
-
-快速跑 L1 -> RL input demo：
+## Setup
 
 ```bash
 cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
 source hrl_ws/.venv/bin/activate
 export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
+```
 
+If the virtual environment is missing, recreate it from the project root:
+
+```bash
+cd hrl_ws
+uv sync
+```
+
+## L1 Qwen Bridge
+
+Mock backend:
+
+```bash
 python -m hrl_trainer.v5.qwen_l1_client \
   --backend mock_qwen \
   --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
   --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
 ```
 
-若本機 Qwen runtime 可用，可改成：
+Local Qwen backend, when available:
 
 ```bash
 python -m hrl_trainer.v5.qwen_l1_client \
@@ -72,189 +44,41 @@ python -m hrl_trainer.v5.qwen_l1_client \
   --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json
 ```
 
-執行 V4（範例）
-```bash
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
-```
+L1 produces semantic intent and structured skill requests only. It must not produce raw joint actions, joint trajectories, torques, or `delta_q`.
 
-執行 V5 M2.3（Reward Composer v2 + Curriculum A/B/C）最小測試
-```bash
-cd hrl_ws
-source .venv/bin/activate
-PYTHONPATH=src/hrl_trainer python -m unittest src/hrl_trainer/tests/test_v5_m2_3_reward_curriculum.py -v
-```
+## Kinematic Training And Evaluation
 
-執行 V5 M2.3a integration smoke（少量 step，顯示 stage 與 reward component）
-```bash
-cd hrl_ws
-source .venv/bin/activate
-PYTHONPATH=src/hrl_trainer python -m hrl_trainer.v5.trainer_loop --episode-index 1200 --steps 3 --terminal-success
-```
+Important current modules:
 
-預期輸出欄位（範例）
-```text
-stage_id=B
-reward_term_totals={'sparse_terminal': 2.0, 'pbrs_delta': ..., 'safety_penalty': ..., 'smoothness_penalty': ..., 'coverage': ..., 'subgoal': ...}
-step_0_weighted_terms={...}
-```
+- Workspace expansion trainer: `hrl_trainer.kinematic_phase1.train_workspace_expansion`
+- Route curriculum trainer: `hrl_trainer.kinematic_phase1.train_route_curriculum`
+- Workspace expansion eval: `hrl_trainer.kinematic_phase1.eval.eval_workspace_expansion`
+- Full workspace random-start eval: `hrl_trainer.kinematic_phase1.eval.eval_full_workspace_coverage`
+- Route eval: `hrl_trainer.kinematic_phase1.eval.eval_route_curriculum`
 
-### WP2（M2-7~M2-9）現況快照
-- WP2 closeout 已完成於 **benchmark/eval harness real path**，含：
-  - M2-7 training loop integration
-  - M2-8 baseline benchmark
-  - M2-8a eval harness strict-policy path
-  - M2-8b 4-variant formal comparison
-  - M2-9 one-click rerun script
-- ⚠️ 以上 **不是 real robot runtime / HIL**；目前未宣稱實機驗證完成。
-- 參考：`../docs/WP2_IMPLEMENTATION_NOTE.md`
-- 一鍵重跑：`../scripts/m2_9_rerun_wp2.sh`
+Status helpers live in `../scripts/final/`.
 
-### 目前建議流程
-1. V5：先確認 `../docs/WP2_IMPLEMENTATION_NOTE.md` 與 `../docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md` 的當前狀態
-2. V4：若需 baseline 對照，再跑 no-obstacle/complex/velocity constraints 三組實驗
-3. 所有新實驗請記錄到 `../docs/V5_EXPERIMENT_LOG.md`
+## Gazebo Demo Integration
 
-主要 config：
-- `src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
-- `src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
-- `src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
-
-### 控制約束（現行）
-- `v ∈ [-1.2, 1.2]`
-- `ω ∈ [-2π, 2π]`（±360 deg/s）
-
-### 延伸文件
-- Repo 主說明：`../README.md`
-- V5 主計畫：`../docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`
-- V5 設計哲學：`../docs/V5_DESIGN_PHILOSOPHY.md`
-- V4 介面規範：`../docs/V4_INTERFACE_SPEC.md`
-- 文獻索引：`../docs/literature/INDEX.md`
-- V3 歷史資料：`../docs/V3_GUIDE.md`
-
----
-
-## English Version
-
-`hrl_ws` is the experiment workspace for this project, now **V5-active (manipulation)** with **sim2d V4** kept as a legacy baseline.
-
-### Workspace Layout
-```text
-hrl_ws/
-├── pyproject.toml
-└── src/hrl_trainer/
-    ├── config/                    # v4 + v5 configs (WP0/WP1/WP1.5/WP2, etc.)
-    ├── hrl_trainer/sim2d/         # V4 sim2d env, training, evaluation, visualization
-    └── hrl_trainer/v5/            # V5 three-layer modules (intent/skill/control + tools)
-```
-
-### Quick Start
-```bash
-cd hrl_ws
-uv sync
-source .venv/bin/activate
-```
-
-### Current maintained V5.1 / 5.2 line
-- The actively maintained path on this branch is:
-  - `src/hrl_trainer/hrl_trainer/v5_1/pipeline_e2e.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/sac_torch.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/reward.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/build_teacher_dataset.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/train_deterministic_student.py`
-  - `src/hrl_trainer/hrl_trainer/v5_1/eval_deterministic_student.py`
-- This maintained line now covers both:
-  - V5.1: SAC teacher + deterministic safety execution
-  - 5.2: teacher-student deterministic extraction
-- Stage-close summaries live at the repo root:
-  - `../V5_1_STAGE_SUMMARY.md`
-  - `../V5_1_EXECUTIVE_SUMMARY.md`
-  - `../V5_1_TIMELINE.md`
-
-### Phase 2: Qwen L1 bridge + kinematic RL skill handoff
-- New Qwen-facing MCP / L1 client:
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_tools.py`
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_mcp_server.py`
-  - `src/hrl_trainer/hrl_trainer/v5/qwen_l1_client.py`
-  - `src/hrl_trainer/hrl_trainer/v5/tools/qwenvl_text_runner.py`
-- Phase 2 report and interface docs:
-  - `../docs/PHASE2_FINAL_DEMONSTRATION_REPORT.md`
-  - `../docs/V5_QWEN_MCP_BRIDGE.md`
-- Demo artifacts:
-  - `../artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request_qwen.json`
-  - `../artifacts/v5/phase2_report/phase2_final_demonstration_report.pdf`
-
-Run the L1 -> RL input demo:
+For recording, launch the original external scene first, then run the demo script from the repo root:
 
 ```bash
-cd /home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer
-source hrl_ws/.venv/bin/activate
-export PYTHONPATH=/home/jerry/.openclaw/workspace/repos/personal/RL_brain_trainer/hrl_ws/src/hrl_trainer:$PYTHONPATH
-
-python -m hrl_trainer.v5.qwen_l1_client \
-  --backend mock_qwen \
-  --command "Move tray1 from shelf_A1 to shelf_B1 while keeping it level and inserting with a stable pose." \
-  --output artifacts/v5/qwen_l1_demo/l1_to_rl_skill_request.json
+source /opt/ros/jazzy/setup.zsh
+source external/ENPM662_Group4_FinalProject/install/setup.zsh
+ros2 launch kitchen_robot_description gazebo.launch.py use_sim_time:=true headless:=false
 ```
 
-Use `--backend qwen_subprocess` to run the local Qwen model through the repo-tracked text runner.
-
-Run V4 (example)
 ```bash
-python src/hrl_trainer/hrl_trainer/sim2d/train_rl_brainer_v3_online.py \
-  --config src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml
+bash scripts/final/run_live_gz_screen_recording_demo.sh local_skill --no-launch-scene
 ```
 
-Run V5 M2.3 minimal tests (Reward Composer v2 + Curriculum A/B/C)
-```bash
-cd hrl_ws
-source .venv/bin/activate
-PYTHONPATH=src/hrl_trainer python -m unittest src/hrl_trainer/tests/test_v5_m2_3_reward_curriculum.py -v
-```
+The demo path is meant to show the L1 -> L2 -> L3 contract, target visualization, and learned-policy motion. It is not a claim that full tray transport is solved.
 
-Run V5 M2.3a integration smoke (few steps; prints stage + reward components)
-```bash
-cd hrl_ws
-source .venv/bin/activate
-PYTHONPATH=src/hrl_trainer python -m hrl_trainer.v5.trainer_loop --episode-index 1200 --steps 3 --terminal-success
-```
+## Documentation
 
-Expected output fields (example)
-```text
-stage_id=B
-reward_term_totals={'sparse_terminal': 2.0, 'pbrs_delta': ..., 'safety_penalty': ..., 'smoothness_penalty': ..., 'coverage': ..., 'subgoal': ...}
-step_0_weighted_terms={...}
-```
+Start from:
 
-### WP2 (M2-7~M2-9) status snapshot
-- WP2 closeout is complete on the **benchmark/eval harness real path**, including:
-  - M2-7 training loop integration
-  - M2-8 baseline benchmark
-  - M2-8a strict-policy eval harness path
-  - M2-8b 4-variant formal comparison
-  - M2-9 one-click rerun script
-- ⚠️ This is **not** real robot runtime / HIL validation.
-- Reference: `../docs/WP2_IMPLEMENTATION_NOTE.md`
-- One-click rerun: `../scripts/m2_9_rerun_wp2.sh`
-
-### Recommended Current Workflow
-1. V5: check `../docs/WP2_IMPLEMENTATION_NOTE.md` and `../docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md` first.
-2. V4: run no-obstacle/complex/velocity suites only when a baseline comparison is needed.
-3. Log all new experiments in `../docs/V5_EXPERIMENT_LOG.md`.
-
-Main configs:
-- `src/hrl_trainer/config/train_rl_brainer_v4_no_obstacle_mvp.yaml`
-- `src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp.yaml`
-- `src/hrl_trainer/config/train_rl_brainer_v4_complex_mvp_velocity.yaml`
-
-### Current Control Constraints
-- `v ∈ [-1.2, 1.2]`
-- `ω ∈ [-2π, 2π]` (±360 deg/s)
-
-### Related Docs
-- Main repo README: `../README.md`
-- V5 implementation plan: `../docs/V5_KITCHEN_IMPLEMENTATION_PLAN.md`
-- V5 design philosophy: `../docs/V5_DESIGN_PHILOSOPHY.md`
-- V4 interface spec: `../docs/V4_INTERFACE_SPEC.md`
-- Literature index: `../docs/literature/INDEX.md`
-- V3 historical docs: `../docs/V3_GUIDE.md`
+- `../README.md`
+- `../docs/README.md`
+- `../docs/CURRENT_IMPLEMENTATION.md`
+- `../report/OFFICIAL_ARTIFACTS.md`

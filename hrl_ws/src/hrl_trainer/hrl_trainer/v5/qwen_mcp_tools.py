@@ -21,22 +21,14 @@ from .intent_layer import (
     load_runtime_slot_map,
     validate_intent_packet,
 )
-
-
-DEFAULT_PHASE1_APPROACH_CHECKPOINT = (
-    "artifacts/kinematic_phase1/phase1c/"
-    "approach_finisher_ready_v2_settle_ft_786k_001/model_latest.zip"
-)
-DEFAULT_PHASE1_FINISHER_CHECKPOINT = (
-    "artifacts/kinematic_phase1/phase1c/"
-    "dock_workspace_handoff_noop_ft_1m_001/model_latest.zip"
-)
+from .runtime_model_registry import load_phase3a_model_registry
 
 L1_ALLOWED_OUTPUTS = {
     "object_id",
     "source_slot",
     "target_slot",
     "constraints",
+    "semantic_subtasks",
     "pick_pose_candidates",
     "place_pose_candidates",
     "reachability_hint",
@@ -126,6 +118,33 @@ def _safe_constraints(raw: Any) -> IntentConstraints:
     )
 
 
+def _safe_semantic_subtasks(raw: Any) -> list[dict[str, str]]:
+    if raw is None:
+        return []
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise QwenMcpToolError("semantic_subtasks must be an array when provided")
+    forbidden = set(FORBIDDEN_CONTROL_OUTPUTS) | {"q_delta", "delta_q", "trajectory", "joint_targets"}
+    subtasks: list[dict[str, str]] = []
+    for idx, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise QwenMcpToolError(f"semantic_subtasks[{idx}] must be an object")
+        illegal = sorted(set(str(key) for key in item.keys()) & forbidden)
+        if illegal:
+            raise QwenMcpToolError(f"semantic_subtasks[{idx}] contains forbidden control fields: {illegal}")
+        name = str(item.get("name", "")).strip()
+        description = str(item.get("description", "")).strip()
+        if not name or not description:
+            raise QwenMcpToolError(f"semantic_subtasks[{idx}] requires name and description")
+        subtasks.append(
+            {
+                "name": name,
+                "description": description,
+                "posture_constraint": str(item.get("posture_constraint", "")).strip(),
+            }
+        )
+    return subtasks
+
+
 def _find_forbidden_control_fields(node: Any, path: str = "") -> list[str]:
     hits: list[str] = []
     if isinstance(node, Mapping):
@@ -149,13 +168,14 @@ class QwenMcpBridge:
         *,
         slot_map_path: str | Path | None = None,
         now_sec: float = 100.0,
-        approach_checkpoint: str = DEFAULT_PHASE1_APPROACH_CHECKPOINT,
-        finisher_checkpoint: str = DEFAULT_PHASE1_FINISHER_CHECKPOINT,
+        approach_checkpoint: str | None = None,
+        finisher_checkpoint: str | None = None,
     ):
         self.slot_map_path = slot_map_path
         self.now_sec = float(now_sec)
-        self.approach_checkpoint = approach_checkpoint
-        self.finisher_checkpoint = finisher_checkpoint
+        registry = load_phase3a_model_registry()
+        self.approach_checkpoint = approach_checkpoint or registry.approach.checkpoint
+        self.finisher_checkpoint = finisher_checkpoint or registry.finisher.checkpoint
         self._slot_map = load_runtime_slot_map(slot_map_path)
         self._tool_handlers: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
             "get_l1_scene_context": self.get_l1_scene_context,
@@ -208,6 +228,20 @@ class QwenMcpBridge:
                             "type": "array",
                             "items": {"type": "object"},
                             "description": "Optional perception estimates. Defaults to a scene proxy.",
+                        },
+                        "semantic_subtasks": {
+                            "type": "array",
+                            "description": "High-level L1 subtask plan. Must not contain q_delta, trajectories, or raw controls.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "posture_constraint": {"type": "string"},
+                                },
+                                "required": ["name", "description"],
+                                "additionalProperties": False,
+                            },
                         },
                     },
                     "required": ["source_slot", "target_slot"],
@@ -293,6 +327,7 @@ class QwenMcpBridge:
 
         command = f"MOVE_PLATE({source_slot}, {target_slot})"
         try:
+            semantic_subtasks = _safe_semantic_subtasks(args.get("semantic_subtasks"))
             packet = build_intent_packet(
                 command,
                 self._slot_map,
@@ -310,6 +345,7 @@ class QwenMcpBridge:
             "status": "ok",
             "command": command,
             "intent_packet": _jsonable(packet),
+            "semantic_subtasks": semantic_subtasks,
             "next_recommended_tool": "prepare_phase1_skill_request",
         }
 
@@ -322,6 +358,7 @@ class QwenMcpBridge:
         if not isinstance(intent_packet, Mapping):
             raise QwenMcpToolError("intent_packet must be an object")
         validate_intent_packet(intent_packet)
+        semantic_subtasks = _safe_semantic_subtasks(args.get("semantic_subtasks"))
         place_candidates = intent_packet.get("place_pose_candidates")
         if not isinstance(place_candidates, list) or not place_candidates:
             raise QwenMcpToolError("intent_packet.place_pose_candidates must be a non-empty list")
@@ -340,10 +377,14 @@ class QwenMcpBridge:
             "source_slot": intent_packet["source_slot"],
             "target_slot": intent_packet["target_slot"],
             "target_pose": target_pose,
+            "semantic_subtasks": semantic_subtasks,
+            "semantic_subtask_note": (
+                "These are high-level L1/MCP semantic subtasks. They are not joint targets. "
+                "The L2 runtime maps them into local RL target observations."
+            ),
             "phase1_policy_assets": {
                 "approach_checkpoint": self.approach_checkpoint,
                 "finisher_checkpoint": self.finisher_checkpoint,
             },
             "constraints": intent_packet.get("constraints", {}),
         }
-

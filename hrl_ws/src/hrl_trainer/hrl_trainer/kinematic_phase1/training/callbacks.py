@@ -37,6 +37,7 @@ class PointCurriculumCallback(BaseCallback):  # pragma: no cover - exercised wit
         window_episodes: int,
         min_episodes_per_stage: int,
         max_stage_index: int,
+        initial_stage_index: int = 0,
     ) -> None:
         if not SB3_CALLBACKS_AVAILABLE:
             raise RuntimeError("Stable-Baselines3 callbacks are unavailable")
@@ -45,7 +46,7 @@ class PointCurriculumCallback(BaseCallback):  # pragma: no cover - exercised wit
         self.window_episodes = max(int(window_episodes), 1)
         self.min_episodes_per_stage = max(int(min_episodes_per_stage), 1)
         self.max_stage_index = max(int(max_stage_index), 0)
-        self.current_stage_index = 0
+        self.current_stage_index = int(max(min(initial_stage_index, self.max_stage_index), 0))
         self.stage_episode_count = 0
         self.recent_successes: deque[int] = deque(maxlen=self.window_episodes)
         self.history: list[dict[str, float | int | str]] = []

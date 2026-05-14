@@ -1,0 +1,478 @@
+env:
+  mode: approach
+  n_joints: 7
+  action_delta_scale: 0.08
+  episode_length: 96
+  observation:
+    pos_err_scale_m: 1.0
+    ori_err_scale_rad: 3.141592653589793
+  reward:
+    position_progress_weight: 7.0
+    orientation_progress_weight: 0.3
+    near_field_orientation_progress_weight: 3.8
+    pre_near_goal_pos_threshold_m: 0.08
+    near_goal_pos_threshold_m: 0.005
+    near_goal_ori_threshold_rad: 0.05
+    coarse_orientation_bonus_threshold_rad: 0.1
+    use_orientation_gate: true
+    pre_near_goal_bonus: 0.015
+    near_goal_bonus: 0.015
+    near_goal_bonus_decay: 0.45
+    coarse_orientation_bonus: 0.015
+    dock_coarse_ready_pos_threshold_m: 0.005
+    dock_coarse_ready_ori_threshold_rad: 0.05
+    dock_coarse_ready_action_threshold: 0.1
+    dock_coarse_ready_dq_threshold: 0.002
+    finisher_ready_pos_threshold_m: 0.005
+    finisher_ready_ori_threshold_rad: 0.05
+    finisher_ready_action_threshold: 0.1
+    finisher_ready_dq_threshold: 0.002
+    finisher_ready_bonus: 3.2
+    finisher_ready_retention_bonus: 2.7
+    finisher_ready_dwell_bonus: 3.7
+    finisher_ready_leave_penalty: 4.2
+    finisher_ready_regression_weight: 18.0
+    near_handoff_pos_threshold_m: 0.014
+    near_handoff_ori_threshold_rad: 0.14
+    near_handoff_action_weight: 2.0
+    near_handoff_dq_weight: 8.0
+    near_handoff_motion_bonus_weight: 4.0
+    near_handoff_settle_bonus_weight: 4.0
+    same_step_alignment_bonus: 0.12
+    dwell_bonus: 0.0
+    drift_penalty_weight: 2.5
+    drift_penalty_escalation_start: 1
+    drift_penalty_escalation_per_count: 0.9
+    action_magnitude_weight: 0.04
+    action_delta_weight: 0.045
+    joint_limit_penalty_weight: 0.06
+    success_bonus: 0.2
+  termination:
+    max_episode_steps: 96
+    success_pos_threshold_m: 0.005
+    success_ori_threshold_rad: 0.05
+    success_dwell_steps: 2
+    require_orientation: true
+    terminate_on_success: false
+  workspace_stage_sampling:
+    enabled: true
+    current_stage_ratio: 0.58
+    previous_stage_ratio: 0.2
+    old_workspace_replay_ratio: 0.17
+    failure_replay_ratio: 0.05
+    old_workspace_max_stage_index: 5
+  curriculum:
+    enabled: true
+    success_rate_threshold: 0.72
+    window_episodes: 48
+    min_episodes_per_stage: 96
+    stages:
+    - name: stage0_region_small
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.01
+      - 0.03
+      - 0.04
+      - 0.03
+      - 0.02
+      - 0.02
+      - 0.01
+    - name: stage1_region_medium
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.02
+      - 0.06
+      - 0.08
+      - 0.06
+      - 0.04
+      - 0.04
+      - 0.03
+    - name: stage2_region_medium_wide
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.03
+      - 0.09
+      - 0.12
+      - 0.09
+      - 0.06
+      - 0.05
+      - 0.04
+    - name: stage3_region_large
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.01
+      - 0.01
+      - 0.01
+      - 0.01
+      - 0.01
+      - 0.01
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.04
+      - 0.12
+      - 0.16
+      - 0.12
+      - 0.08
+      - 0.06
+      - 0.05
+    - name: stage4_region_large_offset
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.02
+      - 0.02
+      - 0.02
+      - 0.02
+      - 0.02
+      - 0.02
+      goal_q:
+      - 0.03
+      - -0.04
+      - 0.05
+      - -0.03
+      - 0.02
+      - -0.01
+      - 0.01
+      goal_noise:
+      - 0.05
+      - 0.14
+      - 0.18
+      - 0.14
+      - 0.09
+      - 0.07
+      - 0.06
+    - name: stage5_region_wide_local_random
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.03
+      - 0.03
+      - 0.03
+      - 0.03
+      - 0.03
+      - 0.03
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.06
+      - 0.18
+      - 0.22
+      - 0.16
+      - 0.1
+      - 0.08
+      - 0.07
+    - name: stage6_workspace_expand_115
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.035
+      - 0.035
+      - 0.035
+      - 0.035
+      - 0.035
+      - 0.035
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.069
+      - 0.207
+      - 0.253
+      - 0.184
+      - 0.115
+      - 0.092
+      - 0.081
+    - name: stage7_workspace_expand_130
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.045
+      - 0.045
+      - 0.045
+      - 0.045
+      - 0.045
+      - 0.045
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.078
+      - 0.234
+      - 0.286
+      - 0.208
+      - 0.13
+      - 0.104
+      - 0.091
+    - name: stage8_workspace_expand_150
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.055
+      - 0.055
+      - 0.055
+      - 0.055
+      - 0.055
+      - 0.055
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.09
+      - 0.27
+      - 0.33
+      - 0.24
+      - 0.15
+      - 0.12
+      - 0.105
+    - name: stage9_workspace_stress_180
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.07
+      - 0.07
+      - 0.07
+      - 0.07
+      - 0.07
+      - 0.07
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.108
+      - 0.324
+      - 0.396
+      - 0.288
+      - 0.18
+      - 0.144
+      - 0.126
+    - name: stage10_workspace_stress_200
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.085
+      - 0.085
+      - 0.085
+      - 0.085
+      - 0.085
+      - 0.085
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.12
+      - 0.36
+      - 0.44
+      - 0.32
+      - 0.2
+      - 0.16
+      - 0.14
+    - name: stage11_workspace_stress_220
+      start_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      start_noise:
+      - 0.0
+      - 0.1
+      - 0.1
+      - 0.1
+      - 0.1
+      - 0.1
+      - 0.1
+      goal_q:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      goal_noise:
+      - 0.132
+      - 0.396
+      - 0.484
+      - 0.352
+      - 0.22
+      - 0.176
+      - 0.154
+eval:
+  suite_seed: 700001
+  episodes: 100
+  regression_tolerance_m: 0.01
+training:
+  checkpoint_freq: 200000
+  n_envs: 16
+  vec_env: subproc
+  start_method: fork
+  device: cuda
+algorithms:
+  ppo:
+    total_timesteps: 5000000
+    seed: 806
+    learning_rate: 5.0e-06
+    n_steps: 2048
+    batch_size: 512
+    n_epochs: 8
+    gamma: 0.995
+    gae_lambda: 0.95
+    clip_range: 0.1
+    ent_coef: 0.0003
+workspace_expansion:
+  init_approach_checkpoint: artifacts/kinematic_phase1/workspace_expansion/workspace_expand_stage6to9_ppo_big_001/best_checkpoint/model_best_by_gate.zip
+  finisher_checkpoint: artifacts/kinematic_phase1/phase1c/dock_workspace_handoff_noop_ft_1m_001/model_latest.zip
+  finisher_config: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/dock_workspace_handoff_noop_ft_12env.yaml
+  eval_interval: 200000
+  gate_eval_episodes: 24
+  final_eval_episodes: 100
+  eval_seed: 710001
+  gate:
+    retention_stage0_4_success: 0.95
+    retention_stage5_success: 0.85
+    promotion_stage_success: 0.75
+    promotion_ready_rate: 0.75
+    max_mean_position_error_m: 0.024
+    max_mean_orientation_error_rad: 0.16

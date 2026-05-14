@@ -72,11 +72,17 @@ def build_l1_prompt(user_command: str, scene_context: Mapping[str, Any]) -> str:
     compact_context = _compact_scene_context(scene_context)
     return (
         "You are the L1 semantic task interpreter for a modular robot arm system.\n"
-        "Your job is to select an object, source slot, target slot, and constraints.\n"
+        "Your job is to select an object, source slot, target slot, constraints, and semantic subtasks.\n"
         "Do not output joint actions, trajectories, torques, delta_q, or raw controls.\n"
+        "Semantic subtasks are allowed, but they must be high-level names/descriptions only.\n"
         "Return exactly one JSON object with this schema:\n"
         "{\"tool\":\"resolve_intent_packet\",\"arguments\":{\"object_id\":\"...\","
-        "\"source_slot\":\"...\",\"target_slot\":\"...\",\"constraints\":{\"speed_cap\":\"SLOW\"}}}\n\n"
+        "\"source_slot\":\"...\",\"target_slot\":\"...\",\"constraints\":{\"speed_cap\":\"SLOW\"},"
+        "\"semantic_subtasks\":[{\"name\":\"pre_grasp_align\",\"description\":\"...\","
+        "\"posture_constraint\":\"keep tray level\"}]}}\n\n"
+        "For a tray move, use this semantic subtask sequence unless the scene context makes it invalid:\n"
+        "pre_grasp_align -> under_tray_insert_pose -> level_lift -> carry_midline -> "
+        "pre_insert_align -> stable_insert_hold.\n\n"
         f"User command: {user_command}\n\n"
         "Scene context JSON:\n"
         f"{json.dumps(compact_context, ensure_ascii=False, indent=2, sort_keys=True)}\n"
@@ -135,6 +141,38 @@ def mock_qwen_decision(user_command: str, scene_context: Mapping[str, Any]) -> s
                     "clearance_m": 0.02,
                     "timeout_s": 10.0,
                 },
+                "semantic_subtasks": [
+                    {
+                        "name": "pre_grasp_align",
+                        "description": "Approach the source side with the EE already horizontal to the ground.",
+                        "posture_constraint": "keep EE tray plane horizontal",
+                    },
+                    {
+                        "name": "under_tray_insert_pose",
+                        "description": "Slide forward under the virtual tray while preserving a horizontal EE.",
+                        "posture_constraint": "keep EE tray plane horizontal",
+                    },
+                    {
+                        "name": "level_lift",
+                        "description": "Lift the tray without changing the horizontal EE posture.",
+                        "posture_constraint": "keep EE tray plane horizontal",
+                    },
+                    {
+                        "name": "carry_midline",
+                        "description": "Carry across the local workspace with the tray plane held level.",
+                        "posture_constraint": "keep EE tray plane horizontal",
+                    },
+                    {
+                        "name": "pre_insert_align",
+                        "description": "Align with the destination side while preserving the horizontal EE posture.",
+                        "posture_constraint": "keep EE tray plane horizontal",
+                    },
+                    {
+                        "name": "stable_insert_hold",
+                        "description": "Settle and hold the destination insertion pose level with low motion.",
+                        "posture_constraint": "keep EE tray plane horizontal and low motion",
+                    },
+                ],
             },
         },
         indent=2,
@@ -213,7 +251,11 @@ def run_l1_to_rl_input(
     intent_resolution = bridge.call_tool("resolve_intent_packet", arguments)
     skill_request = bridge.call_tool(
         "prepare_phase1_skill_request",
-        {"intent_packet": intent_resolution["intent_packet"], "dry_run": True},
+        {
+            "intent_packet": intent_resolution["intent_packet"],
+            "dry_run": True,
+            "semantic_subtasks": intent_resolution.get("semantic_subtasks", []),
+        },
     )
     result = L1ClientResult(
         backend=backend,

@@ -1,0 +1,33 @@
+schema_version: v5.phase3a.runtime_models.v1
+pipeline: APPROACH_FINISHER
+
+approach:
+  role: APPROACH
+  checkpoint: artifacts/kinematic_phase1/workspace_expansion/workspace_expand_dynscale_stage8_11_big_001/best_checkpoint/model_best_by_gate.zip
+  config: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/workspace_expansion_dynamic_scale_big.yaml
+  note: Dynamic-scale workspace-expansion Approach best-by-gate for larger Phase 3A Gazebo target validation.
+
+finisher:
+  role: FINISHER
+  checkpoint: artifacts/kinematic_phase1/phase1c/dock_workspace_handoff_noop_ft_1m_001/model_latest.zip
+  config: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/dock_workspace_handoff_noop_ft_12env.yaml
+  note: Current quiet hold/no-op finisher baseline for Approach handoff states.
+
+handoff:
+  # Presentation/demo runtime thresholds.  The trained policies can be evaluated
+  # more strictly in kinematic reports, but the live Gazebo screen recording
+  # should not wait on invisible millimeter-level differences.
+  position_error_m: 0.005
+  orientation_error_rad: 0.20
+  action_magnitude: 999.0
+  dq_norm: 999.0
+  confirm_steps: 1
+  strict_position_error_m: 0.015
+  strict_orientation_error_rad: 0.20
+
+ros_topics:
+  intent_packet: /v5/intent_packet
+  skill_command: /v5/skill_command
+  joint_states: /joint_states
+  object_pose_estimate: /v5/perception/object_pose_est
+  l3_joint_trajectory: /arm_controller/joint_trajectory

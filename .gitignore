@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+*.egg-info/
 
 # --- Local/ROS build outputs ---
 build/
@@ -44,12 +46,21 @@ artifacts/wp0/scene_launch.log
 # training runs.
 artifacts/kinematic_phase1/
 
+# --- V5 runtime/demo artifacts ---
+artifacts/v5/*/
+!artifacts/v5/qwen_l1_demo/
+!artifacts/v5/qwen_l1_demo/**
+!artifacts/v5/phase2_report/
+!artifacts/v5/phase2_report/**
+
 # --- Nested project caches ---
 external/**/__pycache__/
 hrl_ws/**/__pycache__/
+hrl_ws/.venv/
 
 # --- External class project lives in its own repo (do not track here) ---
 external/ENPM662_Group4_FinalProject/
+external/kitchen_scene
 
 # --- Keep core published reports tracked ---
 !artifacts/reports/
@@ -57,3 +68,14 @@ external/ENPM662_Group4_FinalProject/
 !artifacts/reports/v5/**
 !docs/reports/
 !docs/reports/**
+
+# --- Windows / downloaded-file metadata ---
+*:Zone.Identifier
+
+# --- Local final-demo runtime outputs ---
+# Keep final report sources, figures, PPT/PDF, and runbooks in git. Do not
+# commit screen-recording logs, generated MP4s, or one-off runtime traces.
+report/demo_outputs/
+report/video_frames/
+report/videos/
+reports/
