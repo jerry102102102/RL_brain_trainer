@@ -1,0 +1,19 @@
+schema_version: final_codes_docker.demos.v1
+
+demos:
+  local_test:
+    description: Local Approach -> Finisher skill demonstration.
+    expected_video: https://drive.google.com/file/d/1_faSuh4cMAKPs8mhAdgD_rcqrU7K045F/view?usp=drive_link
+    command_native: bash scripts/final/run_final_local_test_demo.sh
+    command_docker: docker compose -f final_codes_docker/docker-compose.demo.yaml run --rm demo bash final_codes_docker/run_local_test_demo.sh
+    expected_output: report/demo_outputs/final_local_test_*/
+    claim: Demonstrates local kinematic Approach -> Finisher behavior.
+
+  full_route:
+    description: Route-prefix / route-curriculum demonstration.
+    expected_video: https://drive.google.com/file/d/125XAsfr5hSjJBB1QiJ0ROllNVFENyp7f/view?usp=drive_link
+    command_native: bash scripts/final/run_final_full_route_demo.sh
+    command_docker: docker compose -f final_codes_docker/docker-compose.demo.yaml run --rm demo bash final_codes_docker/run_full_route_demo.sh
+    expected_output: report/demo_outputs/final_full_route_*/
+    claim: Demonstrates route-curriculum evidence. It is not full transport completion.
+

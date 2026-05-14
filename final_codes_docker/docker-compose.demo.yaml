@@ -1,0 +1,34 @@
+services:
+  demo:
+    build:
+      context: ..
+      dockerfile: final_codes_docker/Dockerfile.demo
+    volumes:
+      - ../artifacts:/workspace/Robot_brain_trainer/artifacts
+      - ../report:/workspace/Robot_brain_trainer/report
+      - ../final_codes_docker:/workspace/Robot_brain_trainer/final_codes_docker
+    environment:
+      PYTHONPATH: /workspace/Robot_brain_trainer/hrl_ws/src/hrl_trainer
+      HEADLESS: "1"
+    working_dir: /workspace/Robot_brain_trainer
+    command: bash
+
+  demo_gui:
+    build:
+      context: ..
+      dockerfile: final_codes_docker/Dockerfile.demo
+    volumes:
+      - ../artifacts:/workspace/Robot_brain_trainer/artifacts
+      - ../report:/workspace/Robot_brain_trainer/report
+      - ../final_codes_docker:/workspace/Robot_brain_trainer/final_codes_docker
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      PYTHONPATH: /workspace/Robot_brain_trainer/hrl_ws/src/hrl_trainer
+      HEADLESS: "0"
+      DISPLAY: ${DISPLAY}
+      QT_X11_NO_MITSHM: "1"
+    network_mode: host
+    privileged: true
+    working_dir: /workspace/Robot_brain_trainer
+    command: bash
+

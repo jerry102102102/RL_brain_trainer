@@ -1,0 +1,24 @@
+.git
+.gitignore
+.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+
+# Large/local runtime outputs. Docker compose mounts artifacts/report back in
+# when needed, so they should not be copied into the image build context.
+artifacts/
+external/
+reports/
+report/videos/
+report/video_frames/
+report/demo_outputs/
+hrl_ws/.venv/
+final_codes_docker/asset_check/
+
+# Local/editor noise.
+.vscode/
+.idea/
+*.log
+*.tmp

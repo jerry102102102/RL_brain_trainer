@@ -1,0 +1,50 @@
+schema_version: final_codes_docker.models.v1
+notes:
+  - Add download_url or google_drive_file_id if models are hosted separately.
+  - If models are bundled in the submission zip, keep them at expected_local_path.
+
+models:
+  - logical_name: approach_model_best_by_gate
+    role: approach
+    expected_local_path: artifacts/kinematic_phase1/workspace_expansion/workspace_expand_dynscale_stage8_11_big_001/best_checkpoint/model_best_by_gate.zip
+    config_path: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/workspace_expansion_dynamic_scale_big.yaml
+    download_url: ""
+    google_drive_file_id: ""
+    required_for:
+      - local_test
+      - gazebo_local_skill
+    notes: Approach policy used by the final local workspace and Gazebo runtime demos.
+
+  - logical_name: finisher_model_latest_or_best
+    role: finisher
+    expected_local_path: artifacts/kinematic_phase1/phase1c/dock_workspace_handoff_noop_ft_1m_001/model_latest.zip
+    config_path: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/dock_workspace_handoff_noop_ft_12env.yaml
+    download_url: ""
+    google_drive_file_id: ""
+    required_for:
+      - local_test
+      - gazebo_local_skill
+    notes: Hold-and-preserve finisher policy.
+
+  - logical_name: route_prefix120_best
+    role: route
+    expected_local_path: artifacts/kinematic_phase1/route_curriculum/route_prefix120_routeobs_sequence2_1m_001/model_latest.zip
+    config_path: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/route_curriculum_prefix120_routeobs_sequence2.yaml
+    route_path: artifacts/kinematic_phase1/phase1c/scene_route_curriculum/tray1_holder1_to_8_route_q_dense.json
+    download_url: ""
+    google_drive_file_id: ""
+    required_for:
+      - full_route
+      - route_prefix
+    notes: Route-prefix / route-curriculum policy. This is not a claim of full holder1-to-holder8 transport completion.
+
+  - logical_name: mixed_start_known_workspace_model
+    role: optional_workspace
+    expected_local_path: artifacts/kinematic_phase1/workspace_full_coverage_randomstart/workspace_full_coverage_randomstart_overnight_003/best_checkpoint/model_best_by_gate.zip
+    config_path: hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/workspace_full_coverage_randomstart_overnight.yaml
+    download_url: ""
+    google_drive_file_id: ""
+    required_for:
+      - optional_mixed_start_report
+    notes: Optional mixed-start workspace coverage checkpoint.
+
