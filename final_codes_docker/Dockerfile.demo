@@ -20,17 +20,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    numpy \
+    torch==2.10.0+cpu --index-url https://download.pytorch.org/whl/cpu \
+  && python3 -m pip install --break-system-packages --no-cache-dir \
+    numpy==2.4.2 \
     scipy \
     matplotlib \
     pyyaml \
     gdown \
-    gymnasium \
     tensorboard \
-  && python3 -m pip install --break-system-packages --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu \
-  && python3 -m pip install --break-system-packages --no-cache-dir \
-    stable-baselines3
+    gymnasium==1.2.3 \
+    stable-baselines3==2.8.0
 
 WORKDIR /workspace/Robot_brain_trainer
 COPY . /workspace/Robot_brain_trainer

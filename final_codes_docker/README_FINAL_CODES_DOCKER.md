@@ -58,6 +58,13 @@ docker compose -f final_codes_docker/docker-compose.demo.yaml run --rm demo \
   bash final_codes_docker/run_full_route_demo.sh
 ```
 
+The Docker route command defaults to a CPU-stable 90-waypoint route-prefix check. To run the longer prefix120 check:
+
+```bash
+docker compose -f final_codes_docker/docker-compose.demo.yaml run --rm \
+  -e FULL_ROUTE_END_INDEX=120 demo bash final_codes_docker/run_full_route_demo.sh
+```
+
 If trained model files are not present, `download_demo_assets.sh` prints exactly which files are missing and where they should be placed. If a URL is added to `model_manifest.yaml`, the script can download it.
 
 ## Quick Start Without Docker
@@ -120,6 +127,6 @@ Each demo writes a `command_log.txt` plus a JSON summary.
 
 - Docker GUI Gazebo is optional and environment-dependent.
 - Headless Docker mode validates Python package/eval paths, not the rendered Gazebo scene.
+- Docker uses CPU inference by default. Long sequential route rollouts can show small accumulated numerical differences from the native CUDA/venv reference path. The default Docker route-prefix length is therefore set to 90 for robust reproduction; set `FULL_ROUTE_END_INDEX=120` for the longer reference check.
 - The full route demo is route-curriculum evidence; it must not be described as full physical tray transport completion.
 - If trained models are absent and no URLs are provided, scripts fall back to summary artifacts only for dry demonstration and clearly report that policy execution was skipped.
-

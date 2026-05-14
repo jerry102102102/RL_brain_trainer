@@ -15,5 +15,4 @@ demos:
     command_native: bash scripts/final/run_final_full_route_demo.sh
     command_docker: docker compose -f final_codes_docker/docker-compose.demo.yaml run --rm demo bash final_codes_docker/run_full_route_demo.sh
     expected_output: report/demo_outputs/final_full_route_*/
-    claim: Demonstrates route-curriculum evidence. It is not full transport completion.
-
+    claim: Demonstrates route-curriculum evidence. It is not full transport completion. Docker defaults to a 90-waypoint CPU-stable prefix; set FULL_ROUTE_END_INDEX=120 for the longer reference check.

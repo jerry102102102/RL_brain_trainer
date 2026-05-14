@@ -42,7 +42,7 @@ fi
 ROUTE_MODEL="artifacts/kinematic_phase1/route_curriculum/route_prefix120_routeobs_sequence2_1m_001/model_latest.zip"
 ROUTE_CONFIG="hrl_ws/src/hrl_trainer/hrl_trainer/kinematic_phase1/configs/route_curriculum_prefix120_routeobs_sequence2.yaml"
 ROUTE_PATH="artifacts/kinematic_phase1/phase1c/scene_route_curriculum/tray1_holder1_to_8_route_q_dense.json"
-END_INDEX="${FULL_ROUTE_END_INDEX:-120}"
+END_INDEX="${FULL_ROUTE_END_INDEX:-90}"
 
 if [[ -f "$ROUTE_MODEL" && -f "$ROUTE_PATH" ]]; then
   echo "[headless] Running route sequential eval through waypoint $END_INDEX."
@@ -79,10 +79,12 @@ print(json.dumps(summary, indent=2))
 PY
 fi
 
-cat > "$OUT_DIR/route_result_explanation.txt" <<'EOF'
+cat > "$OUT_DIR/route_result_explanation.txt" <<EOF
 FULL ROUTE / ROUTE-PREFIX DEMO FINISHED
 This is route-curriculum evidence, not full transport completion.
 The key metric is longest successful prefix / waypoint progress, not "full route solved".
+Default Docker/headless route-prefix length is 90 waypoints for CPU-stable reproducibility.
+Set FULL_ROUTE_END_INDEX=120 to run the longer prefix120 reference check.
 EOF
 
 cat "$OUT_DIR/route_demo_summary.json"

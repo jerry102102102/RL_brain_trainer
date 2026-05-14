@@ -47,6 +47,12 @@ This is route-curriculum evidence, not full transport completion.
 Outputs: report/demo_outputs/final_full_route_...
 ```
 
+The packaged Docker/headless command defaults to the first 90 dense waypoints for CPU-stable reproduction. For the longer native prefix120 reference check, run:
+
+```bash
+FULL_ROUTE_END_INDEX=120 bash scripts/final/run_final_full_route_demo.sh
+```
+
 ## Optional Native Gazebo Visual Recording
 
 Terminal 1:
@@ -75,4 +81,3 @@ bash scripts/final/run_live_gz_screen_recording_demo.sh tray_like_transport
 - Docker headless mode is the reproducible code path.
 - Native Gazebo/RViz mode is the visual recording path.
 - The provided Google Drive videos show expected visual outputs.
-
